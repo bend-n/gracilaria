@@ -1,0 +1,14 @@
+[package]
+name = "ogonori"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+atools = "0.1.7"
+dsb = { version = "0.1.0", path = "../dsb" }
+fimg = "0.4.45"
+implicit-fn = "0.1.0"
+ropey = "1.6.1"
+softbuffer = "0.4.6"
+swash = "0.2.5"
+winit = "0.30.12"
