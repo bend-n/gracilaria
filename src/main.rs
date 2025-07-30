@@ -1,5 +1,7 @@
+#![feature(generic_const_exprs, const_trait_impl)]
 use std::num::NonZeroU32;
-use std::sync::{LazyLock};
+use std::sync::LazyLock;
+
 use dsb::cell::Style;
 use swash::FontRef;
 use winit::event::{ElementState, Event, KeyEvent, WindowEvent};
@@ -16,93 +18,108 @@ fn main() {
 }
 #[implicit_fn::implicit_fn]
 pub(crate) fn entry(event_loop: EventLoop<()>) {
-    let ppem = 20.0;
-    let ls = 200.0;
-    let mut text = TextArea::default() ;
+    let ppem = 15.0;
+    let ls = 20.0;
+    let mut text = TextArea::default();
+    std::env::args().nth(1).map(|x| {
+        text.insert(&std::fs::read_to_string(x).unwrap());
+    });
     let app = winit_app::WinitAppBuilder::with_init(
         |elwt| {
             let window = winit_app::make_window(elwt, |w| w);
             window.set_ime_allowed(true);
-            
-            let context = softbuffer::Context::new(window.clone()).unwrap();
+
+            let context =
+                softbuffer::Context::new(window.clone()).unwrap();
 
             (window, context)
         },
-        |_elwt, (window, context)| softbuffer::Surface::new(context, window.clone()).unwrap(),
+        |_elwt, (window, context)| {
+            softbuffer::Surface::new(context, window.clone()).unwrap()
+        },
     )
-    .with_event_handler(move |(window, _context), surface, event, elwt| {
-        elwt.set_control_flow(ControlFlow::Wait);
+    .with_event_handler(
+        move |(window, _context), surface, event, elwt| {
+            elwt.set_control_flow(ControlFlow::Wait);
+            match event {
+                Event::WindowEvent {
+                    window_id,
+                    event: WindowEvent::Resized(size),
+                } if window_id == window.id() => {
+                    let Some(surface) = surface else {
+                        eprintln!("Resized fired before Resumed or after Suspended");
+                        return;
+                    };
 
-        match event {
-            Event::WindowEvent {
-                window_id,
-                event: WindowEvent::Resized(size),
-            } if window_id == window.id() => {
-                let Some(surface) = surface else {
-                    eprintln!("Resized fired before Resumed or after Suspended");
-                    return;
-                };
-
-                if let (Some(width), Some(height)) =
-                    (NonZeroU32::new(size.width), NonZeroU32::new(size.height))
-                {
-                    surface.resize(width, height).unwrap();
-                }
-            }
-            Event::WindowEvent {
-                window_id,
-                event: WindowEvent::RedrawRequested,
-            } if window_id == window.id() => {
-                let Some(surface) = surface else {
-                    eprintln!("RedrawRequested fired before Resumed or after Suspended");
-                    return;
-                };
-                let size = window.inner_size();
-                
-                if let (Some(width), Some(height)) =
-                (NonZeroU32::new(size.width), NonZeroU32::new(size.height))
-                {
-                    let (c, r) = dsb::fit(&FONT,ppem,ls, (size.width as _,size.height as _));
-    let cells =text.cells((c, r),[255;3], [0;3])
-    ;
-let r = unsafe {    
-dsb::render(&cells, (c, r), ppem, [0;3],dsb::Fonts::new(*FONT, *FONT, *FONT, *FONT),
- ls)};
-
-let mut buffer = surface.buffer_mut().unwrap();
-                    for y in 0..height.get() {
-                        for x in 0..width.get() {
-                            let [red, green, blue] =r.get_pixel(x, y).unwrap_or_default().map(_ as u32);
-                            let index = y as usize * width.get() as usize + x as usize;
-                            buffer[index] = blue | (green << 8) | (red << 16);
-                        }
+                    if let (Some(width), Some(height)) =
+                        (NonZeroU32::new(size.width), NonZeroU32::new(size.height))
+                    {
+                        surface.resize(width, height).unwrap();
                     }
-
-                    buffer.present().unwrap();
                 }
-            }
-                        
-            Event::WindowEvent {
-                event:
-                    WindowEvent::CloseRequested
-                    ,
-                window_id,
-            } if window_id == window.id() => {
-                elwt.exit();
-            }
-            Event::WindowEvent{ 
-                event:WindowEvent::KeyboardInput { device_id, event, is_synthetic },window_id
-            } if event.state == ElementState::Pressed  => {
+                Event::WindowEvent {
+                    window_id,
+                    event: WindowEvent::RedrawRequested,
+                } if window_id == window.id() => {
+                    let Some(surface) = surface else {
+                        eprintln!("RedrawRequested fired before Resumed or after Suspended");
+                        return;
+                    };
+                    let size = window.inner_size();
+
+                    if let (Some(width), Some(height)) =
+                    (NonZeroU32::new(size.width), NonZeroU32::new(size.height))
+                    {
+                        let (c, r) = dsb::fit(&FONT,ppem,ls, (size.width as _,size.height as _));
+        let cells =text.cells((c, r),[204, 202, 194], [36, 41, 54],);
+    let r = unsafe {
+    dsb::render(&cells, (c, r), ppem, [36, 41, 54],dsb::Fonts::new(*FONT, *FONT, *FONT, *FONT),
+        ls, false)};
+
+    let mut buffer = surface.buffer_mut().unwrap();
+                        for y in 0..height.get() {
+                            for x in 0..width.get() {
+                                let [red, green, blue] =r.get_pixel(x, y).unwrap_or_default().map(_ as u32);
+                                let index = y as usize * width.get() as usize + x as usize;
+                                buffer[index] = blue | (green << 8) | (red << 16);
+                            }
+                        }
+
+                        buffer.present().unwrap();
+                    }
+                }
+
+                Event::WindowEvent {
+                    event:
+                        WindowEvent::CloseRequested
+                        ,
+                    window_id,
+                } if window_id == window.id() => {
+                    elwt.exit();
+                }
+                Event::WindowEvent{
+                    event:WindowEvent::KeyboardInput { device_id, event, is_synthetic }, window_id
+                } if event.state == ElementState::Pressed  => {
+
+            match dbg!(event.logical_key ){
+                Key::Named(NamedKey::Space)=> 
+                    text.insert(" "),
+                Key::Named(NamedKey::Backspace) => text.backspace(),
                 
-        if let Some(t) = event.text {
-            
-        text.insert(&*t);
-        window.request_redraw();
-    }
+                Key::Named(NamedKey::Enter)=> 
+                    text.insert("\n"),
+                Key::Character(x) => {
+                    text.insert(&*x);
+                }
+                _ =>{}
             }
-            _ => {}
-        }
-    });
+            
+        window.request_redraw();
+                }
+                _ => {}
+            }
+    },
+    );
 
     winit_app::run_app(event_loop, app);
 }

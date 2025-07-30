@@ -1,5 +1,5 @@
 [package]
-name = "ogonori"
+name = "gracilaria"
 version = "0.1.0"
 edition = "2024"
 
@@ -12,3 +12,12 @@ ropey = "1.6.1"
 softbuffer = "0.4.6"
 swash = "0.2.5"
 winit = "0.30.12"
+
+tree-sitter = "0.25.0"
+tree-sitter-rust = "0.24"
+tree-sitter-highlight = "0.25.0"
+car = "0.1.2"
+memchr = "2.7.5"
+
+[build-dependencies]
+cc = "*"
