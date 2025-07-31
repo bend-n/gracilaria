@@ -1,8 +1,10 @@
-#![feature(generic_const_exprs, const_trait_impl)]
+#![feature(generic_const_exprs, const_trait_impl,try_blocks)]
+#![allow(incomplete_features, redundant_semicolons)]
 use std::num::NonZeroU32;
 use std::sync::LazyLock;
 
 use dsb::cell::Style;
+use fimg::Image;
 use swash::FontRef;
 use winit::event::{ElementState, Event, KeyEvent, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
@@ -18,7 +20,7 @@ fn main() {
 }
 #[implicit_fn::implicit_fn]
 pub(crate) fn entry(event_loop: EventLoop<()>) {
-    let ppem = 15.0;
+    let ppem = 20.0;
     let ls = 20.0;
     let mut text = TextArea::default();
     std::env::args().nth(1).map(|x| {
@@ -72,9 +74,32 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                     {
                         let (c, r) = dsb::fit(&FONT,ppem,ls, (size.width as _,size.height as _));
         let cells =text.cells((c, r),[204, 202, 194], [36, 41, 54],);
-    let r = unsafe {
+    let mut r = unsafe {
     dsb::render(&cells, (c, r), ppem, [36, 41, 54],dsb::Fonts::new(*FONT, *FONT, *FONT, *FONT),
-        ls, false)};
+        ls, true)};
+
+
+    let met = FONT.metrics(&[]);
+    let fac = ppem / met.units_per_em as f32;
+
+    // if x.view_o == Some(x.cells.row) || x.view_o.is_none() {
+        let cell =
+            Image::<_, 4>::build(3, (ppem * 1.25).ceil() as u32).fill([0xFF, 0xCC, 0x66, 255]);
+            use fimg::OverlayAt;
+        let (fw, fh) = dsb::dims(&FONT, ppem);
+        unsafe { 
+            let (x, y) = text.cursor();
+
+            r.as_mut().overlay_at(
+                &cell,
+                (x as f32 * fw).floor() as u32,
+                (y as f32 * (fh + ls * fac)).floor()
+                            as u32,
+                // 4 + ((x - 1) as f32 * sz) as u32,
+                // (x as f32 * (ppem * 1.25)) as u32 - 20,
+            )
+        };
+    // }
 
     let mut buffer = surface.buffer_mut().unwrap();
                         for y in 0..height.get() {
@@ -101,14 +126,21 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                     event:WindowEvent::KeyboardInput { device_id, event, is_synthetic }, window_id
                 } if event.state == ElementState::Pressed  => {
 
-            match dbg!(event.logical_key ){
-                Key::Named(NamedKey::Space)=> 
+                    use NamedKey::*;
+                    use Key::*;
+            match (event.logical_key ){
+                Named(Space)=> 
                     text.insert(" "),
-                Key::Named(NamedKey::Backspace) => text.backspace(),
+                Named(Backspace) => text.backspace(),
+                Named(ArrowLeft) => 
+                    text.left(),
+                Named(ArrowRight)=> text.right(),
+                Named(ArrowUp) => text.up(),
+                Named(ArrowDown) => text.down(),
                 
-                Key::Named(NamedKey::Enter)=> 
+                Named(Enter)=> 
                     text.insert("\n"),
-                Key::Character(x) => {
+                Character(x) => {
                     text.insert(&*x);
                 }
                 _ =>{}

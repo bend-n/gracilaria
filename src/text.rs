@@ -1,6 +1,3 @@
-use std::iter::{repeat, repeat_n};
-use std::os::fd::AsRawFd;
-
 use atools::Chunked;
 use dsb::Cell;
 use dsb::cell::Style;
@@ -27,24 +24,83 @@ const fn color(x: &[u8; 6]) -> [u8; 3] {
         |[a, b]| a * 16 + b
     )
 }
-#[test]
-fn x() {
-    dbg!(color(b"ffd173"));
-}
 
+#[derive(Default)]
 pub struct TextArea {
     rope: Rope,
     cursor: usize,
-    // parser: Parser,
     highlighter: Highlighter,
-    tree: Option<Tree>,
+    column: usize,
 }
 
 impl TextArea {
     pub fn insert(&mut self, c: &str) {
-        dbg!(c);
         self.rope.insert(self.cursor, c);
         self.cursor += c.chars().count();
+        self.setc();
+    }
+
+    pub fn cursor(&self) -> (usize, usize) {
+        let y = self.rope.char_to_line(self.cursor);
+        let x = self.cursor - self.rope.line_to_char(y);
+        (x, y)
+    }
+
+    fn setc(&mut self) {
+        self.column = self.cursor
+            - self.rope.line_to_char(self.rope.char_to_line(self.cursor));
+    }
+
+    #[lower::apply(saturating)]
+    pub fn left(&mut self) {
+        self.cursor -= 1;
+        self.setc();
+    }
+
+    #[lower::apply(saturating)]
+    pub fn right(&mut self) {
+        self.cursor += 1;
+        self.cursor = self.cursor.min(self.rope.len_chars());
+        self.setc();
+    }
+
+    pub fn down(&mut self) {
+        let l = self.rope.try_char_to_line(self.cursor).unwrap_or(0);
+
+        // next line size
+        let Some(s) = self.rope.get_line(l + 1) else {
+            return;
+        };
+        if s.len_chars() == 0 {
+            return self.cursor += 1;
+        }
+        // position of start of next line
+        let b = self.rope.line_to_char(l.wrapping_add(1));
+        self.cursor = b + if s.len_chars() > self.column {
+            // if next line is long enough to position the cursor at column, do so
+            self.column
+        } else {
+            // otherwise, put it at the end of the next line, as it is too short.
+            s.len_chars()
+                - self
+                    .rope
+                    .get_line(l.wrapping_add(2))
+                    .map(|_| 1)
+                    .unwrap_or(0)
+        };
+    }
+
+    pub fn up(&mut self) {
+        let l = self.rope.try_char_to_line(self.cursor).unwrap_or(0);
+        let Some(s) = self.rope.get_line(l.wrapping_sub(1)) else {
+            return;
+        };
+        let b = self.rope.line_to_char(l - 1);
+        self.cursor = b + if s.len_chars() > self.column {
+            self.column
+        } else {
+            s.len_chars() - 1
+        };
     }
 
     pub fn backspace(&mut self) {
@@ -61,7 +117,7 @@ impl TextArea {
         let mut x = HighlightConfiguration::new(
             tree_sitter_rust::LANGUAGE.into(),
             "rust",
-            tree_sitter_rust::HIGHLIGHTS_QUERY,
+            include_str!("queries.scm"),
             tree_sitter_rust::INJECTIONS_QUERY,
             "",
         )
@@ -99,26 +155,31 @@ impl TextArea {
             .map(Result::unwrap)
         {
             match hl {
-                HighlightEvent::Source { start, end } => {
-                    // for elem in start..end {
-                    //     styles[elem] = s;
-                    // }
-                    let y1 = self.rope.char_to_line(start);
-                    let y2 = self.rope.char_to_line(start);
-                    let x1 = start - self.rope.line_to_char(y1);
-                    let x2 = end - self.rope.line_to_char(y2);
-                    // dbg!((x1, y1), (x2, y2));
-                    cells.get_mut(y1 * c + x1..y2 * c + x2).map(|x| {
-                        x.iter_mut()
-                            .for_each(|x| x.style.color = COLORS[s])
-                    });
-                    // println!(
-                    //     "highlight {} {s} {}: {:?}",
-                    //     self.rope.byte_slice(start..end),
-                    //     NAMES[s],
-                    //     COLORS[s],
-                    // )
-                }
+                HighlightEvent::Source { start, end } => drop::<
+                    ropey::Result<()>,
+                >(
+                    try {
+                        // for elem in start..end {
+                        //     styles[elem] = s;
+                        // }
+                        let y1 = self.rope.try_char_to_line(start)?;
+                        let y2 = self.rope.try_char_to_line(start)?;
+                        let x1 = start - self.rope.try_line_to_char(y1)?;
+                        let x2 = end - self.rope.try_line_to_char(y2)?;
+                        // dbg!((x1, y1), (x2, y2));
+                        cells.get_mut(y1 * c + x1..y2 * c + x2).map(|x| {
+                            x.iter_mut()
+                                .for_each(|x| x.style.color = COLORS[s])
+                        });
+                        // println!(
+                        //     "highlight {} {s} {}: {:?}",
+                        //     self.rope.byte_slice(start..end),
+                        //     NAMES[s],
+                        //     COLORS[s],
+                        // )
+                        ()
+                    },
+                ),
                 HighlightEvent::HighlightStart(s_) => s = s_.0,
                 HighlightEvent::HighlightEnd => s = 0,
             }
@@ -152,21 +213,6 @@ impl TextArea {
             }
         }
         cells
-    }
-}
-
-impl Default for TextArea {
-    fn default() -> Self {
-        // let mut parser = Highlighter::new();
-
-        let mut x = Self {
-            rope: Default::default(),
-            cursor: 0,
-            tree: None,
-            highlighter: Highlighter::new(),
-        };
-
-        x
     }
 }
 
