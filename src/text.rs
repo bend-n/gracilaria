@@ -34,6 +34,10 @@ pub struct TextArea {
 }
 
 impl TextArea {
+    pub fn l(&self) -> usize {
+        self.rope.len_lines()
+    }
+
     pub fn insert(&mut self, c: &str) {
         self.rope.insert(self.cursor, c);
         self.cursor += c.chars().count();
@@ -107,12 +111,13 @@ impl TextArea {
         _ = self.rope.try_remove(self.cursor - 1..self.cursor);
         self.cursor = self.cursor.saturating_sub(1);
     }
-
+    #[implicit_fn::implicit_fn]
     pub fn cells(
         &mut self,
         (c, r): (usize, usize),
         color: [u8; 3],
         bg: [u8; 3],
+        vo: usize,
     ) -> Vec<Cell> {
         let mut x = HighlightConfiguration::new(
             tree_sitter_rust::LANGUAGE.into(),
@@ -134,7 +139,7 @@ impl TextArea {
                 },
                 letter: None,
             };
-            c * r
+            self.l().max(r) * c
         ];
 
         // dbg!(unsafe {
@@ -155,31 +160,26 @@ impl TextArea {
             .map(Result::unwrap)
         {
             match hl {
-                HighlightEvent::Source { start, end } => drop::<
-                    ropey::Result<()>,
-                >(
-                    try {
-                        // for elem in start..end {
-                        //     styles[elem] = s;
-                        // }
-                        let y1 = self.rope.try_char_to_line(start)?;
-                        let y2 = self.rope.try_char_to_line(start)?;
-                        let x1 = start - self.rope.try_line_to_char(y1)?;
-                        let x2 = end - self.rope.try_line_to_char(y2)?;
-                        // dbg!((x1, y1), (x2, y2));
-                        cells.get_mut(y1 * c + x1..y2 * c + x2).map(|x| {
-                            x.iter_mut()
-                                .for_each(|x| x.style.color = COLORS[s])
-                        });
-                        // println!(
-                        //     "highlight {} {s} {}: {:?}",
-                        //     self.rope.byte_slice(start..end),
-                        //     NAMES[s],
-                        //     COLORS[s],
-                        // )
-                        ()
-                    },
-                ),
+                HighlightEvent::Source { start, end } => {
+                    // for elem in start..end {
+                    //     styles[elem] = s;
+                    // }
+                    let y1 = self.rope.byte_to_line(start);
+                    let y2 = self.rope.byte_to_line(start);
+                    let x1 = start - self.rope.line_to_char(y1);
+                    let x2 = end - self.rope.line_to_char(y2);
+                    // dbg!((x1, y1), (x2, y2));
+                    cells.get_mut(y1 * c + x1..y2 * c + x2).map(|x| {
+                        x.iter_mut()
+                            .for_each(|x| x.style.color = COLORS[s])
+                    });
+                    // println!(
+                    //     "highlight {} {s} {}: {:?}",
+                    //     self.rope.byte_slice(start..end),
+                    //     NAMES[s],
+                    //     COLORS[s],
+                    // )
+                }
                 HighlightEvent::HighlightStart(s_) => s = s_.0,
                 HighlightEvent::HighlightEnd => s = 0,
             }
@@ -205,44 +205,16 @@ impl TextArea {
         //     i += 1;
         // }
 
-        for (l, y) in self.rope.lines().take(r).zip(0..) {
+        for (l, y) in self.rope.lines().zip(0..) {
             for (e, x) in l.chars().take(c).zip(0..) {
                 if e != '\n' {
                     cells[y * c + x].letter = Some(e);
                 }
             }
         }
+        let cells = cells[vo * c..vo * c + r * c].to_vec();
+        assert_eq!(cells.len(), c * r);
+
         cells
-    }
-}
-
-pub trait TakeLine<'b> {
-    fn take_line<'a>(&'a mut self) -> Option<&'b [u8]>;
-    fn take_backline<'a>(&'a mut self) -> Option<&'b [u8]>;
-}
-
-impl<'b> TakeLine<'b> for &'b [u8] {
-    fn take_line<'a>(&'a mut self) -> Option<&'b [u8]> {
-        match memchr::memchr(b'\n', self) {
-            None if self.is_empty() => None,
-            None => Some(std::mem::replace(self, b"")),
-            Some(end) => {
-                let line = &self[..end];
-                *self = &self[end + 1..];
-                Some(line)
-            }
-        }
-    }
-
-    fn take_backline<'a>(&'a mut self) -> Option<&'b [u8]> {
-        let end = self.len().checked_sub(1)?;
-        match memchr::memrchr(b'\n', &self[..end]) {
-            None => Some(std::mem::replace(self, b"")),
-            Some(end) => {
-                let line = &self[end + 1..];
-                *self = &self[..end];
-                Some(line)
-            }
-        }
     }
 }

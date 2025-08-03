@@ -2,11 +2,11 @@
 #![allow(incomplete_features, redundant_semicolons)]
 use std::num::NonZeroU32;
 use std::sync::LazyLock;
+use std::time::Instant;
 
-use dsb::cell::Style;
 use fimg::Image;
 use swash::FontRef;
-use winit::event::{ElementState, Event, KeyEvent, WindowEvent};
+use winit::event::{ElementState, Event, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::keyboard::{Key, NamedKey};
 
@@ -21,7 +21,8 @@ fn main() {
 #[implicit_fn::implicit_fn]
 pub(crate) fn entry(event_loop: EventLoop<()>) {
     let ppem = 20.0;
-    let ls = 20.0;
+    let ls = 20.0;    let mut vo = 0;
+
     let mut text = TextArea::default();
     std::env::args().nth(1).map(|x| {
         text.insert(&std::fs::read_to_string(x).unwrap());
@@ -30,6 +31,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
         |elwt| {
             let window = winit_app::make_window(elwt, |w| w);
             window.set_ime_allowed(true);
+            window.set_ime_purpose(winit::window::ImePurpose::Terminal);
 
             let context =
                 softbuffer::Context::new(window.clone()).unwrap();
@@ -73,38 +75,45 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                     (NonZeroU32::new(size.width), NonZeroU32::new(size.height))
                     {
                         let (c, r) = dsb::fit(&FONT,ppem,ls, (size.width as _,size.height as _));
-        let cells =text.cells((c, r),[204, 202, 194], [36, 41, 54],);
-    let mut r = unsafe {
+                        let now = Instant::now();
+        let cells =text.cells((c, r),[204, 202, 194], [36, 41, 54], vo);
+        println!("cell=");
+        dbg!(now.elapsed());
+                                let now = Instant::now();
+
+    let mut res = unsafe {
     dsb::render(&cells, (c, r), ppem, [36, 41, 54],dsb::Fonts::new(*FONT, *FONT, *FONT, *FONT),
         ls, true)};
-
-
+        eprint!("rend=");
+        dbg!(now.elapsed());
     let met = FONT.metrics(&[]);
     let fac = ppem / met.units_per_em as f32;
+                                let now = Instant::now();
 
     // if x.view_o == Some(x.cells.row) || x.view_o.is_none() {
-        let cell =
-            Image::<_, 4>::build(3, (ppem * 1.25).ceil() as u32).fill([0xFF, 0xCC, 0x66, 255]);
-            use fimg::OverlayAt;
+        use fimg::OverlayAt;
         let (fw, fh) = dsb::dims(&FONT, ppem);
+        let cell = Image::<_, 4>::build(3, (fh).ceil() as u32).fill([0xFF, 0xCC, 0x66, 255]);
         unsafe { 
             let (x, y) = text.cursor();
-
-            r.as_mut().overlay_at(
+            if (vo..vo+r-1).contains(&y) {
+            res.as_mut().overlay_at(
                 &cell,
                 (x as f32 * fw).floor() as u32,
-                (y as f32 * (fh + ls * fac)).floor()
+                ((y-vo) as f32 * (fh + ls * fac)).floor()
                             as u32,
                 // 4 + ((x - 1) as f32 * sz) as u32,
                 // (x as f32 * (ppem * 1.25)) as u32 - 20,
-            )
-        };
+            );}
+            eprint!("conv = ")
+        };        dbg!(now.elapsed());
+
     // }
 
     let mut buffer = surface.buffer_mut().unwrap();
                         for y in 0..height.get() {
                             for x in 0..width.get() {
-                                let [red, green, blue] =r.get_pixel(x, y).unwrap_or_default().map(_ as u32);
+                                let [red, green, blue] =res.get_pixel(x, y).unwrap_or_default().map(_ as u32);
                                 let index = y as usize * width.get() as usize + x as usize;
                                 buffer[index] = blue | (green << 8) | (red << 16);
                             }
@@ -122,13 +131,28 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                 } if window_id == window.id() => {
                     elwt.exit();
                 }
+                Event::WindowEvent { window_id:_, event:  
+                    WindowEvent::MouseWheel { device_id:_, delta: MouseScrollDelta::LineDelta(_, rows), phase }
+            } => {
+            if rows < 0.0 {
+            let rows = rows.ceil().abs() as usize;
+            let (_, r) = dsb::fit(&FONT,ppem,ls, (window.inner_size() .width as _,window.inner_size().height as _));
+            vo = (vo + rows).min(text.l() - r);
+        } else {
+            let rows = rows.floor() as usize;
+            vo = vo.saturating_sub(rows);
+        }
+        window.request_redraw();
+        dbg!(vo);
+            }
                 Event::WindowEvent{
                     event:WindowEvent::KeyboardInput { device_id, event, is_synthetic }, window_id
                 } if event.state == ElementState::Pressed  => {
 
                     use NamedKey::*;
                     use Key::*;
-            match (event.logical_key ){
+            match event.logical_key {
+
                 Named(Space)=> 
                     text.insert(" "),
                 Named(Backspace) => text.backspace(),
