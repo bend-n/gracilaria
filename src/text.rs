@@ -2,7 +2,6 @@ use atools::Chunked;
 use dsb::Cell;
 use dsb::cell::Style;
 use ropey::Rope;
-use tree_sitter::{InputEdit, Language, Parser, Point, Tree};
 use tree_sitter_highlight::{
     HighlightConfiguration, HighlightEvent, Highlighter,
 };
@@ -28,7 +27,7 @@ const fn color(x: &[u8; 6]) -> [u8; 3] {
 #[derive(Default)]
 pub struct TextArea {
     rope: Rope,
-    cursor: usize,
+    pub cursor: usize,
     highlighter: Highlighter,
     column: usize,
     pub vo: usize,

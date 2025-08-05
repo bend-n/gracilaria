@@ -3,7 +3,9 @@
 use std::num::NonZeroU32;
 use std::sync::LazyLock;
 use std::time::Instant;
-
+use atools::prelude::*;
+use dsb::cell::Style;
+use dsb::Cell;
 use fimg::Image;
 use swash::FontRef;
 use winit::event::{ElementState, Event, MouseScrollDelta, WindowEvent};
@@ -24,8 +26,10 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
     let ls = 20.0;
 
     let mut text = TextArea::default();
+    let fname = std::env::args().nth(1).unwrap_or("new buffer".into());
     std::env::args().nth(1).map(|x| {
         text.insert(&std::fs::read_to_string(x).unwrap());
+        text.cursor = 0;
     });
     let app = winit_app::WinitAppBuilder::with_init(
         |elwt| {
@@ -76,7 +80,18 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                     {
                         let (c, r) = dsb::fit(&FONT,ppem,ls, (size.width as _,size.height as _));
                         let now = Instant::now();
-        let cells =text.cells((c, r),[204, 202, 194], [36, 41, 54]);
+                let mut cells = vec![Cell {
+                    style: Style { color: [36, 41, 54], bg: [204,202,194 ], flags:0 }, letter:None 
+                }; c];
+                
+
+        cells[2.."gracilaria".len()+2].iter_mut().zip("gracilaria".chars()).for_each(|(x, y)| x.letter = Some(y));
+        cells[c / 2 - fname.len() /2.. c/2 - fname.len()/2 + fname.len()]
+            .iter_mut().zip(fname.chars()).for_each(|(x, y)| x.letter = Some(y));
+        cells.extend(
+    
+        text.cells((c, r - 1),[204, 202, 194], [36, 41, 54]));
+
         println!("cell=");
         dbg!(now.elapsed());
                                 let now = Instant::now();
@@ -96,6 +111,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
         let cell = Image::<_, 4>::build(3, (fh).ceil() as u32).fill([0xFF, 0xCC, 0x66, 255]);
         unsafe { 
             let (x, y) = text.cursor();
+            let y = y + 1;
             if (text.vo..text.vo+r-1).contains(&y) {
             res.as_mut().overlay_at(
                 &cell,
@@ -113,9 +129,8 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
     let mut buffer = surface.buffer_mut().unwrap();
                         for y in 0..height.get() {
                             for x in 0..width.get() {
-                                let [red, green, blue] =res.get_pixel(x, y).unwrap_or_default().map(_ as u32);
                                 let index = y as usize * width.get() as usize + x as usize;
-                                buffer[index] = blue | (green << 8) | (red << 16);
+                                buffer[index] = u32 ::from_be_bytes(0.join(res.get_pixel(x, y).unwrap_or_default()));
                             }
                         }
 
@@ -132,7 +147,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                     elwt.exit();
                 }
                 Event::WindowEvent { window_id:_, event:  
-                    WindowEvent::MouseWheel { device_id:_, delta: MouseScrollDelta::LineDelta(_, rows), phase }
+                    WindowEvent::MouseWheel { device_id:_, delta: MouseScrollDelta::LineDelta(_, rows), phase :_}
             } => {
             if rows < 0.0 {
             let rows = rows.ceil().abs() as usize;
@@ -145,7 +160,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
         window.request_redraw();
             }
                 Event::WindowEvent{
-                    event:WindowEvent::KeyboardInput { device_id, event, is_synthetic }, window_id
+                    event:WindowEvent::KeyboardInput {  event, .. }, ..
                 } if event.state == ElementState::Pressed  => {
 
                     use NamedKey::*;
