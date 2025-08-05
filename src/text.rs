@@ -31,6 +31,7 @@ pub struct TextArea {
     cursor: usize,
     highlighter: Highlighter,
     column: usize,
+    pub vo: usize,
 }
 
 impl TextArea {
@@ -143,7 +144,6 @@ impl TextArea {
         (c, r): (usize, usize),
         color: [u8; 3],
         bg: [u8; 3],
-        vo: usize,
     ) -> Vec<Cell> {
         let mut x = HighlightConfiguration::new(
             tree_sitter_rust::LANGUAGE.into(),
@@ -238,7 +238,7 @@ impl TextArea {
                 }
             }
         }
-        let cells = cells[vo * c..vo * c + r * c].to_vec();
+        let cells = cells[self.vo * c..self.vo * c + r * c].to_vec();
         assert_eq!(cells.len(), c * r);
 
         cells

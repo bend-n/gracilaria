@@ -21,7 +21,7 @@ fn main() {
 #[implicit_fn::implicit_fn]
 pub(crate) fn entry(event_loop: EventLoop<()>) {
     let ppem = 20.0;
-    let ls = 20.0;    let mut vo = 0;
+    let ls = 20.0;
 
     let mut text = TextArea::default();
     std::env::args().nth(1).map(|x| {
@@ -76,7 +76,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                     {
                         let (c, r) = dsb::fit(&FONT,ppem,ls, (size.width as _,size.height as _));
                         let now = Instant::now();
-        let cells =text.cells((c, r),[204, 202, 194], [36, 41, 54], vo);
+        let cells =text.cells((c, r),[204, 202, 194], [36, 41, 54]);
         println!("cell=");
         dbg!(now.elapsed());
                                 let now = Instant::now();
@@ -96,11 +96,11 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
         let cell = Image::<_, 4>::build(3, (fh).ceil() as u32).fill([0xFF, 0xCC, 0x66, 255]);
         unsafe { 
             let (x, y) = text.cursor();
-            if (vo..vo+r-1).contains(&y) {
+            if (text.vo..text.vo+r-1).contains(&y) {
             res.as_mut().overlay_at(
                 &cell,
                 (x as f32 * fw).floor() as u32,
-                ((y-vo) as f32 * (fh + ls * fac)).floor()
+                ((y-text.vo) as f32 * (fh + ls * fac)).floor()
                             as u32,
                 // 4 + ((x - 1) as f32 * sz) as u32,
                 // (x as f32 * (ppem * 1.25)) as u32 - 20,
@@ -137,13 +137,12 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
             if rows < 0.0 {
             let rows = rows.ceil().abs() as usize;
             let (_, r) = dsb::fit(&FONT,ppem,ls, (window.inner_size() .width as _,window.inner_size().height as _));
-            vo = (vo + rows).min(text.l() - r);
+            text.vo = (text.vo + rows).min(text.l() - r);
         } else {
             let rows = rows.floor() as usize;
-            vo = vo.saturating_sub(rows);
+            text.vo = text.vo.saturating_sub(rows);
         }
         window.request_redraw();
-        dbg!(vo);
             }
                 Event::WindowEvent{
                     event:WindowEvent::KeyboardInput { device_id, event, is_synthetic }, window_id
