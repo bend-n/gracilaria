@@ -61,6 +61,32 @@ impl TextArea {
         self.setc();
     }
 
+    #[implicit_fn::implicit_fn]
+    pub fn home(&mut self) {
+        let beg =
+            self.rope.line_to_char(self.rope.char_to_line(self.cursor));
+        let i = self.cursor - beg;
+        let l = self.rope.line(self.rope.char_to_line(self.cursor));
+        let whitespaces = l.chars().take_while(_.is_whitespace()).count();
+        if i == whitespaces {
+            self.cursor = beg;
+            self.column = 0;
+        } else {
+            self.cursor = whitespaces + beg;
+            self.column = whitespaces;
+        }
+    }
+
+    pub fn end(&mut self) {
+        let i = self.rope.char_to_line(self.cursor);
+        let beg = self.rope.line_to_char(i);
+
+        let l = self.rope.line(self.rope.char_to_line(self.cursor));
+        self.cursor = beg + l.len_chars()
+            - self.rope.get_line(i + 1).map(|_| 1).unwrap_or(0);
+        self.setc();
+    }
+
     #[lower::apply(saturating)]
     pub fn right(&mut self) {
         self.cursor += 1;

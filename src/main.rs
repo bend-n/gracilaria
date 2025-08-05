@@ -158,6 +158,8 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                 Named(Backspace) => text.backspace(),
                 Named(ArrowLeft) => 
                     text.left(),
+                Named(Home) => text.home(),
+                Named(End) => text.end(),
                 Named(ArrowRight)=> text.right(),
                 Named(ArrowUp) => text.up(),
                 Named(ArrowDown) => text.down(),
