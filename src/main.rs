@@ -49,6 +49,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
     .with_event_handler(
         move |(window, _context), surface, event, elwt| {
             elwt.set_control_flow(ControlFlow::Wait);
+            let (c, r) = dsb::fit(&FONT,ppem,ls, (window.inner_size() .width as _,window.inner_size().height as _));
             match event {
                 Event::WindowEvent {
                     window_id,
@@ -78,7 +79,6 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                     if let (Some(width), Some(height)) =
                     (NonZeroU32::new(size.width), NonZeroU32::new(size.height))
                     {
-                        let (c, r) = dsb::fit(&FONT,ppem,ls, (size.width as _,size.height as _));
                         let now = Instant::now();
                 let mut cells = vec![Cell {
                     style: Style { color: [36, 41, 54], bg: [204,202,194 ], flags:0 }, letter:None 
@@ -151,7 +151,6 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
             } => {
             if rows < 0.0 {
             let rows = rows.ceil().abs() as usize;
-            let (_, r) = dsb::fit(&FONT,ppem,ls, (window.inner_size() .width as _,window.inner_size().height as _));
             text.vo = (text.vo + rows).min(text.l() - r);
         } else {
             let rows = rows.floor() as usize;
@@ -166,7 +165,6 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                     use NamedKey::*;
                     use Key::*;
             match event.logical_key {
-
                 Named(Space)=> 
                     text.insert(" "),
                 Named(Backspace) => text.backspace(),
@@ -176,8 +174,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                 Named(End) => text.end(),
                 Named(ArrowRight)=> text.right(),
                 Named(ArrowUp) => text.up(),
-                Named(ArrowDown) => text.down(),
-                
+                Named(ArrowDown) => text.down(r),
                 Named(Enter)=> 
                     text.insert("\n"),
                 Character(x) => {

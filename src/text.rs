@@ -94,7 +94,7 @@ impl TextArea {
         self.setc();
     }
 
-    pub fn down(&mut self) {
+    pub fn down(&mut self, r: usize) {
         let l = self.rope.try_char_to_line(self.cursor).unwrap_or(0);
 
         // next line size
@@ -118,6 +118,11 @@ impl TextArea {
                     .map(|_| 1)
                     .unwrap_or(0)
         };
+        if self.rope.char_to_line(self.cursor)
+            >= (self.vo + r).saturating_sub(5)
+        {
+            self.vo += 1;
+        }
     }
 
     pub fn up(&mut self) {
@@ -131,6 +136,10 @@ impl TextArea {
         } else {
             s.len_chars() - 1
         };
+        if self.rope.char_to_line(self.cursor).saturating_sub(4) < self.vo
+        {
+            self.vo = self.vo.saturating_sub(1);
+        }
     }
 
     pub fn backspace(&mut self) {
