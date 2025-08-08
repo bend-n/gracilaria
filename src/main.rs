@@ -13,7 +13,6 @@ use winit::event_loop::{ControlFlow, EventLoop};
 use winit::keyboard::{Key, NamedKey};
 
 use crate::text::TextArea;
-
 mod winit_app;
 
 mod text;
@@ -80,18 +79,20 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                     (NonZeroU32::new(size.width), NonZeroU32::new(size.height))
                     {
                         let now = Instant::now();
-                let mut cells = vec![Cell {
-                    style: Style { color: [36, 41, 54], bg: [204,202,194 ], flags:0 }, letter:None 
-                }; c];
+                
                 
 
-        cells[2.."gracilaria".len()+2].iter_mut().zip("gracilaria".chars()).for_each(|(x, y)| x.letter = Some(y));
+        let mut cells = text.cells((c, r - 1),[204, 202, 194], [36, 41, 54]);
+        cells.extend({
+            let mut cells = vec![Cell {
+                    style: Style { color: [36, 41, 54], bg: [204,202,194 ], flags:0 }, letter:None 
+                }; c];
+            cells[2.."gracilaria".len()+2].iter_mut().zip("gracilaria".chars()).for_each(|(x, y)| x.letter = Some(y));
         cells[c / 2 - fname.len() /2.. c/2 - fname.len()/2 + fname.len()]
-            .iter_mut().zip(fname.chars()).for_each(|(x, y)| x.letter = Some(y));
-        cells.extend(
-    
-        text.cells((c, r - 1),[204, 202, 194], [36, 41, 54]));
-
+        .iter_mut().zip(fname.chars()).for_each(|(x, y)| x.letter = Some(y));
+    cells
+        });
+                    
         println!("cell=");
         dbg!(now.elapsed());
                                 let now = Instant::now();
@@ -111,8 +112,8 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
         let cell = Image::<_, 4>::build(3, (fh).ceil() as u32).fill([0xFF, 0xCC, 0x66, 255]);
         unsafe { 
             let (x, y) = text.cursor();
-            let y = y + 1;
-            if (text.vo..text.vo+r-1).contains(&y) {
+            let y = y ;
+            if (text.vo..text.vo+r).contains(&y) {
             res.as_mut().overlay_at(
                 &cell,
                 (x as f32 * fw).floor() as u32,

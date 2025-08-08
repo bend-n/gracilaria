@@ -122,6 +122,7 @@ impl TextArea {
             >= (self.vo + r).saturating_sub(5)
         {
             self.vo += 1;
+            self.vo = self.vo.min(self.l() - r);
         }
     }
 
