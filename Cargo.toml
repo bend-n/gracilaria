@@ -19,6 +19,7 @@ tree-sitter-highlight = "0.25.0"
 car = "0.1.2"
 memchr = "2.7.5"
 lower = "0.2.0"
+amap = "0.1.2"
 
 [build-dependencies]
 cc = "*"

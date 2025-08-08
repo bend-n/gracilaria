@@ -17,6 +17,12 @@ const COLORS: [[u8; 3]; 13] = car::map!(
     |x| color(x)
 );
 
+const STYLES: [Option<u8>; 13] = amap::amap! {
+    4 | 9 => Style::ITALIC| Style::BOLD,
+    1 | 3 => Style::ITALIC,
+    11 | 12 => Style::BOLD,
+};
+
 const fn color(x: &[u8; 6]) -> [u8; 3] {
     car::map!(
         car::map!(x, |b| (b & 0xF) + 9 * (b >> 6)).chunked::<2>(),
@@ -205,8 +211,10 @@ impl TextArea {
                     let x2 = end - self.rope.line_to_char(y2);
                     // dbg!((x1, y1), (x2, y2));
                     cells.get_mut(y1 * c + x1..y2 * c + x2).map(|x| {
-                        x.iter_mut()
-                            .for_each(|x| x.style.color = COLORS[s])
+                        x.iter_mut().for_each(|x| {
+                            x.style.flags = STYLES[s].unwrap_or_default();
+                            x.style.color = COLORS[s];
+                        })
                     });
                     // println!(
                     //     "highlight {} {s} {}: {:?}",
