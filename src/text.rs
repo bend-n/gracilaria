@@ -68,12 +68,17 @@ impl TextArea {
     }
 
     #[implicit_fn::implicit_fn]
+    fn indentation(&self) -> usize {
+        let l = self.rope.line(self.rope.char_to_line(self.cursor));
+        l.chars().take_while(_.is_whitespace()).count()
+    }
+
+    #[implicit_fn::implicit_fn]
     pub fn home(&mut self) {
         let beg =
             self.rope.line_to_char(self.rope.char_to_line(self.cursor));
         let i = self.cursor - beg;
-        let l = self.rope.line(self.rope.char_to_line(self.cursor));
-        let whitespaces = l.chars().take_while(_.is_whitespace()).count();
+        let whitespaces = self.indentation();
         if i == whitespaces {
             self.cursor = beg;
             self.column = 0;
@@ -98,6 +103,14 @@ impl TextArea {
         self.cursor += 1;
         self.cursor = self.cursor.min(self.rope.len_chars());
         self.setc();
+    }
+
+    pub fn enter(&mut self) {
+        use bind::*;
+        use run::Run;
+        let n = self.indentation();
+        self.insert("\n");
+        (|| self.insert(" ")).run(n);
     }
 
     pub fn down(&mut self, r: usize) {

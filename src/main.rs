@@ -176,8 +176,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                 Named(ArrowRight)=> text.right(),
                 Named(ArrowUp) => text.up(),
                 Named(ArrowDown) => text.down(r),
-                Named(Enter)=> 
-                    text.insert("\n"),
+                Named(Enter)=> text.enter(),
                 Character(x) => {
                     text.insert(&*x);
                 }
