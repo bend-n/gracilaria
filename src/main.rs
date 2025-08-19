@@ -26,6 +26,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
 
     let mut text = TextArea::default();
     let fname = std::env::args().nth(1).unwrap_or("new buffer".into());
+    let mut fonts = dsb::Fonts::new(*FONT, F::instance(*FONT,* BFONT), *IFONT, F::instance(*IFONT, *BIFONT)); 
     std::env::args().nth(1).map(|x| {
         text.insert(&std::fs::read_to_string(x).unwrap());
         text.cursor = 0;
@@ -97,7 +98,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
         dbg!(now.elapsed());
         let now = Instant::now();
     let mut res = unsafe {
-    dsb::render(&cells, (c, r), ppem, [31, 36, 48],dsb::Fonts::new(*FONT, F::instance(*FONT,* BFONT), *IFONT, F::instance(*IFONT, *BIFONT)),
+    dsb::render(&cells, (c, r), ppem, [31, 36, 48], &mut fonts,
         ls, true)};
         eprint!("rend=");
         dbg!(now.elapsed());
@@ -127,6 +128,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
     // }
 
     let mut buffer = surface.buffer_mut().unwrap();
+
                         for y in 0..height.get() {
                             for x in 0..width.get() {
                                 let index = y as usize * width.get() as usize + x as usize;

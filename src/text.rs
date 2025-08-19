@@ -1,3 +1,5 @@
+use std::sync::LazyLock;
+
 use atools::Chunked;
 use dsb::Cell;
 use dsb::cell::Style;
@@ -173,16 +175,20 @@ impl TextArea {
         color: [u8; 3],
         bg: [u8; 3],
     ) -> Vec<Cell> {
-        let mut x = HighlightConfiguration::new(
-            tree_sitter_rust::LANGUAGE.into(),
-            "rust",
-            include_str!("queries.scm"),
-            tree_sitter_rust::INJECTIONS_QUERY,
-            "",
-        )
-        .unwrap();
+        static HL: LazyLock<HighlightConfiguration> =
+            LazyLock::new(|| {
+                let mut x = HighlightConfiguration::new(
+                    tree_sitter_rust::LANGUAGE.into(),
+                    "rust",
+                    include_str!("queries.scm"),
+                    tree_sitter_rust::INJECTIONS_QUERY,
+                    "",
+                )
+                .unwrap();
 
-        x.configure(&NAMES);
+                x.configure(&NAMES);
+                x
+            });
 
         let mut cells = vec![
             Cell {
@@ -205,7 +211,7 @@ impl TextArea {
         for hl in self
             .highlighter
             .highlight(
-                &x,
+                &HL,
                 &self.rope.bytes().collect::<Vec<_>>(),
                 None,
                 |_| None,
