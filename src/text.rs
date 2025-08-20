@@ -225,7 +225,7 @@ impl TextArea {
                     //     styles[elem] = s;
                     // }
                     let y1 = self.rope.byte_to_line(start);
-                    let y2 = self.rope.byte_to_line(start);
+                    let y2 = self.rope.byte_to_line(end);
                     let x1 = start - self.rope.line_to_char(y1);
                     let x2 = end - self.rope.line_to_char(y2);
                     // dbg!((x1, y1), (x2, y2));

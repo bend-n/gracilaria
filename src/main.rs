@@ -19,6 +19,7 @@ mod text;
 fn main() {
     entry(EventLoop::new().unwrap())
 }
+const bgcolor:[u8;3]=[31, 36, 48];
 #[implicit_fn::implicit_fn]
 pub(crate) fn entry(event_loop: EventLoop<()>) {
     let ppem = 20.0;
@@ -27,6 +28,8 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
     let mut text = TextArea::default();
     let fname = std::env::args().nth(1).unwrap_or("new buffer".into());
     let mut fonts = dsb::Fonts::new(*FONT, F::instance(*FONT,* BFONT), *IFONT, F::instance(*IFONT, *BIFONT)); 
+    let mut i = Image::build(1, 1).fill(bgcolor)
+    ;
     std::env::args().nth(1).map(|x| {
         text.insert(&std::fs::read_to_string(x).unwrap());
         text.cursor = 0;
@@ -63,6 +66,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                     if let (Some(width), Some(height)) =
                         (NonZeroU32::new(size.width), NonZeroU32::new(size.height))
                     {
+                        i = Image::build(size.width,size.height).fill(bgcolor);
                         surface.resize(width, height).unwrap();
                     }
                 }
@@ -97,9 +101,8 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
         println!("cell=");
         dbg!(now.elapsed());
         let now = Instant::now();
-    let mut res = unsafe {
-    dsb::render(&cells, (c, r), ppem, [31, 36, 48], &mut fonts,
-        ls, true)};
+    unsafe {
+    dsb::render(&cells, (c, r), ppem, bgcolor, &mut fonts, ls, true, i.as_mut())};
         eprint!("rend=");
         dbg!(now.elapsed());
     let met = FONT.metrics(&[]);
@@ -114,7 +117,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
             let (x, y) = text.cursor();
             let y = y ;
             if (text.vo..text.vo+r).contains(&y) {
-            res.as_mut().overlay_at(
+            i.as_mut().overlay_at(
                 &cell,
                 (x as f32 * fw).floor() as u32,
                 ((y-text.vo) as f32 * (fh + ls * fac)).floor()
@@ -122,8 +125,8 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                 // 4 + ((x - 1) as f32 * sz) as u32,
                 // (x as f32 * (ppem * 1.25)) as u32 - 20,
             );}
-            eprint!("conv = ")
-        };        dbg!(now.elapsed());
+        };
+        eprint!("conv = ");
 
     // }
 
@@ -132,10 +135,10 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                         for y in 0..height.get() {
                             for x in 0..width.get() {
                                 let index = y as usize * width.get() as usize + x as usize;
-                                buffer[index] = u32 ::from_be_bytes(0.join(res.get_pixel(x, y).unwrap_or_default()));
+                                buffer[index] = u32::from_le_bytes(0.join(unsafe { i.pixel(x, y) }));
                             }
                         }
-
+        dbg!(now.elapsed());
                         buffer.present().unwrap();
                     }
                 }
