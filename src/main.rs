@@ -1,9 +1,21 @@
-#![feature(generic_const_exprs, const_trait_impl, try_blocks)]
+#![feature(
+    if_let_guard,
+    deref_patterns,
+    generic_const_exprs,
+    const_trait_impl,
+    try_blocks,
+    portable_simd
+)]
 #![allow(incomplete_features, redundant_semicolons)]
+use std::convert::identity;
+use std::hint::assert_unchecked;
+use std::iter::zip;
 use std::num::NonZeroU32;
+use std::simd::prelude::*;
 use std::sync::LazyLock;
 use std::time::Instant;
 
+use array_chunks::*;
 use atools::prelude::*;
 use dsb::cell::Style;
 use dsb::{Cell, F};
@@ -13,14 +25,17 @@ use winit::event::{ElementState, Event, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::keyboard::{Key, NamedKey};
 
+use crate::bar::Bar;
 use crate::text::TextArea;
-mod winit_app;
-
+mod bar;
 mod text;
+mod winit_app;
 fn main() {
     entry(EventLoop::new().unwrap())
 }
-const bgcolor: [u8; 3] = [31, 36, 48];
+
+const BG: [u8; 3] = [31, 36, 48];
+const FG: [u8; 3] = [204, 202, 194];
 #[implicit_fn::implicit_fn]
 pub(crate) fn entry(event_loop: EventLoop<()>) {
     let ppem = 20.0;
@@ -34,14 +49,16 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
         *IFONT,
         F::instance(*IFONT, *BIFONT),
     );
-    let mut i = Image::build(1, 1).fill(bgcolor);
+    let mut bar = Bar { holding: None, fname };
+    let mut i = Image::build(1, 1).fill(BG);
+    let mut cells = vec![];
     std::env::args().nth(1).map(|x| {
         text.insert(&std::fs::read_to_string(x).unwrap());
         text.cursor = 0;
     });
     let app = winit_app::WinitAppBuilder::with_init(
         |elwt| {
-            let window = winit_app::make_window(elwt, |w| w);
+            let window = winit_app::make_window(elwt, identity);
             window.set_ime_allowed(true);
             window.set_ime_purpose(winit::window::ImePurpose::Terminal);
 
@@ -83,9 +100,19 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                         NonZeroU32::new(size.width),
                         NonZeroU32::new(size.height),
                     ) {
-                        i = Image::build(size.width, size.height)
-                            .fill(bgcolor);
+                        i = Image::build(size.width, size.height).fill(BG);
                         surface.resize(width, height).unwrap();
+                        cells = vec![
+                            Cell {
+                                style: Style {
+                                    color: BG,
+                                    bg: BG,
+                                    flags: 0
+                                },
+                                letter: None,
+                            };
+                            r * c
+                        ]
                     }
                 }
                 Event::WindowEvent {
@@ -101,40 +128,27 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                     };
                     let size = window.inner_size();
 
-                    if let (Some(width), Some(height)) = (
-                        NonZeroU32::new(size.width),
-                        NonZeroU32::new(size.height),
-                    ) {
+                    if size.height != 0 && size.width != 0 {
                         let now = Instant::now();
-
-                        let mut cells = text.cells(
-                            (c, r - 1),
-                            [204, 202, 194],
-                            [31, 36, 48],
-                        );
-                        cells.extend({
-                            let mut cells = vec![
-                                Cell {
-                                    style: Style {
-                                        color: [31, 36, 48],
-                                        bg: [204, 202, 194],
-                                        flags: Style::ITALIC
-                                    },
-                                    letter: None
-                                };
-                                c
-                            ];
-                            cells[2.."gracilaria".len() + 2]
-                                .iter_mut()
-                                .zip("gracilaria".chars())
-                                .for_each(|(x, y)| x.letter = Some(y));
-                            cells[c / 2 - fname.len() / 2
-                                ..c / 2 - fname.len() / 2 + fname.len()]
-                                .iter_mut()
-                                .zip(fname.chars())
-                                .for_each(|(x, y)| x.letter = Some(y));
-                            cells
+                        cells.fill(Cell {
+                            style: Style { color: BG, bg: BG, flags: 0 },
+                            letter: None,
                         });
+                        let t_ox = text.line_numbers(
+                            (c, r - 1),
+                            [67, 76, 87],
+                            BG,
+                            (&mut cells, (c, r)),
+                            (1, 0),
+                        );
+                        text.write_to(
+                            (c - t_ox, r - 1),
+                            FG,
+                            BG,
+                            (&mut cells, (c, r)),
+                            (1 + t_ox, 0),
+                        );
+                        bar.write_to(BG, FG, (&mut cells, (c, r)), r - 1);
 
                         println!("cell=");
                         dbg!(now.elapsed());
@@ -144,7 +158,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                                 &cells,
                                 (c, r),
                                 ppem,
-                                bgcolor,
+                                BG,
                                 &mut fonts,
                                 ls,
                                 true,
@@ -160,7 +174,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                         // if x.view_o == Some(x.cells.row) || x.view_o.is_none() {
                         use fimg::OverlayAt;
                         let (fw, fh) = dsb::dims(&FONT, ppem);
-                        let cell =
+                        let cursor =
                             Image::<_, 4>::build(3, (fh).ceil() as u32)
                                 .fill([0xFF, 0xCC, 0x66, 255]);
                         unsafe {
@@ -168,7 +182,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             let y = y;
                             if (text.vo..text.vo + r).contains(&y) {
                                 i.as_mut().overlay_at(
-                                    &cell,
+                                    &cursor,
                                     (x as f32 * fw).floor() as u32,
                                     ((y - text.vo) as f32
                                         * (fh + ls * fac))
@@ -182,19 +196,18 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                         eprint!("conv = ");
 
                         // }
+                        let buffer = surface.buffer_mut().unwrap();
 
-                        let mut buffer = surface.buffer_mut().unwrap();
-
-                        for y in 0..height.get() {
-                            for x in 0..width.get() {
-                                let index = y as usize
-                                    * width.get() as usize
-                                    + x as usize;
-                                buffer[index] = u32::from_le_bytes(
-                                    0.join(unsafe { i.pixel(x, y) }),
-                                );
-                            }
-                        }
+                        fimg::overlay::copy_rgb_bgr_(
+                            i.flatten(),
+                            unsafe {
+                                std::slice::from_raw_parts_mut(
+                                    buffer.as_ptr() as *mut u8,
+                                    buffer.len() * 4,
+                                )
+                                .as_chunks_unchecked_mut::<4>()
+                            },
+                        );
                         dbg!(now.elapsed());
                         buffer.present().unwrap();
                     }
@@ -218,13 +231,39 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                     let rows = rows * 3.;
                     if rows < 0.0 {
                         let rows = rows.ceil().abs() as usize;
-                        text.vo = (text.vo + rows).min(text.l() - r);
+                        text.vo = (text.vo + rows).min(text.l() - 1);
                     } else {
                         let rows = rows.floor() as usize;
                         text.vo = text.vo.saturating_sub(rows);
                     }
                     window.request_redraw();
                 }
+                Event::WindowEvent {
+                    event: WindowEvent::KeyboardInput { event, .. },
+                    ..
+                } if event.state == ElementState::Released
+                    && bar
+                        .holding
+                        .as_ref()
+                        .is_some_and(|x| x == &event.logical_key) =>
+                {
+                    bar.holding = None;
+                    window.request_redraw();
+                }
+                Event::WindowEvent {
+                    event: WindowEvent::KeyboardInput { event, .. },
+                    ..
+                } if let Some(Key::Named(NamedKey::Control)) =
+                    bar.holding
+                    && event.state == ElementState::Pressed =>
+                {
+                    use Key::*;
+                    match event.logical_key {
+                        Character(x) if x == "s" => {}
+                        _ => panic!(),
+                    }
+                }
+
                 Event::WindowEvent {
                     event: WindowEvent::KeyboardInput { event, .. },
                     ..
@@ -241,6 +280,8 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                         Named(ArrowUp) => text.up(),
                         Named(ArrowDown) => text.down(r),
                         Named(Enter) => text.enter(),
+                        Named(Control) =>
+                            bar.holding = Some(event.logical_key),
                         Character(x) => {
                             text.insert(&*x);
                         }
@@ -277,5 +318,3 @@ pub static BIFONT: LazyLock<Instance<'static>> = LazyLock::new(|| {
 
 pub static BFONT: LazyLock<Instance<'static>> =
     LazyLock::new(|| FONT.instances().find_by_name("Bold").unwrap());
-
-// London. Michaelmas Term lately over, and the Lord Chancellor sitting in Lincoln’s Inn Hall.eImplacable November weather. As much mud in the streets, as if the waters had but newly retiredfrom the face of the earth,1 and it would not be wonderful to meet a Megalosaurus, forty feet longor so, waddling like an elephantine lizard up Holborn Hill.2 Smoke lowering down from chimneypots, making a soft black drizzle, with flakes of soot in it as big as full-grown snowflakes—gone intomourning, one might imagine, for the death of the sun.3 Dogs, undistinguishable in mire. Horses,scarcely better; splashed to their very blinkers. Foot passengers, jostling one another’s umbrellas,in a general infection of ill-temper, and losing their foothold at street-corners, where tens ofthousands of other foot passengers have been slipping and sliding since the day broke (if this dayever broke), adding new deposits to the crust upon crust of mud, sticking at those pointstenaciously to the pavement, and accumulating at compound interest.Fog everywhere. Fog up the river, where it flows among green aitsf and meadows; fog down theriver, where it rolls defiled among the tiers of shipping, and the waterside pollutions of a great (anddirty) city. Fog on the Essex marshes, fog on the Kentish heights. Fog creeping into the cabooses ofcollier-brigs; fog lying o ut on the yards, and hovering in the rigging of great ships; fog drooping onthe gunwalesg of barges and small boats. F og in the eyes and throats of ancient Greenwichpensioners, h wheezing by the firesides of their wards; fog in the stem and bowl of the afternoonpipe of the wrathful skipper, down in his close cabin; fog cruelly pinching the toes and fingers of hisshivering little ‘prentice boy on deck. Chance people on the bridges peeping over the parapets intoa nether sky of fog, with fog all round them, as if they were up in a balloon,4 and hanging in themisty clouds.Gas looming through the fog in divers places in the streets, much as the sun may, from the spongyfields, be seen to loom by husbandman and ploughboy. Most of the shops lighted two hours beforetheir time—as the gas seems to know, for it has a haggard and unwilling look.The raw afternoon is rawest, and the dense fog is densest, and the muddy streets are muddiest,near that leaden-headed old obstruction, appropriate ornament for the threshold of a leadenheaded old corporation: Temple Bar.5 And hard by Temple Bar, in Lincoln’s Inn Hall, at the very heartof the fog, sits the Lord High Chancellor i n his High Court of Chancery.Never can there come fog too thick, never can there come mud and mire too deep, to assort withthe groping and floundering condition which this High Court of Chancery, most pestilent of hoarysinners, holds, this day, in the sight of heaven and earth.On such an afternoon, if ever, the Lord High Chancellor ought to be sitting here—as here he iswith a foggy glory round his head, softly fenced in with crimson cloth and curtains, addressed by alarge advocate with great whiskers, a little voice, and an interminable brief,i and outwardlydirecting his contemplation to the lantern in the roof,j where he can see nothing but fog. On suchan afternoon, some score of members of the High Court of Chancery bar ought to be—as here theyare—mistily engaged in one of the ten thousand stages of an endless cause, tripping one anotherup on slippery precedents, groping knee-deep in technicalities, running their goat-hair and horsehair warded headsk against walls of words, and making a pretence of equity with serious faces, asplayers might. On such an afternoon, the various solicitors l in the cause, some two or three ofwhom have inherited it from  their fathers, who made a fortune by it, ought to be—as are they not—ranged in a line, in a long matted well (but you might look in vain for Truth at the bottom of it),6between the registrar’s red table and the silk gowns, with bills, cross-bills, answers, rejoinders,injunctions, affidavits, issues, references to masters,m masters’ reports, mountains of costlynonsense, piled before them. Well may the court be dim, with wasting candles here and there: wellmay the fog hang heavy in it, as if it would never get out; well may the stained glass windows losetheir colour, and admit no light of day into the place; well may the uninitiated from t he streets, whopeep in through the glass panes in the door, be deterred from entrance by its owlish aspect, and bythe drawl languidly echoing to the roof from the padded dais where the Lord High Chancellor looksinto the lantern that has no light in it, and where the attendant wigs are all stuck in a fog-bank! Thisis the Court of Chancery;7 which has its decaying houses and its blighted lands in every shire; whichhas its worn-out lunatic in every madhouse, and its dead in every churchyard; which has its ruinedsuitor, with his slipshod heels and threadbare dress, borrowing and begging through the round ofevery man’s acquaintance; which gives to monied might, the means abundantly of wearying out theright; which so exhausts finances, patience, courage, hope; so overthrows the brain and breaks theheart;8 that there is not an honourable man among its practitioners who would not give—who doesnot often give—the warning, ‘Suffer any wrong that can be done you, rather than come here!’9Who happen to be in the Lord Chancellor’s court this murky afternoon besides the Lord Chancellor,the counsel in the cause, two or three counsel who are never in any cause, and the well of solicitorsbefore mentioned? There is the registrar below the Judge, in wig and gown; and there are two orthree maces,n or petty-bags, or privy purses, or whatever they may be, in legal court suits. Theseare all yawning; for no crumb of amusement ever falls10 from JARNDYCE AND JARNDYCE (the causein hand), which was squeezed dry years upon years ago. The short-hand writers, the reporters ofthe court, and the reporters of the newspapers, 11 invariably decamp with the rest of the regularswhen Jarndyce and Jarndyce comes on. Their places are a blank. Standing on a seat at the side ofthe hall, the better to peer into the curtained sanctuary,o is a little mad old woman in a squeezedbonnet, who is always in court, from its sitting to its rising, and always expecting someincomprehensible judgment to be given in her favour. Some say she really is, or was, a party to asuit; but no one knows for certain, because no one cares. She carries some small litter in a reticulepwhich she calls her documents ; principally consisting of paper matchesq and dry lavender. A sal-low prisoner12 has come up, in custody, for the half-dozenth time, to make a personal application‘to purge himself of his contempt;’ which, being a solitary surviving executor who has fallen into astate of conglomeration about accounts of whi ch it is not pretended that he had ever anyknowledge, he is not at all likely ever to do. In the meantime his prospects in life are ended.Another ruined suitor, who periodically appears from Shropshire, and breaks out into efforts toaddress the Chancellor at the close of the day’s business, and who can by no means be made tounderstand that the Chancellor is legally ignorant of his existence r after making it desolate for aquarter of a century, plants himself in a good place and keeps an eye on the Judge, ready to call out‘My Lord!’ in a voice of sonorous complaint, on the instant of his rising. A few lawyers’ clerks andothers who know this suitor by sight, linger, on the chance of his furnishing some fun, andenlivening the dismal weather a little.Jarndyce and Jarndyce drones on. This scarecrow of a suit has, in course of time, become socomplicated, that no man alive knows what it means. The parties to it understand it least; but it hasbeen observed that no two Chancery lawyers can talk about it for five minutes, without coming to atotal disagreement as to all the premises. Innumerable children have been born into the cause;innumerable young people have married into it; innumerable old people have died out of it. Scoresof persons have deliriously found themselves made parties in Jarndyce and Jarndyce, withoutknowing how or why; whole families have inherited legendary hatreds with the suit. The littleplaintiff or defendant, who was promised a new rocking-horse when Jarndyce and Jarndyce shouldbe settled, has grown up, possessed himself of a real horse, and trotted away into the other world.Fair wards of courtshave faded into mothers and grandmothers; a long procession of Chancellorshas come in and gone out; the legion of bills in the suit have been transformed into mere bills ofmortality;t there are not three Jarndyces left upon the earth perhaps, since old Tom Jarndyce indespair blew his brains out at a coffee-house in Chancery Lane; but Jarndyce and Jarndyce stilldrags its dreary length before the Court,13 perennially hopeless.Jarndyce and Jarndyce has passed into a joke. That is the only good that has ever come of it. It hasbeen death to many, but it is a joke in the profession. Every master in Chancery has had a referenceout of it. Every Chancellor was ‘in it,’ for somebody or other, when he was counsel at the bar. Goodthings have been said about it by blue-nosed, bulbousshoed old benchers, u in select port-winecommittee after dinner in hall. Articled clerksv have been in the habit of fleshing their legal witupon it. The last Lord Chancellor handled it neatly when, correcting Mr. Blowers, the eminent silkgown who said that such a thing might happen when the sky rained potatoes,14 he observed, ‘orwhen we get through Jarndyce and Jarndyce, Mr. Blowers;‘—a pleasantry that particularly tickledthe maces, bags, and purses.How many people out of the suit, Jarndyce and Jarndyce has stretched forth its unwholesome handto spoil and corrupt, would be a very wide question. From the master, upon whose impaling filesreams of dusty warrants in Jarndyce and Jarndyce have grimly writhed into many shapes; down tothe copying-clerk in the Six Clerks’ Office,15 who has copied his tens of thousands of Chancery-foliopagesw under that eternal heading; no man’s nature has been made better by it. In trickery,evasion, procrastination, spoliation, botheration, under false pretences of all sorts, there areinfluences that can never come to good. The very solicitors’ boys who have kept the wretchedsuitors at bay, by protesting time out of mind that Mr. Chizzle, Mizzle, or otherwise, was particularlyengaged and h ad appointments until dinner, may have got an extra moral twist and shuffle intothemselves out of Jarndyce and Jarndyce. The receiver in the cause has acquired a goodly sum ofmoney by it, but has acquired too a distrust of his own mother; and a contempt for his own kind.Chizzle, Mizzle, and otherwise, have lapsed into a habit of vaguely promising themselves that theywill look into that outstanding little matter, and see what can be done for Drizzle—who was not wellused—when Jarndyce and Jarndyce shall be got out of the office. Shirking and sharking, in all theirmany varieties, have been sown broadcast by the ill-fated cause; and even those who havecontemplated its history from the outermost circle of such evil, have been insensibly tempted into aloose way of letting bad things alone to take their own bad course, and a loose belief that if theworld go wrong, it was, in some off-hand manner, never meant to go right.Thus, in the midst of the mud and at the heart of the fog, sits the Lord High Cha ncellor in his HighCourt of Chancery.‘Mr. Tangle,’ says the Lord High Chancellor, latterly something restless under the eloquence of thatlearned gentleman.‘Mlud,’ says Mr. Tangle. Mr. Tangle knows more of Jarndyce and Jarndyce than anybody. He isfamous for it—supposed never to have read anything else since he left school.‘Have you nearly concluded your argument?’‘Mlud, no—variety of points—feel it my duty tsubmit—ludship,’ is the reply that slides out of Mr.Tangle.‘Several members of the bar are still to be heard, I believe?’ says the Chancellor, with a slight smile.Eighteen of Mr. Tangle’s learned friends, each armed with a little summary of eighteen hundredsheets, bob up like eighteen hammers in a pianoforte, make eighteen bows, and drop into theireighteen places of obscurity‘We will proceed with the hearing on Wednesday fortnight,’ says the Chancellor. For the question atissue is only a question of costs, a mere bud on the forest tree of the parent suit, and really willcome to a settlement one of these days.The Chancellor rises; the bar rises; the prisoner is brought forward in a hurry; the man fromShropshire cries, ‘My lord!’ Maces, bags, and purses, indignantly proclaim silence, and frown at theman from Shropshire.‘In reference,’ proceeds the Chancellor, still on Jarndyce and Jarndyce, ‘to the young girl—‘‘Begludship’s pardon—boy,’ says Mr. Tangle, prematurely.‘In reference,’ proceeds the Chancellor, with extra distinctness, ‘to the young girl and boy, the twoyoung people,’ (Mr. Tangle crushed.)‘Whom I directed to be in attendance to-day, and who are now in my private room, I will see themand satisfy myself as to the expediency of making the order for their residing with their uncle.’Mr. Tangle on his legs again.‘Begludship’s pardon—dead.’‘With their,’ Chancellor looking through his double eye-glass at the papers on his desk, ‘grandfather.’‘Begludship’s pardon—victim of rash action—brains.’Suddenly a very little counsel, with a terrific bass voice, arises, fully inflated, in the back settlementsof the fog, and says, ‘Will your lordship allow me? I appear for him. He is a cousin, several timesremoved. I am not at the moment prepared to inform the Court in what exact remove he is acousin; but he is a cousin.’Leaving this address (delivered like a sepulchral message) ringing in the rafters of the roof, the verylittle counsel drops, and the fog knows him no more. Everybody looks for him. Nobody can seehim.16‘I will speak with both the young people,’ says the Chancellor anew, ‘and satisfy myself on thesubject of their residing with their cousin. I will mention the matter to-morrow morning when I takemy seat.’The Chancellor is about to bow to the bar, when the prisoner is presented. Nothing can possiblycome of the prisoner’s conglomeration, but his being sent back to prison; which is soon done. Theman from Shropshire ventures another demonstrative ‘My lord!’ but the Chancellor, being aware ofhim, has dexterously vanished. Everybody else quickly vanishes too. A battery of blue bagsx isloaded with heavy charges of papers and carried off by clerks; the little mad old woman marchesoff with her documents; the empty court is locked up. If all the injustice it has committed, and allthe misery it has caused, could only be locked up with it, and the whole burnt away in a greatfuneral pyre,—why so much the better for other parties than the parties in Jarndyce and Jarndyce!

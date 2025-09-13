@@ -20,8 +20,8 @@ car = "0.1.2"
 memchr = "2.7.5"
 lower = "0.2.0"
 amap = "0.1.2"
-bind = { git = "https://github.com/bend-n/bind", version = "0.1.0" }
 run_times = "0.1.0"
+array_chunks = "1.0.0"
 
 [build-dependencies]
 cc = "*"

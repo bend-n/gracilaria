@@ -108,7 +108,6 @@ impl TextArea {
     }
 
     pub fn enter(&mut self) {
-        use bind::*;
         use run::Run;
         let n = self.indentation();
         self.insert("\n");
@@ -169,12 +168,14 @@ impl TextArea {
         self.cursor = self.cursor.saturating_sub(1);
     }
     #[implicit_fn::implicit_fn]
-    pub fn cells(
+    pub fn write_to(
         &mut self,
         (c, r): (usize, usize),
         color: [u8; 3],
         bg: [u8; 3],
-    ) -> Vec<Cell> {
+        (into, (w, _)): (&mut [Cell], (usize, usize)),
+        (ox, oy): (usize, usize),
+    ) {
         static HL: LazyLock<HighlightConfiguration> =
             LazyLock::new(|| {
                 let mut x = HighlightConfiguration::new(
@@ -195,7 +196,7 @@ impl TextArea {
                 style: Style { color, bg, flags: 0 },
                 letter: None,
             };
-            self.l().max(r) * c
+            (self.l().max(r) + r - 1) * c
         ];
 
         // dbg!(unsafe {
@@ -270,9 +271,39 @@ impl TextArea {
                 }
             }
         }
-        let cells = cells[self.vo * c..self.vo * c + r * c].to_vec();
+        let cells = &cells[self.vo * c..self.vo * c + r * c];
         assert_eq!(cells.len(), c * r);
 
-        cells
+        for y in 0..r {
+            for x in 0..c {
+                into[(y + oy) * w + (x + ox)] = cells[y * c + x];
+            }
+        }
+    }
+    pub fn line_numbers(
+        &self,
+        (_, r): (usize, usize),
+        color: [u8; 3],
+        bg: [u8; 3],
+        (into, (w, _)): (&mut [Cell], (usize, usize)),
+        (ox, oy): (usize, usize),
+    ) -> usize {
+        let need = self.l().ilog10() as usize + 2;
+        for y in 0..r {
+            if (self.vo + y) < self.l() {
+                (self.vo + y)
+                    .to_string()
+                    .chars()
+                    .zip(into[(y + oy) * w..].iter_mut().skip(ox))
+                    .for_each(|(a, b)| {
+                        *b = Cell {
+                            style: Style { color, bg, flags: 0 },
+                            letter: Some(a),
+                        }
+                    });
+            }
+        }
+
+        need
     }
 }
