@@ -76,11 +76,7 @@ where
         init: Init,
         init_surface: InitSurface,
     ) -> Self {
-        Self {
-            init,
-            init_surface,
-            _marker: PhantomData,
-        }
+        Self { init, init_surface, _marker: PhantomData }
     }
 
     /// Build a new application.

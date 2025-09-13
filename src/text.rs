@@ -192,11 +192,7 @@ impl TextArea {
 
         let mut cells = vec![
             Cell {
-                style: Style {
-                    color,
-                    bg,
-                    flags: 0,
-                },
+                style: Style { color, bg, flags: 0 },
                 letter: None,
             };
             self.l().max(r) * c

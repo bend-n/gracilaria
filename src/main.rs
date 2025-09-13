@@ -1,8 +1,9 @@
-#![feature(generic_const_exprs, const_trait_impl,try_blocks)]
+#![feature(generic_const_exprs, const_trait_impl, try_blocks)]
 #![allow(incomplete_features, redundant_semicolons)]
 use std::num::NonZeroU32;
 use std::sync::LazyLock;
 use std::time::Instant;
+
 use atools::prelude::*;
 use dsb::cell::Style;
 use dsb::{Cell, F};
@@ -19,7 +20,7 @@ mod text;
 fn main() {
     entry(EventLoop::new().unwrap())
 }
-const bgcolor:[u8;3]=[31, 36, 48];
+const bgcolor: [u8; 3] = [31, 36, 48];
 #[implicit_fn::implicit_fn]
 pub(crate) fn entry(event_loop: EventLoop<()>) {
     let ppem = 20.0;
@@ -27,9 +28,13 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
 
     let mut text = TextArea::default();
     let fname = std::env::args().nth(1).unwrap_or("new buffer".into());
-    let mut fonts = dsb::Fonts::new(*FONT, F::instance(*FONT,* BFONT), *IFONT, F::instance(*IFONT, *BIFONT)); 
-    let mut i = Image::build(1, 1).fill(bgcolor)
-    ;
+    let mut fonts = dsb::Fonts::new(
+        *FONT,
+        F::instance(*FONT, *BFONT),
+        *IFONT,
+        F::instance(*IFONT, *BIFONT),
+    );
+    let mut i = Image::build(1, 1).fill(bgcolor);
     std::env::args().nth(1).map(|x| {
         text.insert(&std::fs::read_to_string(x).unwrap());
         text.cursor = 0;
@@ -52,21 +57,34 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
     .with_event_handler(
         move |(window, _context), surface, event, elwt| {
             elwt.set_control_flow(ControlFlow::Wait);
-            let (c, r) = dsb::fit(&FONT,ppem,ls, (window.inner_size() .width as _,window.inner_size().height as _));
+            let (c, r) = dsb::fit(
+                &FONT,
+                ppem,
+                ls,
+                (
+                    window.inner_size().width as _,
+                    window.inner_size().height as _,
+                ),
+            );
             match event {
                 Event::WindowEvent {
                     window_id,
                     event: WindowEvent::Resized(size),
                 } if window_id == window.id() => {
                     let Some(surface) = surface else {
-                        eprintln!("Resized fired before Resumed or after Suspended");
+                        eprintln!(
+                            "Resized fired before Resumed or after \
+                             Suspended"
+                        );
                         return;
                     };
 
-                    if let (Some(width), Some(height)) =
-                        (NonZeroU32::new(size.width), NonZeroU32::new(size.height))
-                    {
-                        i = Image::build(size.width,size.height).fill(bgcolor);
+                    if let (Some(width), Some(height)) = (
+                        NonZeroU32::new(size.width),
+                        NonZeroU32::new(size.height),
+                    ) {
+                        i = Image::build(size.width, size.height)
+                            .fill(bgcolor);
                         surface.resize(width, height).unwrap();
                     }
                 }
@@ -75,124 +93,165 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                     event: WindowEvent::RedrawRequested,
                 } if window_id == window.id() => {
                     let Some(surface) = surface else {
-                        eprintln!("RedrawRequested fired before Resumed or after Suspended");
+                        eprintln!(
+                            "RedrawRequested fired before Resumed or \
+                             after Suspended"
+                        );
                         return;
                     };
                     let size = window.inner_size();
 
-                    if let (Some(width), Some(height)) =
-                    (NonZeroU32::new(size.width), NonZeroU32::new(size.height))
-                    {
+                    if let (Some(width), Some(height)) = (
+                        NonZeroU32::new(size.width),
+                        NonZeroU32::new(size.height),
+                    ) {
                         let now = Instant::now();
-                
-                
 
-        let mut cells = text.cells((c, r - 1),[204, 202, 194], [31, 36, 48]);
-        cells.extend({
-            let mut cells = vec![Cell {
-                    style: Style { color: [31, 36, 48], bg: [204,202,194 ], flags:Style::ITALIC }, letter:None 
-                }; c];
-            cells[2.."gracilaria".len()+2].iter_mut().zip("gracilaria".chars()).for_each(|(x, y)| x.letter = Some(y));
-        cells[c / 2 - fname.len() /2.. c/2 - fname.len()/2 + fname.len()]
-        .iter_mut().zip(fname.chars()).for_each(|(x, y)| x.letter = Some(y));
-    cells
-        });
-                    
-        println!("cell=");
-        dbg!(now.elapsed());
-        let now = Instant::now();
-    unsafe {
-    dsb::render(&cells, (c, r), ppem, bgcolor, &mut fonts, ls, true, i.as_mut())};
-        eprint!("rend=");
-        dbg!(now.elapsed());
-    let met = FONT.metrics(&[]);
-    let fac = ppem / met.units_per_em as f32;
-                                let now = Instant::now();
+                        let mut cells = text.cells(
+                            (c, r - 1),
+                            [204, 202, 194],
+                            [31, 36, 48],
+                        );
+                        cells.extend({
+                            let mut cells = vec![
+                                Cell {
+                                    style: Style {
+                                        color: [31, 36, 48],
+                                        bg: [204, 202, 194],
+                                        flags: Style::ITALIC
+                                    },
+                                    letter: None
+                                };
+                                c
+                            ];
+                            cells[2.."gracilaria".len() + 2]
+                                .iter_mut()
+                                .zip("gracilaria".chars())
+                                .for_each(|(x, y)| x.letter = Some(y));
+                            cells[c / 2 - fname.len() / 2
+                                ..c / 2 - fname.len() / 2 + fname.len()]
+                                .iter_mut()
+                                .zip(fname.chars())
+                                .for_each(|(x, y)| x.letter = Some(y));
+                            cells
+                        });
 
-    // if x.view_o == Some(x.cells.row) || x.view_o.is_none() {
-        use fimg::OverlayAt;
-        let (fw, fh) = dsb::dims(&FONT, ppem);
-        let cell = Image::<_, 4>::build(3, (fh).ceil() as u32).fill([0xFF, 0xCC, 0x66, 255]);
-        unsafe { 
-            let (x, y) = text.cursor();
-            let y = y ;
-            if (text.vo..text.vo+r).contains(&y) {
-            i.as_mut().overlay_at(
-                &cell,
-                (x as f32 * fw).floor() as u32,
-                ((y-text.vo) as f32 * (fh + ls * fac)).floor()
-                            as u32,
-                // 4 + ((x - 1) as f32 * sz) as u32,
-                // (x as f32 * (ppem * 1.25)) as u32 - 20,
-            );}
-        };
-        eprint!("conv = ");
+                        println!("cell=");
+                        dbg!(now.elapsed());
+                        let now = Instant::now();
+                        unsafe {
+                            dsb::render(
+                                &cells,
+                                (c, r),
+                                ppem,
+                                bgcolor,
+                                &mut fonts,
+                                ls,
+                                true,
+                                i.as_mut(),
+                            )
+                        };
+                        eprint!("rend=");
+                        dbg!(now.elapsed());
+                        let met = FONT.metrics(&[]);
+                        let fac = ppem / met.units_per_em as f32;
+                        let now = Instant::now();
 
-    // }
+                        // if x.view_o == Some(x.cells.row) || x.view_o.is_none() {
+                        use fimg::OverlayAt;
+                        let (fw, fh) = dsb::dims(&FONT, ppem);
+                        let cell =
+                            Image::<_, 4>::build(3, (fh).ceil() as u32)
+                                .fill([0xFF, 0xCC, 0x66, 255]);
+                        unsafe {
+                            let (x, y) = text.cursor();
+                            let y = y;
+                            if (text.vo..text.vo + r).contains(&y) {
+                                i.as_mut().overlay_at(
+                                    &cell,
+                                    (x as f32 * fw).floor() as u32,
+                                    ((y - text.vo) as f32
+                                        * (fh + ls * fac))
+                                        .floor()
+                                        as u32,
+                                    // 4 + ((x - 1) as f32 * sz) as u32,
+                                    // (x as f32 * (ppem * 1.25)) as u32 - 20,
+                                );
+                            }
+                        };
+                        eprint!("conv = ");
 
-    let mut buffer = surface.buffer_mut().unwrap();
+                        // }
+
+                        let mut buffer = surface.buffer_mut().unwrap();
 
                         for y in 0..height.get() {
                             for x in 0..width.get() {
-                                let index = y as usize * width.get() as usize + x as usize;
-                                buffer[index] = u32::from_le_bytes(0.join(unsafe { i.pixel(x, y) }));
+                                let index = y as usize
+                                    * width.get() as usize
+                                    + x as usize;
+                                buffer[index] = u32::from_le_bytes(
+                                    0.join(unsafe { i.pixel(x, y) }),
+                                );
                             }
                         }
-        dbg!(now.elapsed());
+                        dbg!(now.elapsed());
                         buffer.present().unwrap();
                     }
                 }
 
                 Event::WindowEvent {
-                    event:
-                        WindowEvent::CloseRequested
-                        ,
+                    event: WindowEvent::CloseRequested,
                     window_id,
                 } if window_id == window.id() => {
                     elwt.exit();
                 }
-                Event::WindowEvent { window_id:_, event:  
-                    WindowEvent::MouseWheel { device_id:_, delta: MouseScrollDelta::LineDelta(_, rows), phase :_}
-            } => {
-            let rows = rows*3.;
-            if rows < 0.0 {
-            let rows = rows.ceil().abs() as usize;
-            text.vo = (text.vo + rows).min(text.l() - r);
-        } else {
-            let rows = rows.floor() as usize;
-            text.vo = text.vo.saturating_sub(rows);
-        }
-        window.request_redraw();
-            }
-                Event::WindowEvent{
-                    event:WindowEvent::KeyboardInput {  event, .. }, ..
-                } if event.state == ElementState::Pressed  => {
-
-                    use NamedKey::*;
-                    use Key::*;
-            match event.logical_key {
-                Named(Space)=> 
-                    text.insert(" "),
-                Named(Backspace) => text.backspace(),
-                Named(ArrowLeft) => 
-                    text.left(),
-                Named(Home) => text.home(),
-                Named(End) => text.end(),
-                Named(ArrowRight)=> text.right(),
-                Named(ArrowUp) => text.up(),
-                Named(ArrowDown) => text.down(r),
-                Named(Enter)=> text.enter(),
-                Character(x) => {
-                    text.insert(&*x);
+                Event::WindowEvent {
+                    window_id: _,
+                    event:
+                        WindowEvent::MouseWheel {
+                            device_id: _,
+                            delta: MouseScrollDelta::LineDelta(_, rows),
+                            phase: _,
+                        },
+                } => {
+                    let rows = rows * 3.;
+                    if rows < 0.0 {
+                        let rows = rows.ceil().abs() as usize;
+                        text.vo = (text.vo + rows).min(text.l() - r);
+                    } else {
+                        let rows = rows.floor() as usize;
+                        text.vo = text.vo.saturating_sub(rows);
+                    }
+                    window.request_redraw();
                 }
-                _ =>{}
-            }
-            
-        window.request_redraw();
+                Event::WindowEvent {
+                    event: WindowEvent::KeyboardInput { event, .. },
+                    ..
+                } if event.state == ElementState::Pressed => {
+                    use Key::*;
+                    use NamedKey::*;
+                    match event.logical_key {
+                        Named(Space) => text.insert(" "),
+                        Named(Backspace) => text.backspace(),
+                        Named(ArrowLeft) => text.left(),
+                        Named(Home) => text.home(),
+                        Named(End) => text.end(),
+                        Named(ArrowRight) => text.right(),
+                        Named(ArrowUp) => text.up(),
+                        Named(ArrowDown) => text.down(r),
+                        Named(Enter) => text.enter(),
+                        Character(x) => {
+                            text.insert(&*x);
+                        }
+                        _ => {}
+                    }
+
+                    window.request_redraw();
                 }
                 _ => {}
             }
-    },
+        },
     );
 
     winit_app::run_app(event_loop, app);
