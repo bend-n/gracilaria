@@ -1,3 +1,4 @@
+#![feature(tuple_trait, unboxed_closures, fn_traits)]
 #![feature(
     if_let_guard,
     deref_patterns,
@@ -8,6 +9,7 @@
 )]
 #![allow(incomplete_features, redundant_semicolons)]
 use std::convert::identity;
+use std::fs::File;
 use std::hint::assert_unchecked;
 use std::iter::zip;
 use std::num::NonZeroU32;
@@ -20,12 +22,14 @@ use atools::prelude::*;
 use dsb::cell::Style;
 use dsb::{Cell, F};
 use fimg::Image;
+use rust_fsm::StateMachineImpl;
 use swash::{FontRef, Instance};
 use winit::event::{ElementState, Event, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::keyboard::{Key, NamedKey};
 
 use crate::bar::Bar;
+use crate::bar::state::{Input, State};
 use crate::text::TextArea;
 mod bar;
 mod text;
@@ -42,20 +46,34 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
     let ls = 20.0;
 
     let mut text = TextArea::default();
-    let fname = std::env::args().nth(1).unwrap_or("new buffer".into());
+    let mut origin = std::env::args().nth(1);
     let mut fonts = dsb::Fonts::new(
         *FONT,
         F::instance(*FONT, *BFONT),
         *IFONT,
         F::instance(*IFONT, *BIFONT),
     );
-    let mut bar = Bar { holding: None, fname };
+    let mut bar = Bar {
+        text: TextArea::default(),
+        state: bar::state::StateMachine::new(),
+        last_action: String::default(),
+    };
     let mut i = Image::build(1, 1).fill(BG);
     let mut cells = vec![];
     std::env::args().nth(1).map(|x| {
         text.insert(&std::fs::read_to_string(x).unwrap());
         text.cursor = 0;
     });
+    macro_rules! save {
+        () => {{
+            std::fs::write(
+                origin.as_ref().unwrap(),
+                &text.rope.to_string(),
+            )
+            .unwrap();
+            bar.last_action = "saved".into();
+        }};
+    }
     let app = winit_app::WinitAppBuilder::with_init(
         |elwt| {
             let window = winit_app::make_window(elwt, identity);
@@ -83,6 +101,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                     window.inner_size().height as _,
                 ),
             );
+            dbg!(&bar.state);
             match event {
                 Event::WindowEvent {
                     window_id,
@@ -140,15 +159,21 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             BG,
                             (&mut cells, (c, r)),
                             (1, 0),
-                        );
+                        ) + 1;
                         text.write_to(
                             (c - t_ox, r - 1),
                             FG,
                             BG,
                             (&mut cells, (c, r)),
-                            (1 + t_ox, 0),
+                            (t_ox, 0),
                         );
-                        bar.write_to(BG, FG, (&mut cells, (c, r)), r - 1);
+                        bar.write_to(
+                            BG,
+                            FG,
+                            (&mut cells, (c, r)),
+                            r - 1,
+                            &origin.as_deref().unwrap_or("new buffer"),
+                        );
 
                         println!("cell=");
                         dbg!(now.elapsed());
@@ -179,7 +204,8 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                                 .fill([0xFF, 0xCC, 0x66, 255]);
                         unsafe {
                             let (x, y) = text.cursor();
-                            let y = y;
+                            let x = x + t_ox;
+
                             if (text.vo..text.vo + r).contains(&y) {
                                 i.as_mut().overlay_at(
                                     &cursor,
@@ -236,32 +262,49 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                         let rows = rows.floor() as usize;
                         text.vo = text.vo.saturating_sub(rows);
                     }
-                    window.request_redraw();
                 }
                 Event::WindowEvent {
                     event: WindowEvent::KeyboardInput { event, .. },
                     ..
                 } if event.state == ElementState::Released
-                    && bar
-                        .holding
-                        .as_ref()
-                        .is_some_and(|x| x == &event.logical_key) =>
+                    && *bar.state.state() == State::Control
+                    && event.logical_key == NamedKey::Control =>
                 {
-                    bar.holding = None;
+                    bar.state.consume(&Input::Released).unwrap();
                     window.request_redraw();
                 }
                 Event::WindowEvent {
                     event: WindowEvent::KeyboardInput { event, .. },
                     ..
-                } if let Some(Key::Named(NamedKey::Control)) =
-                    bar.holding
+                } if *bar.state.state() == State::Control
                     && event.state == ElementState::Pressed =>
                 {
                     use Key::*;
                     match event.logical_key {
-                        Character(x) if x == "s" => {}
+                        Character(x) if x == "s" => match &origin {
+                            Some(_) => {
+                                bar.state.consume(&Input::Saved).unwrap();
+                                save!();
+                            }
+                            None => {
+                                bar.state
+                                    .consume(&Input::WaitingForFname)
+                                    .unwrap();
+                            }
+                        },
+                        // Character(x)
+                        //     if x == "s"
+                        //         && =>
+                        // {
+                        //     bar.state.consume(State::Save);
+                        //     text.rope
+                        //         .write_to(File::open(origin).unwrap())
+                        //         .unwrap();
+                        // }
+                        // Character(x) if x == "s" => {}
                         _ => panic!(),
                     }
+                    window.request_redraw();
                 }
 
                 Event::WindowEvent {
@@ -270,6 +313,11 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                 } if event.state == ElementState::Pressed => {
                     use Key::*;
                     use NamedKey::*;
+                    let text = if bar.state.state() == &State::InputFname {
+                        &mut bar.text
+                    } else {
+                        &mut text
+                    };
                     match event.logical_key {
                         Named(Space) => text.insert(" "),
                         Named(Backspace) => text.backspace(),
@@ -279,19 +327,30 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                         Named(ArrowRight) => text.right(),
                         Named(ArrowUp) => text.up(),
                         Named(ArrowDown) => text.down(r),
+                        Named(Enter)
+                            if bar.state.state() == &State::InputFname =>
+                        {
+                            bar.state.consume(&Input::Enter).unwrap();
+                            origin = Some(
+                                std::mem::take(&mut bar.text)
+                                    .rope
+                                    .to_string(),
+                            );
+                            save!();
+                        }
                         Named(Enter) => text.enter(),
-                        Named(Control) =>
-                            bar.holding = Some(event.logical_key),
+                        Named(Control) => {
+                            bar.state.consume(&Input::Control).unwrap();
+                        }
                         Character(x) => {
                             text.insert(&*x);
                         }
                         _ => {}
-                    }
-
+                    };
                     window.request_redraw();
                 }
                 _ => {}
-            }
+            };
         },
     );
 

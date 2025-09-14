@@ -2,11 +2,28 @@ use std::iter::{once, repeat};
 
 use dsb::Cell;
 use dsb::cell::Style;
-use winit::keyboard::{Key, NamedKey};
 
 pub struct Bar {
-    pub holding: Option<Key>,
-    pub fname: String,
+    pub state: state::StateMachine,
+    pub text: crate::text::TextArea,
+    pub last_action: String,
+}
+
+rust_fsm::state_machine! {
+    #[derive(Debug, PartialEq, Eq, Copy, Clone)]
+    pub(crate) state(Inactive)
+
+    Inactive => {
+        Control => Control,
+    },
+    Control => {
+        Saved => Inactive,
+        WaitingForFname => InputFname,
+        Released => Inactive,
+    },
+    InputFname => {
+        Enter => Inactive,
+    }
 }
 
 impl Bar {
@@ -16,6 +33,7 @@ impl Bar {
         bg: [u8; 3],
         (into, (w, _)): (&mut [Cell], (usize, usize)),
         oy: usize,
+        fname: &str,
     ) {
         let row = &mut into[oy * w..oy * w + w];
         row.fill(Cell {
@@ -25,19 +43,23 @@ impl Bar {
         fn s(s: &str) -> impl Iterator<Item = (char, u8)> {
             s.chars().zip(repeat(0))
         }
-        match self.holding {
-            None => {
+        match self.state.state() {
+            state::State::Inactive => {
                 row[1.."gracilaria".len() + 1]
                     .iter_mut()
                     .zip("gracilaria".chars())
                     .for_each(|(x, y)| x.letter = Some(y));
-                row[w / 2 - self.fname.len() / 2
-                    ..w / 2 - self.fname.len() / 2 + self.fname.len()]
+                row[w / 2 - fname.len() / 2
+                    ..w / 2 - fname.len() / 2 + fname.len()]
                     .iter_mut()
-                    .zip(self.fname.chars())
+                    .zip(fname.chars())
+                    .for_each(|(x, y)| x.letter = Some(y));
+                row.iter_mut()
+                    .rev()
+                    .zip(self.last_action.chars().rev())
                     .for_each(|(x, y)| x.letter = Some(y));
             }
-            Some(Key::Named(NamedKey::Control)) => {
+            state::State::Control => {
                 let x = s("C + { ")
                     .chain(once(('S', Style::BOLD)))
                     .chain(s("ave, "))
@@ -52,7 +74,20 @@ impl Bar {
                     }
                 });
             }
-            Some(_) => panic!(),
+            state::State::InputFname => {
+                "write to file: "
+                    .chars()
+                    .zip(repeat(Style::BOLD | Style::ITALIC))
+                    .chain(s(&self.text.rope.to_string()))
+                    .zip(row)
+                    .for_each(|((x, z), y)| {
+                        *y = Cell {
+                            letter: Some(x),
+                            style: Style { flags: z, ..y.style },
+                            ..*y
+                        }
+                    });
+            }
         }
     }
 }

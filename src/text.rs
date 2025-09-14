@@ -7,6 +7,7 @@ use ropey::Rope;
 use tree_sitter_highlight::{
     HighlightConfiguration, HighlightEvent, Highlighter,
 };
+use winit::keyboard::SmolStr;
 #[rustfmt::skip]
 const NAMES: [&str; 13] = ["attribute", "comment", "constant", "function", "keyword", "number", "operator", "punctuation",
                            "string", "tag", "type", "variable", "variable.parameter"];
@@ -34,7 +35,7 @@ const fn color(x: &[u8; 6]) -> [u8; 3] {
 
 #[derive(Default)]
 pub struct TextArea {
-    rope: Rope,
+    pub rope: Rope,
     pub cursor: usize,
     highlighter: Highlighter,
     column: usize,
@@ -46,8 +47,13 @@ impl TextArea {
         self.rope.len_lines()
     }
 
+    pub fn insert_(&mut self, c: SmolStr) {
+        self.rope.insert(self.cursor, &c);
+        self.cursor += c.chars().count();
+        self.setc();
+    }
     pub fn insert(&mut self, c: &str) {
-        self.rope.insert(self.cursor, c);
+        self.rope.insert(self.cursor, &c);
         self.cursor += c.chars().count();
         self.setc();
     }
