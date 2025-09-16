@@ -1,3 +1,4 @@
+use std::fmt::Debug;
 use std::sync::LazyLock;
 
 use atools::Chunked;
@@ -7,7 +8,7 @@ use ropey::Rope;
 use tree_sitter_highlight::{
     HighlightConfiguration, HighlightEvent, Highlighter,
 };
-use winit::keyboard::SmolStr;
+use winit::keyboard::{NamedKey, SmolStr};
 #[rustfmt::skip]
 const NAMES: [&str; 13] = ["attribute", "comment", "constant", "function", "keyword", "number", "operator", "punctuation",
                            "string", "tag", "type", "variable", "variable.parameter"];
@@ -40,6 +41,35 @@ pub struct TextArea {
     highlighter: Highlighter,
     column: usize,
     pub vo: usize,
+
+    pub r: usize,
+    pub c: usize,
+}
+impl Debug for TextArea {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TextArea")
+            .field("rope", &self.rope)
+            .field("cursor", &self.cursor)
+            .field("column", &self.column)
+            .field("vo", &self.vo)
+            .field("r", &self.r)
+            .field("c", &self.c)
+            .finish()
+    }
+}
+
+impl Clone for TextArea {
+    fn clone(&self) -> Self {
+        Self {
+            rope: self.rope.clone(),
+            cursor: self.cursor,
+            highlighter: Highlighter::default(),
+            column: self.column,
+            vo: self.vo,
+            r: self.r,
+            c: self.c,
+        }
+    }
 }
 
 impl TextArea {
@@ -120,7 +150,7 @@ impl TextArea {
         (|| self.insert(" ")).run(n);
     }
 
-    pub fn down(&mut self, r: usize) {
+    pub fn down(&mut self) {
         let l = self.rope.try_char_to_line(self.cursor).unwrap_or(0);
 
         // next line size
@@ -145,10 +175,10 @@ impl TextArea {
                     .unwrap_or(0)
         };
         if self.rope.char_to_line(self.cursor)
-            >= (self.vo + r).saturating_sub(5)
+            >= (self.vo + self.r).saturating_sub(5)
         {
             self.vo += 1;
-            self.vo = self.vo.min(self.l() - r);
+            self.vo = self.vo.min(self.l() - self.r);
         }
     }
 
@@ -170,7 +200,9 @@ impl TextArea {
     }
 
     pub fn backspace(&mut self) {
-        _ = self.rope.try_remove(self.cursor - 1..self.cursor);
+        _ = self
+            .rope
+            .try_remove(self.cursor.saturating_sub(1)..self.cursor);
         self.cursor = self.cursor.saturating_sub(1);
     }
     #[implicit_fn::implicit_fn]
@@ -311,5 +343,28 @@ impl TextArea {
         }
 
         need
+    }
+
+    pub fn extend_selection(
+        &self,
+        key: NamedKey,
+        r: std::ops::Range<usize>,
+    ) -> std::ops::Range<usize> {
+        match key {
+            NamedKey::ArrowLeft => r.start.saturating_sub(1)..r.end,
+            NamedKey::ArrowRight => r.start..r.end + 1,
+            NamedKey::ArrowUp => {
+                let l = self.rope.char_to_line(r.start);
+                self.rope.line_to_char(l - 1) + r.start
+                    - self.rope.line_to_char(l)..r.end
+            }
+            NamedKey::ArrowDown => {
+                let l = self.rope.char_to_line(r.end);
+                r.start
+                    ..self.rope.line_to_char(l + 1) + r.end
+                        - self.rope.line_to_char(l)
+            }
+            _ => unreachable!(),
+        }
     }
 }

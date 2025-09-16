@@ -1,5 +1,8 @@
+// this looks pretty good though
 #![feature(tuple_trait, unboxed_closures, fn_traits)]
 #![feature(
+    import_trait_associated_functions,
+    guard_patterns,
     if_let_guard,
     deref_patterns,
     generic_const_exprs,
@@ -17,6 +20,7 @@ use std::simd::prelude::*;
 use std::sync::LazyLock;
 use std::time::Instant;
 
+use Default::default;
 use array_chunks::*;
 use atools::prelude::*;
 use dsb::cell::Style;
@@ -26,10 +30,9 @@ use rust_fsm::StateMachineImpl;
 use swash::{FontRef, Instance};
 use winit::event::{ElementState, Event, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
-use winit::keyboard::{Key, NamedKey};
+use winit::keyboard::{Key, ModifiersState, NamedKey};
 
 use crate::bar::Bar;
-use crate::bar::state::{Input, State};
 use crate::text::TextArea;
 mod bar;
 mod text;
@@ -37,6 +40,8 @@ mod winit_app;
 fn main() {
     entry(EventLoop::new().unwrap())
 }
+
+static mut MODIFIERS: ModifiersState = ModifiersState::empty();
 
 const BG: [u8; 3] = [31, 36, 48];
 const FG: [u8; 3] = [204, 202, 194];
@@ -48,16 +53,14 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
     let mut text = TextArea::default();
     let mut origin = std::env::args().nth(1);
     let mut fonts = dsb::Fonts::new(
-        *FONT,
         F::instance(*FONT, *BFONT),
+        *FONT,
         *IFONT,
         F::instance(*IFONT, *BIFONT),
     );
-    let mut bar = Bar {
-        text: TextArea::default(),
-        state: bar::state::StateMachine::new(),
-        last_action: String::default(),
-    };
+    let mut state = State::Default;
+    let mut bar =
+        Bar { text: TextArea::default(), last_action: String::default() };
     let mut i = Image::build(1, 1).fill(BG);
     let mut cells = vec![];
     std::env::args().nth(1).map(|x| {
@@ -101,7 +104,6 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                     window.inner_size().height as _,
                 ),
             );
-            dbg!(&bar.state);
             match event {
                 Event::WindowEvent {
                     window_id,
@@ -167,12 +169,15 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             (&mut cells, (c, r)),
                             (t_ox, 0),
                         );
+                        text.c = c - t_ox;
+                        text.r = r - 1;
                         bar.write_to(
                             BG,
                             FG,
                             (&mut cells, (c, r)),
                             r - 1,
                             &origin.as_deref().unwrap_or("new buffer"),
+                            &state,
                         );
 
                         println!("cell=");
@@ -264,89 +269,56 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                     }
                 }
                 Event::WindowEvent {
-                    event: WindowEvent::KeyboardInput { event, .. },
+                    event: WindowEvent::ModifiersChanged(modifiers),
                     ..
-                } if event.state == ElementState::Released
-                    && *bar.state.state() == State::Control
-                    && event.logical_key == NamedKey::Control =>
-                {
-                    bar.state.consume(&Input::Released).unwrap();
+                } => {
+                    unsafe { MODIFIERS = modifiers.state() };
                     window.request_redraw();
                 }
-                Event::WindowEvent {
-                    event: WindowEvent::KeyboardInput { event, .. },
-                    ..
-                } if *bar.state.state() == State::Control
-                    && event.state == ElementState::Pressed =>
-                {
-                    use Key::*;
-                    match event.logical_key {
-                        Character(x) if x == "s" => match &origin {
-                            Some(_) => {
-                                bar.state.consume(&Input::Saved).unwrap();
-                                save!();
-                            }
-                            None => {
-                                bar.state
-                                    .consume(&Input::WaitingForFname)
-                                    .unwrap();
-                            }
-                        },
-                        // Character(x)
-                        //     if x == "s"
-                        //         && =>
-                        // {
-                        //     bar.state.consume(State::Save);
-                        //     text.rope
-                        //         .write_to(File::open(origin).unwrap())
-                        //         .unwrap();
-                        // }
-                        // Character(x) if x == "s" => {}
-                        _ => panic!(),
-                    }
-                    window.request_redraw();
-                }
-
                 Event::WindowEvent {
                     event: WindowEvent::KeyboardInput { event, .. },
                     ..
                 } if event.state == ElementState::Pressed => {
-                    use Key::*;
-                    use NamedKey::*;
-                    let text = if bar.state.state() == &State::InputFname {
-                        &mut bar.text
-                    } else {
-                        &mut text
-                    };
-                    match event.logical_key {
-                        Named(Space) => text.insert(" "),
-                        Named(Backspace) => text.backspace(),
-                        Named(ArrowLeft) => text.left(),
-                        Named(Home) => text.home(),
-                        Named(End) => text.end(),
-                        Named(ArrowRight) => text.right(),
-                        Named(ArrowUp) => text.up(),
-                        Named(ArrowDown) => text.down(r),
-                        Named(Enter)
-                            if bar.state.state() == &State::InputFname =>
-                        {
-                            bar.state.consume(&Input::Enter).unwrap();
-                            origin = Some(
-                                std::mem::take(&mut bar.text)
-                                    .rope
-                                    .to_string(),
-                            );
+                    let o = state
+                        .consume(Action::K(event.logical_key.clone()))
+                        .unwrap();
+                    match o {
+                        Some(Do::Save) => match &origin {
+                            Some(_) => {
+                                state.consume(Action::Saved).unwrap();
+                                save!();
+                            }
+                            None => {
+                                state
+                                    .consume(Action::RequireFilename)
+                                    .unwrap();
+                            }
+                        },
+                        Some(Do::SaveTo(x)) => {
+                            origin = Some(x);
                             save!();
                         }
-                        Named(Enter) => text.enter(),
-                        Named(Control) => {
-                            bar.state.consume(&Input::Control).unwrap();
+                        Some(Do::Edit) => {
+                            handle2(event.logical_key, &mut text);
                         }
-                        Character(x) => {
-                            text.insert(&*x);
+                        Some(Do::Quit) => elwt.exit(),
+                        Some(Do::StartSelection) => {
+                            let State::Selection(x) = &mut state else {
+                                panic!()
+                            };
+                            *x = text.cursor..text.cursor
                         }
-                        _ => {}
-                    };
+                        Some(Do::UpdateSelection) => {
+                            let State::Selection(x) = &mut state else {
+                                panic!()
+                            };
+                            let Key::Named(y) = event.logical_key else {
+                                panic!()
+                            };
+                            *x = text.extend_selection(y, x.clone());
+                        }
+                        None => {}
+                    }
                     window.request_redraw();
                 }
                 _ => {}
@@ -355,6 +327,31 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
     );
 
     winit_app::run_app(event_loop, app);
+}
+
+fn handle2(key: Key, text: &mut TextArea) {
+    use Key::*;
+    use NamedKey::*;
+
+    match key {
+        Named(Space) => text.insert(" "),
+        Named(Backspace) => text.backspace(),
+        Named(ArrowLeft) => text.left(),
+        Named(Home) => text.home(),
+        Named(End) => text.end(),
+        Named(ArrowRight) => text.right(),
+        Named(ArrowUp) => text.up(),
+        Named(ArrowDown) => text.down(),
+        Named(Enter) => text.enter(),
+        Character(x) => {
+            text.insert(&*x);
+        }
+        _ => {}
+    };
+}
+fn handle(key: Key, mut text: TextArea) -> TextArea {
+    handle2(key, &mut text);
+    text
 }
 pub static FONT: LazyLock<FontRef<'static>> = LazyLock::new(|| {
     FontRef::from_index(
@@ -377,3 +374,42 @@ pub static BIFONT: LazyLock<Instance<'static>> = LazyLock::new(|| {
 
 pub static BFONT: LazyLock<Instance<'static>> =
     LazyLock::new(|| FONT.instances().find_by_name("Bold").unwrap());
+fn shift() -> bool {
+    unsafe { MODIFIERS }.shift_key()
+}
+fn ctrl() -> bool {
+    unsafe { MODIFIERS }.control_key()
+}
+fn arrow(k: &Key) -> bool {
+    matches!(
+        k,
+        Key::Named(
+            NamedKey::ArrowLeft
+                | NamedKey::ArrowRight
+                | NamedKey::ArrowDown
+                | NamedKey::ArrowUp
+        )
+    )
+}
+
+// use NamedKey::Arrow
+use std::ops::Range;
+rust_fsm::state_machine! {
+    #[derive(Clone, Debug)]
+    pub(crate) State => Action => Do
+
+    Dead => K(Key => _) => Dead,
+    Default => {
+        K(Key => Key::Character(x) if x == "s" && ctrl()) => Save [Save],
+        K(Key => Key::Character(x) if x == "q" && ctrl()) => Dead [Quit],
+        K(Key => x if shift() && arrow(&x)) => Selection(Range<usize> => 0..0) [StartSelection],
+        K(Key => _) => Default [Edit],
+    },
+    Selection(Range<usize> => x) => K(Key => y if arrow(&y) && shift()) => Selection(Range<usize> => x) [UpdateSelection],
+    Save => {
+        RequireFilename => InputFname(TextArea => default()),
+        Saved => Default,
+    },
+    InputFname(TextArea => t) => K(Key => Key::Named(NamedKey::Enter)) => Default [SaveTo(String => t.rope.to_string())],
+    InputFname(TextArea => t) => K(Key => k) => InputFname(TextArea => handle(k, t)),
+}
