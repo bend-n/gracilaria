@@ -1,4 +1,5 @@
 use std::fmt::Debug;
+use std::ops::Range;
 use std::sync::LazyLock;
 
 use atools::Chunked;
@@ -73,6 +74,17 @@ impl Clone for TextArea {
 }
 
 impl TextArea {
+    pub fn position(
+        &self,
+        Range { start, end }: Range<usize>,
+    ) -> [(usize, usize); 2] {
+        let y1 = self.rope.char_to_line(start);
+        let y2 = self.rope.char_to_line(end);
+        let x1 = start - self.rope.line_to_char(y1);
+        let x2 = end - self.rope.line_to_char(y2);
+        [(x1, y1), (x2, y2)]
+    }
+
     pub fn l(&self) -> usize {
         self.rope.len_lines()
     }
@@ -213,6 +225,7 @@ impl TextArea {
         bg: [u8; 3],
         (into, (w, _)): (&mut [Cell], (usize, usize)),
         (ox, oy): (usize, usize),
+        selection: Option<Range<usize>>,
     ) {
         static HL: LazyLock<HighlightConfiguration> =
             LazyLock::new(|| {
@@ -261,9 +274,11 @@ impl TextArea {
                     // }
                     let y1 = self.rope.byte_to_line(start);
                     let y2 = self.rope.byte_to_line(end);
-                    let x1 = start - self.rope.line_to_char(y1);
-                    let x2 = end - self.rope.line_to_char(y2);
-                    // dbg!((x1, y1), (x2, y2));
+                    let x1 = self.rope.byte_to_char(start)
+                        - self.rope.line_to_char(y1);
+                    let x2 = self.rope.byte_to_char(end)
+                        - self.rope.line_to_char(y2);
+
                     cells.get_mut(y1 * c + x1..y2 * c + x2).map(|x| {
                         x.iter_mut().for_each(|x| {
                             x.style.flags = STYLES[s].unwrap_or_default();
@@ -309,6 +324,32 @@ impl TextArea {
                 }
             }
         }
+        selection.map(|x| self.position(x)).map(|[(x1, y1), (x2, y2)]| {
+            (y1 * c + x1..y2 * c + x2).for_each(|x| {
+                cells
+                    .get_mut(x)
+                    .filter(
+                        _.letter.is_some()
+                            || (x % c == 0)
+                            || (self
+                                .rope
+                                .get_line(x / c)
+                                .map(_.len_chars())
+                                .unwrap_or_default()
+                                .saturating_sub(1)
+                                == x % c),
+                    )
+                    .map(|x| {
+                        if x.letter == Some(' ') {
+                            x.letter = Some('·'); // tabs? what are those 
+                            x.style.color = [0x4e, 0x62, 0x79];
+                        }
+                        x.style.bg = [0x27, 0x43, 0x64];
+                        // 0x23, 0x34, 0x4B
+                    });
+            });
+        });
+
         let cells = &cells[self.vo * c..self.vo * c + r * c];
         assert_eq!(cells.len(), c * r);
 
@@ -346,23 +387,58 @@ impl TextArea {
     }
 
     pub fn extend_selection(
-        &self,
+        &mut self,
         key: NamedKey,
         r: std::ops::Range<usize>,
     ) -> std::ops::Range<usize> {
+        macro_rules! left {
+            () => {
+                if self.cursor != 0 && self.cursor >= r.start {
+                    // left to right going left (shrink right end)
+                    r.start..self.cursor
+                } else {
+                    // right to left going left (extend left end)
+                    self.cursor..r.end
+                }
+            };
+        }
+        macro_rules! right {
+            () => {
+                if self.cursor == self.rope.len_chars() {
+                    r
+                } else if self.cursor > r.end {
+                    // left to right (extend right end)
+                    r.start..self.cursor
+                } else {
+                    // right to left (shrink left end)
+                    self.cursor..r.end
+                }
+            };
+        }
         match key {
-            NamedKey::ArrowLeft => r.start.saturating_sub(1)..r.end,
-            NamedKey::ArrowRight => r.start..r.end + 1,
+            NamedKey::Home => {
+                self.home();
+                left!()
+            }
+            NamedKey::End => {
+                self.end();
+                right!()
+            }
+            NamedKey::ArrowLeft => {
+                self.left();
+                left!()
+            }
+            NamedKey::ArrowRight => {
+                self.right();
+                right!()
+            }
             NamedKey::ArrowUp => {
-                let l = self.rope.char_to_line(r.start);
-                self.rope.line_to_char(l - 1) + r.start
-                    - self.rope.line_to_char(l)..r.end
+                self.up();
+                left!()
             }
             NamedKey::ArrowDown => {
-                let l = self.rope.char_to_line(r.end);
-                r.start
-                    ..self.rope.line_to_char(l + 1) + r.end
-                        - self.rope.line_to_char(l)
+                self.down();
+                right!()
             }
             _ => unreachable!(),
         }

@@ -30,7 +30,7 @@ use rust_fsm::StateMachineImpl;
 use swash::{FontRef, Instance};
 use winit::event::{ElementState, Event, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
-use winit::keyboard::{Key, ModifiersState, NamedKey};
+use winit::keyboard::{Key, ModifiersState, NamedKey, SmolStr};
 
 use crate::bar::Bar;
 use crate::text::TextArea;
@@ -155,6 +155,10 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             style: Style { color: BG, bg: BG, flags: 0 },
                             letter: None,
                         });
+                        let x = match &state {
+                            State::Selection(x) => Some(x.clone()),
+                            _ => None,
+                        };
                         let t_ox = text.line_numbers(
                             (c, r - 1),
                             [67, 76, 87],
@@ -168,6 +172,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             BG,
                             (&mut cells, (c, r)),
                             (t_ox, 0),
+                            x,
                         );
                         text.c = c - t_ox;
                         text.r = r - 1;
@@ -178,6 +183,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             r - 1,
                             &origin.as_deref().unwrap_or("new buffer"),
                             &state,
+                            &text,
                         );
 
                         println!("cell=");
@@ -279,6 +285,16 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                     event: WindowEvent::KeyboardInput { event, .. },
                     ..
                 } if event.state == ElementState::Pressed => {
+                    if matches!(
+                        event.logical_key,
+                        Key::Named(
+                            NamedKey::Shift
+                                | NamedKey::Alt
+                                | NamedKey::Control
+                        )
+                    ) {
+                        return;
+                    }
                     let o = state
                         .consume(Action::K(event.logical_key.clone()))
                         .unwrap();
@@ -306,7 +322,13 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             let State::Selection(x) = &mut state else {
                                 panic!()
                             };
-                            *x = text.cursor..text.cursor
+                            let Key::Named(y) = event.logical_key else {
+                                panic!()
+                            };
+                            *x = text.extend_selection(
+                                y,
+                                text.cursor..text.cursor,
+                            );
                         }
                         Some(Do::UpdateSelection) => {
                             let State::Selection(x) = &mut state else {
@@ -316,6 +338,25 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                                 panic!()
                             };
                             *x = text.extend_selection(y, x.clone());
+                        }
+                        Some(Do::Insert((x, c))) => {
+                            text.rope.remove(x);
+                            text.insert_(c);
+                        }
+                        Some(Do::Delete(x)) => {
+                            text.rope.remove(x);
+                        }
+                        Some(Do::Copy(x)) => {
+                            clipp::copy(text.rope.slice(x).to_string());
+                        }
+                        Some(Do::Cut(x)) => {
+                            clipp::copy(
+                                text.rope.slice(x.clone()).to_string(),
+                            );
+                            text.rope.remove(x);
+                        }
+                        Some(Do::Paste) => {
+                            text.insert(&clipp::paste());
                         }
                         None => {}
                     }
@@ -337,8 +378,17 @@ fn handle2(key: Key, text: &mut TextArea) {
         Named(Space) => text.insert(" "),
         Named(Backspace) => text.backspace(),
         Named(ArrowLeft) => text.left(),
+        Named(Home) if ctrl() => {
+            text.cursor = 0;
+            text.vo = 0;
+        }
+        Named(End) if ctrl() => {
+            text.cursor = text.rope.len_chars();
+            text.vo = text.l() - text.r;
+        }
         Named(Home) => text.home(),
         Named(End) => text.end(),
+        // Named(Tab)
         Named(ArrowRight) => text.right(),
         Named(ArrowUp) => text.up(),
         Named(ArrowDown) => text.down(),
@@ -380,36 +430,33 @@ fn shift() -> bool {
 fn ctrl() -> bool {
     unsafe { MODIFIERS }.control_key()
 }
-fn arrow(k: &Key) -> bool {
-    matches!(
-        k,
-        Key::Named(
-            NamedKey::ArrowLeft
-                | NamedKey::ArrowRight
-                | NamedKey::ArrowDown
-                | NamedKey::ArrowUp
-        )
-    )
-}
 
 // use NamedKey::Arrow
 use std::ops::Range;
 rust_fsm::state_machine! {
-    #[derive(Clone, Debug)]
-    pub(crate) State => Action => Do
+#[derive(Clone, Debug)]
+pub(crate) State => Action => Do
 
-    Dead => K(Key => _) => Dead,
-    Default => {
-        K(Key => Key::Character(x) if x == "s" && ctrl()) => Save [Save],
-        K(Key => Key::Character(x) if x == "q" && ctrl()) => Dead [Quit],
-        K(Key => x if shift() && arrow(&x)) => Selection(Range<usize> => 0..0) [StartSelection],
-        K(Key => _) => Default [Edit],
-    },
-    Selection(Range<usize> => x) => K(Key => y if arrow(&y) && shift()) => Selection(Range<usize> => x) [UpdateSelection],
-    Save => {
-        RequireFilename => InputFname(TextArea => default()),
-        Saved => Default,
-    },
-    InputFname(TextArea => t) => K(Key => Key::Named(NamedKey::Enter)) => Default [SaveTo(String => t.rope.to_string())],
-    InputFname(TextArea => t) => K(Key => k) => InputFname(TextArea => handle(k, t)),
+Dead => K(Key => _) => Dead,
+Default => {
+    K(Key::Character(x) if x == "s" && ctrl()) => Save [Save],
+    K(Key::Character(x) if x == "q" && ctrl()) => Dead [Quit],
+    K(Key::Character(x) if x == "v" && ctrl()) => Default [Paste],
+    K(Key::Named(NamedKey::ArrowUp | NamedKey::ArrowLeft | NamedKey::ArrowDown | NamedKey::ArrowRight | NamedKey::Home | NamedKey::End) if shift()) => Selection(Range<usize> => 0..0) [StartSelection],
+    K(_) => Default [Edit],
+},
+Selection(x) => {
+    K(Key::Named(NamedKey::ArrowUp | NamedKey::ArrowLeft | NamedKey::ArrowDown | NamedKey::ArrowRight | NamedKey::Home | NamedKey::End) if shift()) => Selection(x) [UpdateSelection],
+    K(Key::Named(NamedKey::Backspace)) => Default [Delete(Range<usize> => x)],
+    K(Key::Character(y) if y == "x" && ctrl()) => Default [Cut(Range<usize> => x)],
+    K(Key::Character(y) if y == "c" && ctrl()) => Default [Copy(Range<usize> => x)],
+    K(Key::Character(y)) => Default [Insert((Range<usize>, SmolStr) => (x, y))],
+    K(_) => Default [Edit],
+},
+Save => {
+    RequireFilename => InputFname(TextArea => default()),
+    Saved => Default,
+},
+InputFname(t) => K(Key::Named(NamedKey::Enter)) => Default [SaveTo(String => t.rope.to_string())],
+InputFname(t) => K(k) => InputFname(TextArea => handle(k, t)),
 }

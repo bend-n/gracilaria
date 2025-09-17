@@ -4,6 +4,8 @@ use dsb::Cell;
 use dsb::cell::Style;
 use winit::keyboard::{Key, ModifiersState, NamedKey};
 
+use crate::text::TextArea;
+
 pub struct Bar {
     pub text: crate::text::TextArea,
     pub last_action: String,
@@ -18,6 +20,7 @@ impl Bar {
         oy: usize,
         fname: &str,
         state: &super::State,
+        t: &TextArea,
     ) {
         let row = &mut into[oy * w..oy * w + w];
         row.fill(Cell {
@@ -35,8 +38,8 @@ impl Bar {
                     .chain(s("ave, "))
                     .chain(once(('Q', Style::BOLD)))
                     .chain(s("uit, "))
-                    .chain(once(('C', Style::BOLD)))
-                    .chain(s("opy }"));
+                    .chain(once(('V', Style::BOLD)))
+                    .chain(s("aste }"));
 
                 x.zip(row).for_each(|((x, z), y)| {
                     *y = Cell {
@@ -74,6 +77,14 @@ impl Bar {
                             ..*y
                         }
                     });
+            }
+            State::Selection(x) => {
+                let [(x1, y1), (x2, y2)] = t.position(x.clone());
+                format!("selection from ({x1}, {y1}) to ({x2}, {y2})")
+                    .chars()
+                    .rev()
+                    .zip(row.iter_mut().rev())
+                    .for_each(|(x, y)| y.letter = Some(x));
             }
             State::Save => unreachable!(),
             _ => {}
