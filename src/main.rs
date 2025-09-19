@@ -53,11 +53,12 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
     let mut text = TextArea::default();
     let mut origin = std::env::args().nth(1);
     let mut fonts = dsb::Fonts::new(
+        F::FontRef(*FONT, &[(2003265652, 550.0)]),
         F::instance(*FONT, *BFONT),
-        *FONT,
-        *IFONT,
+        F::FontRef(*IFONT, &[(2003265652, 550.0)]),
         F::instance(*IFONT, *BIFONT),
     );
+
     let mut state = State::Default;
     let mut bar =
         Bar { text: TextArea::default(), last_action: String::default() };
@@ -316,6 +317,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                         }
                         Some(Do::Edit) => {
                             handle2(event.logical_key, &mut text);
+                            text.scroll_to_cursor();
                         }
                         Some(Do::Quit) => elwt.exit(),
                         Some(Do::StartSelection) => {
@@ -338,6 +340,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                                 panic!()
                             };
                             *x = text.extend_selection(y, x.clone());
+                            text.scroll_to_cursor();
                         }
                         Some(Do::Insert((x, c))) => {
                             text.rope.remove(x);

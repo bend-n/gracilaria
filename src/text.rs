@@ -25,7 +25,7 @@ const COLORS: [[u8; 3]; 13] = car::map!(
 const STYLES: [Option<u8>; 13] = amap::amap! {
     4 | 9 => Style::ITALIC| Style::BOLD,
     1 | 3 => Style::ITALIC,
-    11 | 12 => Style::BOLD,
+    12 => 0,
 };
 
 const fn color(x: &[u8; 6]) -> [u8; 3] {
@@ -41,6 +41,16 @@ pub struct TextArea {
     pub cursor: usize,
     highlighter: Highlighter,
     column: usize,
+    /// ┌─────────────────┐
+    /// │#invisible text  │
+    /// │╶╶╶view offset╶╶╶│
+    /// │visible text     │
+    /// │                 │
+    /// │                 │
+    /// │ EOF             │
+    /// │                 │ - up to 1 - r more lines visible
+    /// └─────────────────┘   default to 5 more lines
+    ///
     pub vo: usize,
 
     pub r: usize,
@@ -190,7 +200,7 @@ impl TextArea {
             >= (self.vo + self.r).saturating_sub(5)
         {
             self.vo += 1;
-            self.vo = self.vo.min(self.l() - self.r);
+            // self.vo = self.vo.min(self.l() - self.r);
         }
     }
 
@@ -210,13 +220,28 @@ impl TextArea {
             self.vo = self.vo.saturating_sub(1);
         }
     }
-
+    #[lower::apply(saturating)]
     pub fn backspace(&mut self) {
-        _ = self
-            .rope
-            .try_remove(self.cursor.saturating_sub(1)..self.cursor);
-        self.cursor = self.cursor.saturating_sub(1);
+        _ = self.rope.try_remove(self.cursor - 1..self.cursor);
+        self.cursor = self.cursor - 1;
     }
+
+    #[lower::apply(saturating)]
+    pub fn scroll_to_cursor(&mut self) {
+        let (_, y) = self.cursor();
+
+        if !(self.vo..self.vo + self.r).contains(&y) {
+            if self.vo > y {
+                // cursor is above current view
+                // thus we want to keep it at the top of the view
+                self.vo = y - 5;
+            } else {
+                // otherwise, keep it at the bottom
+                self.vo = y - self.r + 5;
+            }
+        }
+    }
+
     #[implicit_fn::implicit_fn]
     pub fn write_to(
         &mut self,
