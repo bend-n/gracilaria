@@ -116,7 +116,7 @@ impl TextArea {
         (x, y)
     }
 
-    fn setc(&mut self) {
+    pub fn setc(&mut self) {
         self.column = self.cursor
             - self.rope.line_to_char(self.rope.char_to_line(self.cursor));
     }
@@ -384,6 +384,9 @@ impl TextArea {
             }
         }
     }
+    pub fn line_number_offset(&self) -> usize {
+        self.l().ilog10() as usize + 2
+    }
     pub fn line_numbers(
         &self,
         (_, r): (usize, usize),
@@ -391,8 +394,7 @@ impl TextArea {
         bg: [u8; 3],
         (into, (w, _)): (&mut [Cell], (usize, usize)),
         (ox, oy): (usize, usize),
-    ) -> usize {
-        let need = self.l().ilog10() as usize + 2;
+    ) {
         for y in 0..r {
             if (self.vo + y) < self.l() {
                 (self.vo + y)
@@ -407,8 +409,6 @@ impl TextArea {
                     });
             }
         }
-
-        need
     }
 
     pub fn extend_selection(

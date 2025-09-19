@@ -28,7 +28,9 @@ use dsb::{Cell, F};
 use fimg::Image;
 use rust_fsm::StateMachineImpl;
 use swash::{FontRef, Instance};
-use winit::event::{ElementState, Event, MouseScrollDelta, WindowEvent};
+use winit::event::{
+    ElementState, Event, MouseButton, MouseScrollDelta, WindowEvent,
+};
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::keyboard::{Key, ModifiersState, NamedKey, SmolStr};
 
@@ -58,6 +60,8 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
         F::FontRef(*IFONT, &[(2003265652, 550.0)]),
         F::instance(*IFONT, *BIFONT),
     );
+
+    let mut cursor_position = (0, 0);
 
     let mut state = State::Default;
     let mut bar =
@@ -96,6 +100,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
     .with_event_handler(
         move |(window, _context), surface, event, elwt| {
             elwt.set_control_flow(ControlFlow::Wait);
+            let (fw, fh) = dsb::dims(&FONT, ppem);
             let (c, r) = dsb::fit(
                 &FONT,
                 ppem,
@@ -160,13 +165,14 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             State::Selection(x) => Some(x.clone()),
                             _ => None,
                         };
-                        let t_ox = text.line_numbers(
+                        text.line_numbers(
                             (c, r - 1),
                             [67, 76, 87],
                             BG,
                             (&mut cells, (c, r)),
                             (1, 0),
-                        ) + 1;
+                        );
+                        let t_ox = text.line_number_offset() + 1;
                         text.write_to(
                             (c - t_ox, r - 1),
                             FG,
@@ -256,6 +262,43 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                     window_id,
                 } if window_id == window.id() => {
                     elwt.exit();
+                }
+                Event::WindowEvent {
+                    event: WindowEvent::CursorMoved { position, .. },
+                    ..
+                } => {
+                    let met = FONT.metrics(&[]);
+                    let fac = ppem / met.units_per_em as f32;
+                    dbg!(cursor_position);
+                    cursor_position = (
+                        (position.x / (fw) as f64).round() as usize,
+                        (position.y / (fh + ls * fac) as f64).floor()
+                            as usize,
+                    )
+                }
+                Event::WindowEvent {
+                    event:
+                        WindowEvent::MouseInput { state: bt, button, .. },
+                    ..
+                } if bt.is_pressed() => {
+                    match state.consume(Action::M(button)).unwrap() {
+                        Some(Do::MoveCursor) => {
+                            let l_i = text.vo + cursor_position.1;
+                            _ = text.rope.try_line_to_char(l_i).map(|l| {
+                                text.cursor = l
+                                    + (text.rope.line(l_i).len_chars()
+                                        - 1)
+                                    .min(
+                                        cursor_position.0.saturating_sub(
+                                            text.line_number_offset() + 1,
+                                        ),
+                                    );
+                                text.setc();
+                            });
+                        }
+                        None => {}
+                        _ => unreachable!(),
+                    }
                 }
                 Event::WindowEvent {
                     window_id: _,
@@ -361,6 +404,9 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                         Some(Do::Paste) => {
                             text.insert(&clipp::paste());
                         }
+                        Some(Do::MoveCursor) => {
+                            unreachable!()
+                        }
                         None => {}
                     }
                     window.request_redraw();
@@ -446,7 +492,9 @@ Default => {
     K(Key::Character(x) if x == "q" && ctrl()) => Dead [Quit],
     K(Key::Character(x) if x == "v" && ctrl()) => Default [Paste],
     K(Key::Named(NamedKey::ArrowUp | NamedKey::ArrowLeft | NamedKey::ArrowDown | NamedKey::ArrowRight | NamedKey::Home | NamedKey::End) if shift()) => Selection(Range<usize> => 0..0) [StartSelection],
+    M(MouseButton => MouseButton::Left) => Default [MoveCursor],
     K(_) => Default [Edit],
+    M(_) => Default,
 },
 Selection(x) => {
     K(Key::Named(NamedKey::ArrowUp | NamedKey::ArrowLeft | NamedKey::ArrowDown | NamedKey::ArrowRight | NamedKey::Home | NamedKey::End) if shift()) => Selection(x) [UpdateSelection],
