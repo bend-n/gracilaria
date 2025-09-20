@@ -33,20 +33,9 @@ impl Bar {
         use super::State;
         match state {
             State::Default if super::ctrl() => {
-                let x = s("C + { ")
-                    .chain(once(('S', Style::BOLD)))
-                    .chain(s("ave, "))
-                    .chain(once(('Q', Style::BOLD)))
-                    .chain(s("uit, "))
-                    .chain(once(('V', Style::BOLD)))
-                    .chain(s("aste }"));
-
-                x.zip(row).for_each(|((x, z), y)| {
-                    *y = Cell {
-                        letter: Some(x),
-                        style: Style { flags: z, ..y.style },
-                        ..*y
-                    }
+                let x = "C + { S, Q, V, Z, Y }".chars();
+                x.zip(row).for_each(|(x, y)| {
+                    y.letter = Some(x);
                 });
             }
             State::Default => {

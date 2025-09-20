@@ -10,18 +10,20 @@
     portable_simd
 )]
 #![allow(incomplete_features, redundant_semicolons)]
+use std::collections::VecDeque;
 use std::convert::identity;
 use std::fs::File;
 use std::hint::assert_unchecked;
 use std::iter::zip;
 use std::num::NonZeroU32;
 use std::simd::prelude::*;
-use std::sync::LazyLock;
+use std::sync::{LazyLock, Mutex};
 use std::time::Instant;
 
 use Default::default;
 use array_chunks::*;
 use atools::prelude::*;
+use diff_match_patch_rs::{Efficient, PatchInput};
 use dsb::cell::Style;
 use dsb::{Cell, F};
 use fimg::Image;
@@ -34,12 +36,68 @@ use winit::event_loop::{ControlFlow, EventLoop};
 use winit::keyboard::{Key, ModifiersState, NamedKey, SmolStr};
 
 use crate::bar::Bar;
-use crate::text::TextArea;
+use crate::text::{Diff, TextArea};
 mod bar;
 mod text;
 mod winit_app;
 fn main() {
     entry(EventLoop::new().unwrap())
+}
+
+struct Hist {
+    pub history: Vec<Diff>,
+    pub redo_history: Vec<Diff>,
+    pub last: TextArea,
+    pub last_edit: std::time::Instant,
+    pub changed: bool,
+}
+impl Hist {
+    pub fn push(&mut self, x: &TextArea) {
+        let d = diff_match_patch_rs::DiffMatchPatch::new();
+        self.history.push(Diff {
+            changes: (
+                d.patch_make(PatchInput::new_text_text(
+                    &x.rope.to_string(),
+                    &self.last.rope.to_string(),
+                ))
+                .unwrap(),
+                d.patch_make(PatchInput::new_text_text(
+                    &self.last.rope.to_string(),
+                    &x.rope.to_string(),
+                ))
+                .unwrap(),
+            ),
+            data: [
+                (self.last.cursor, self.last.column, self.last.vo),
+                (x.cursor, x.column, x.vo),
+            ],
+        });
+        self.redo_history.clear();
+        self.last = x.clone();
+        self.changed = false;
+    }
+    pub fn undo(&mut self) -> Option<Diff> {
+        self.history.pop().map(|x| {
+            self.redo_history.push(x.clone());
+            x
+        })
+    }
+    pub fn redo(&mut self) -> Option<Diff> {
+        self.redo_history.pop().map(|x| {
+            self.history.push(x.clone());
+            x
+        })
+    }
+    pub fn test_push(&mut self, x: &TextArea) {
+        if self.last_edit.elapsed().as_millis() > 500 && self.changed {
+            self.push(x);
+        }
+    }
+    pub fn record(&mut self, x: &TextArea) {
+        self.test_push(x);
+        self.last_edit = Instant::now();
+        self.changed = true;
+    }
 }
 
 static mut MODIFIERS: ModifiersState = ModifiersState::empty();
@@ -71,6 +129,13 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
         text.insert(&std::fs::read_to_string(x).unwrap());
         text.cursor = 0;
     });
+    let mut hist = Hist {
+        history: vec![],
+        redo_history: vec![],
+        last: text.clone(),
+        last_edit: Instant::now(),
+        changed: false,
+    };
     macro_rules! save {
         () => {{
             std::fs::write(
@@ -268,7 +333,6 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                 } => {
                     let met = FONT.metrics(&[]);
                     let fac = ppem / met.units_per_em as f32;
-                    dbg!(cursor_position);
                     cursor_position = (
                         (position.x / (fw) as f64).round() as usize,
                         (position.y / (fh + ls * fac) as f64).floor()
@@ -363,6 +427,15 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                         Some(Do::Edit) => {
                             handle2(event.logical_key, &mut text);
                             text.scroll_to_cursor();
+                            hist.record(&text);
+                        }
+                        Some(Do::Undo) => {
+                            hist.test_push(&text);
+                            hist.undo().map(|x| x.apply(&mut text, false));
+                        }
+                        Some(Do::Redo) => {
+                            hist.test_push(&text);
+                            hist.redo().map(|x| x.apply(&mut text, true));
                         }
                         Some(Do::Quit) => elwt.exit(),
                         Some(Do::StartSelection) => {
@@ -383,24 +456,30 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             text.scroll_to_cursor();
                         }
                         Some(Do::Insert((x, c))) => {
+                            hist.push(&text);
                             text.rope.remove(x.clone());
                             text.cursor = x.start;
                             text.setc();
                             text.insert_(c);
                         }
                         Some(Do::Delete(x)) => {
+                            hist.push(&text);
+                            text.cursor = x.start;
                             text.rope.remove(x);
                         }
                         Some(Do::Copy(x)) => {
                             clipp::copy(text.rope.slice(x).to_string());
                         }
                         Some(Do::Cut(x)) => {
+                            hist.push(&text);
                             clipp::copy(
                                 text.rope.slice(x.clone()).to_string(),
                             );
-                            text.rope.remove(x);
+                            text.rope.remove(x.clone());
+                            text.cursor = x.start;
                         }
                         Some(Do::Paste) => {
+                            hist.push(&text);
                             text.insert(&clipp::paste());
                         }
                         Some(
@@ -499,6 +578,8 @@ Default => {
     K(Key::Character(x) if x == "s" && ctrl()) => Save [Save],
     K(Key::Character(x) if x == "q" && ctrl()) => Dead [Quit],
     K(Key::Character(x) if x == "v" && ctrl()) => Default [Paste],
+    K(Key::Character(x) if x == "z" && ctrl()) => Default [Undo],
+    K(Key::Character(x) if x == "y" && ctrl()) => Default [Redo],
     K(Key::Named(NamedKey::ArrowUp | NamedKey::ArrowLeft | NamedKey::ArrowDown | NamedKey::ArrowRight | NamedKey::Home | NamedKey::End) if shift()) => Selection(Range<usize> => 0..0) [StartSelection],
     M(MouseButton => MouseButton::Left if shift()) => Selection(Range<usize> => 0..0) [StartSelection],
     M(MouseButton => MouseButton::Left) => Default [MoveCursor],
@@ -523,4 +604,18 @@ Save => {
 },
 InputFname(t) => K(Key::Named(NamedKey::Enter)) => Default [SaveTo(String => t.rope.to_string())],
 InputFname(t) => K(k) => InputFname(TextArea => handle(k, t)),
+}
+#[test]
+fn x() {
+    let d = diff_match_patch_rs::DiffMatchPatch::new();
+    let diffs = d
+        .diff_main::<Efficient>("previous state th", "previous state")
+        .unwrap();
+    dbg!(&diffs);
+
+    let patch = d.patch_make(PatchInput::new_diffs(&diffs)).unwrap();
+    let x = d.patch_apply(&patch, "previous state th").unwrap().0;
+    assert_eq!(x, "previous state");
+    // diff = -th
+    // undo = previous state
 }

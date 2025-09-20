@@ -3,6 +3,7 @@ use std::ops::Range;
 use std::sync::LazyLock;
 
 use atools::Chunked;
+use diff_match_patch_rs::{DiffMatchPatch, Patch, Patches};
 use dsb::Cell;
 use dsb::cell::Style;
 use ropey::Rope;
@@ -34,13 +35,36 @@ const fn color(x: &[u8; 6]) -> [u8; 3] {
         |[a, b]| a * 16 + b
     )
 }
+#[derive(Clone)]
+pub struct Diff {
+    pub changes: (Patches<u8>, Patches<u8>),
+    pub data: [(usize, usize, usize); 2],
+}
+
+impl Diff {
+    pub fn apply(self, t: &mut TextArea, redo: bool) {
+        let d = DiffMatchPatch::new();
+        t.rope = Rope::from_str(
+            &d.patch_apply(
+                &if redo { self.changes.1 } else { self.changes.0 },
+                &t.rope.to_string(),
+            )
+            .unwrap()
+            .0,
+        );
+        let (cu, co, vo) = self.data[redo as usize];
+        t.cursor = cu;
+        t.column = co;
+        t.vo = vo;
+    }
+}
 
 #[derive(Default)]
 pub struct TextArea {
     pub rope: Rope,
     pub cursor: usize,
     highlighter: Highlighter,
-    column: usize,
+    pub column: usize,
     /// ┌─────────────────┐
     /// │#invisible text  │
     /// │╶╶╶view offset╶╶╶│

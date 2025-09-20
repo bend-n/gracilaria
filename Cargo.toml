@@ -26,6 +26,8 @@ rust-fsm = { version = "0.8.0", path = "../rust-fsm/rust-fsm", features = [
     "diagram",
 ] }
 clipp = "0.1.0"
+parking_lot = "0.12.4"
+diff-match-patch-rs = "0.5.1"
 
 [build-dependencies]
 cc = "*"
