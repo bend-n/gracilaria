@@ -99,6 +99,17 @@ impl TextArea {
         self.rope.len_lines()
     }
 
+    pub fn index_at(&self, (x, y): (usize, usize)) -> usize {
+        let l_i = self.vo + y;
+        self.rope
+            .try_line_to_char(l_i)
+            .map(|l| {
+                l + (self.rope.line(l_i).len_chars() - 1)
+                    .min(x.saturating_sub(self.line_number_offset() + 1))
+            })
+            .unwrap_or(self.rope.len_chars())
+    }
+
     pub fn insert_(&mut self, c: SmolStr) {
         self.rope.insert(self.cursor, &c);
         self.cursor += c.chars().count();
@@ -467,5 +478,22 @@ impl TextArea {
             }
             _ => unreachable!(),
         }
+    }
+
+    pub fn extend_selection_to(
+        &mut self,
+        to: usize,
+        r: std::ops::Range<usize>,
+    ) -> std::ops::Range<usize> {
+        let r = if self.cursor == r.start {
+            if to < r.start { to..r.end } else { r.end..to } // to > r.end
+        } else if self.cursor == r.end {
+            if to > r.end { r.start..to } else { to..r.start } // to < r.start
+        } else {
+            panic!()
+        };
+        self.cursor = to;
+        self.setc();
+        r
     }
 }

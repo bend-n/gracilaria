@@ -2,7 +2,6 @@
 #![feature(tuple_trait, unboxed_closures, fn_traits)]
 #![feature(
     import_trait_associated_functions,
-    guard_patterns,
     if_let_guard,
     deref_patterns,
     generic_const_exprs,
@@ -283,18 +282,21 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                 } if bt.is_pressed() => {
                     match state.consume(Action::M(button)).unwrap() {
                         Some(Do::MoveCursor) => {
-                            let l_i = text.vo + cursor_position.1;
-                            _ = text.rope.try_line_to_char(l_i).map(|l| {
-                                text.cursor = l
-                                    + (text.rope.line(l_i).len_chars()
-                                        - 1)
-                                    .min(
-                                        cursor_position.0.saturating_sub(
-                                            text.line_number_offset() + 1,
-                                        ),
-                                    );
-                                text.setc();
-                            });
+                            text.cursor = text.index_at(cursor_position);
+                            text.setc();
+                        }
+                        Some(Do::ExtendSelectionToMouse) => {
+                            *state.sel() = text.extend_selection_to(
+                                text.index_at(cursor_position),
+                                state.sel().clone(),
+                            );
+                        }
+                        Some(Do::StartSelection) => {
+                            let x = text.index_at(cursor_position);
+                            *state.sel() = text.extend_selection_to(
+                                x,
+                                text.cursor..text.cursor,
+                            );
                         }
                         None => {}
                         _ => unreachable!(),
@@ -364,29 +366,26 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                         }
                         Some(Do::Quit) => elwt.exit(),
                         Some(Do::StartSelection) => {
-                            let State::Selection(x) = &mut state else {
-                                panic!()
-                            };
                             let Key::Named(y) = event.logical_key else {
                                 panic!()
                             };
-                            *x = text.extend_selection(
+                            *state.sel() = text.extend_selection(
                                 y,
                                 text.cursor..text.cursor,
                             );
                         }
                         Some(Do::UpdateSelection) => {
-                            let State::Selection(x) = &mut state else {
-                                panic!()
-                            };
                             let Key::Named(y) = event.logical_key else {
                                 panic!()
                             };
-                            *x = text.extend_selection(y, x.clone());
+                            *state.sel() = text
+                                .extend_selection(y, state.sel().clone());
                             text.scroll_to_cursor();
                         }
                         Some(Do::Insert((x, c))) => {
-                            text.rope.remove(x);
+                            text.rope.remove(x.clone());
+                            text.cursor = x.start;
+                            text.setc();
                             text.insert_(c);
                         }
                         Some(Do::Delete(x)) => {
@@ -404,7 +403,9 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                         Some(Do::Paste) => {
                             text.insert(&clipp::paste());
                         }
-                        Some(Do::MoveCursor) => {
+                        Some(
+                            Do::MoveCursor | Do::ExtendSelectionToMouse,
+                        ) => {
                             unreachable!()
                         }
                         None => {}
@@ -474,10 +475,17 @@ pub static BIFONT: LazyLock<Instance<'static>> = LazyLock::new(|| {
 pub static BFONT: LazyLock<Instance<'static>> =
     LazyLock::new(|| FONT.instances().find_by_name("Bold").unwrap());
 fn shift() -> bool {
-    unsafe { MODIFIERS }.shift_key()
+    dbg!(unsafe { MODIFIERS }.shift_key())
 }
 fn ctrl() -> bool {
     unsafe { MODIFIERS }.control_key()
+}
+
+impl State {
+    fn sel(&mut self) -> &mut Range<usize> {
+        let State::Selection(x) = self else { panic!() };
+        x
+    }
 }
 
 // use NamedKey::Arrow
@@ -492,12 +500,17 @@ Default => {
     K(Key::Character(x) if x == "q" && ctrl()) => Dead [Quit],
     K(Key::Character(x) if x == "v" && ctrl()) => Default [Paste],
     K(Key::Named(NamedKey::ArrowUp | NamedKey::ArrowLeft | NamedKey::ArrowDown | NamedKey::ArrowRight | NamedKey::Home | NamedKey::End) if shift()) => Selection(Range<usize> => 0..0) [StartSelection],
+    M(MouseButton => MouseButton::Left if shift()) => Selection(Range<usize> => 0..0) [StartSelection],
     M(MouseButton => MouseButton::Left) => Default [MoveCursor],
     K(_) => Default [Edit],
     M(_) => Default,
 },
+Selection(x if shift()) => {
+    K(Key::Named(NamedKey::ArrowUp | NamedKey::ArrowLeft | NamedKey::ArrowDown | NamedKey::ArrowRight | NamedKey::Home | NamedKey::End)) => Selection(x) [UpdateSelection],
+    M(MouseButton => MouseButton::Left) => Selection(x) [ExtendSelectionToMouse],
+},
 Selection(x) => {
-    K(Key::Named(NamedKey::ArrowUp | NamedKey::ArrowLeft | NamedKey::ArrowDown | NamedKey::ArrowRight | NamedKey::Home | NamedKey::End) if shift()) => Selection(x) [UpdateSelection],
+    M(MouseButton => MouseButton::Left) => Default [MoveCursor],
     K(Key::Named(NamedKey::Backspace)) => Default [Delete(Range<usize> => x)],
     K(Key::Character(y) if y == "x" && ctrl()) => Default [Cut(Range<usize> => x)],
     K(Key::Character(y) if y == "c" && ctrl()) => Default [Copy(Range<usize> => x)],
