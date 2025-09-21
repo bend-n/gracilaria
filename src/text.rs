@@ -1,4 +1,4 @@
-use std::fmt::Debug;
+use std::fmt::{Debug, Display};
 use std::ops::Range;
 use std::sync::LazyLock;
 
@@ -35,15 +35,23 @@ const fn color(x: &[u8; 6]) -> [u8; 3] {
         |[a, b]| a * 16 + b
     )
 }
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Diff {
     pub changes: (Patches<u8>, Patches<u8>),
     pub data: [(usize, usize, usize); 2],
 }
 
+impl Display for Diff {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let d = DiffMatchPatch::new();
+        writeln!(f, "{}", d.patch_to_text(&self.changes.1))
+    }
+}
+
 impl Diff {
     pub fn apply(self, t: &mut TextArea, redo: bool) {
         let d = DiffMatchPatch::new();
+        // println!("{}", d.patch_to_text(&self.changes.0));
         t.rope = Rope::from_str(
             &d.patch_apply(
                 &if redo { self.changes.1 } else { self.changes.0 },
@@ -122,14 +130,18 @@ impl TextArea {
     pub fn l(&self) -> usize {
         self.rope.len_lines()
     }
-
+    #[implicit_fn::implicit_fn]
     pub fn index_at(&self, (x, y): (usize, usize)) -> usize {
         let l_i = self.vo + y;
         self.rope
             .try_line_to_char(l_i)
             .map(|l| {
-                l + (self.rope.line(l_i).len_chars() - 1)
-                    .min(x.saturating_sub(self.line_number_offset() + 1))
+                l + (self
+                    .rope
+                    .get_line(l_i)
+                    .map(_.len_chars() - 1)
+                    .unwrap_or_default())
+                .min(x.saturating_sub(self.line_number_offset() + 1))
             })
             .unwrap_or(self.rope.len_chars())
     }
@@ -509,13 +521,32 @@ impl TextArea {
         to: usize,
         r: std::ops::Range<usize>,
     ) -> std::ops::Range<usize> {
+        if [r.start, r.end].contains(&to) {
+            return r;
+        }
+        dbg!(&r, to);
         let r = if self.cursor == r.start {
-            if to < r.start { to..r.end } else { r.end..to } // to > r.end
+            if to < r.start {
+                to..r.end
+            } else if to > r.end {
+                r.end..to
+            } else {
+                to..r.end
+            }
         } else if self.cursor == r.end {
-            if to > r.end { r.start..to } else { to..r.start } // to < r.start
+            println!("@ en");
+            if to > r.end {
+                r.start..to
+            } else if to < r.start {
+                to..r.start
+            } else {
+                r.start..to
+            }
         } else {
             panic!()
         };
+        dbg!(&r);
+        assert!(r.start < r.end);
         self.cursor = to;
         self.setc();
         r

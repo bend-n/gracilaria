@@ -43,7 +43,7 @@ mod winit_app;
 fn main() {
     entry(EventLoop::new().unwrap())
 }
-
+#[derive(Debug)]
 struct Hist {
     pub history: Vec<Diff>,
     pub redo_history: Vec<Diff>,
@@ -52,7 +52,7 @@ struct Hist {
     pub changed: bool,
 }
 impl Hist {
-    pub fn push(&mut self, x: &TextArea) {
+    fn push(&mut self, x: &TextArea) {
         let d = diff_match_patch_rs::DiffMatchPatch::new();
         self.history.push(Diff {
             changes: (
@@ -72,35 +72,56 @@ impl Hist {
                 (x.cursor, x.column, x.vo),
             ],
         });
+        println!("push {}", self.history.last().unwrap());
         self.redo_history.clear();
         self.last = x.clone();
+        self.last_edit = Instant::now();
         self.changed = false;
     }
-    pub fn undo(&mut self) -> Option<Diff> {
+    fn undo_(&mut self) -> Option<Diff> {
         self.history.pop().map(|x| {
             self.redo_history.push(x.clone());
             x
         })
     }
-    pub fn redo(&mut self) -> Option<Diff> {
+    fn redo_(&mut self) -> Option<Diff> {
         self.redo_history.pop().map(|x| {
             self.history.push(x.clone());
             x
         })
     }
-    pub fn test_push(&mut self, x: &TextArea) {
-        if self.last_edit.elapsed().as_millis() > 500 && self.changed {
+    pub fn undo(&mut self, t: &mut TextArea) {
+        self.push_if_changed(&t);
+        self.undo_().map(|x| {
+            x.apply(t, false);
+            self.last = t.clone();
+        });
+    }
+    pub fn redo(&mut self, t: &mut TextArea) {
+        self.redo_().map(|x| {
+            x.apply(t, true);
+            self.last = t.clone();
+        });
+    }
+    pub fn push_if_changed(&mut self, x: &TextArea) {
+        if self.changed || x.rope != self.last.rope {
             self.push(x);
         }
     }
-    pub fn record(&mut self, x: &TextArea) {
-        self.test_push(x);
+    pub fn test_push(&mut self, x: &TextArea) {
+        if self.last_edit.elapsed().as_millis() > 500 {
+            self.push_if_changed(x);
+        }
+    }
+    pub fn record(&mut self, _: &TextArea) {
+        // self.test_push(x);
         self.last_edit = Instant::now();
         self.changed = true;
     }
 }
 
 static mut MODIFIERS: ModifiersState = ModifiersState::empty();
+static mut CLICKING: bool = false;
 
 const BG: [u8; 3] = [31, 36, 48];
 const FG: [u8; 3] = [204, 202, 194];
@@ -257,8 +278,8 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             &text,
                         );
 
-                        println!("cell=");
-                        dbg!(now.elapsed());
+                        // println!("cell=");
+                        // dbg!(now.elapsed());
                         let now = Instant::now();
                         unsafe {
                             dsb::render(
@@ -272,8 +293,8 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                                 i.as_mut(),
                             )
                         };
-                        eprint!("rend=");
-                        dbg!(now.elapsed());
+                        // eprint!("rend=");
+                        // dbg!(now.elapsed());
                         let met = FONT.metrics(&[]);
                         let fac = ppem / met.units_per_em as f32;
                         let now = Instant::now();
@@ -301,7 +322,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                                 );
                             }
                         };
-                        eprint!("conv = ");
+                        // eprint!("conv = ");
 
                         // }
                         let buffer = surface.buffer_mut().unwrap();
@@ -316,7 +337,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                                 .as_chunks_unchecked_mut::<4>()
                             },
                         );
-                        dbg!(now.elapsed());
+                        // dbg!(now.elapsed());
                         buffer.present().unwrap();
                     }
                 }
@@ -337,13 +358,37 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                         (position.x / (fw) as f64).round() as usize,
                         (position.y / (fh + ls * fac) as f64).floor()
                             as usize,
-                    )
+                    );
+                    match state
+                        .consume(Action::C(cursor_position))
+                        .unwrap()
+                    {
+                        Some(Do::ExtendSelectionToMouse) => {
+                            *state.sel() = text.extend_selection_to(
+                                text.index_at(cursor_position),
+                                state.sel().clone(),
+                            );
+                            window.request_redraw();
+                        }
+                        Some(Do::StartSelection) => {
+                            let x = text.index_at(cursor_position);
+                            hist.last.cursor = x;
+                            text.cursor = x;
+                            *state.sel() = x..x;
+                        }
+                        None => {}
+                        x => unreachable!("{x:?}"),
+                    }
                 }
+
                 Event::WindowEvent {
                     event:
                         WindowEvent::MouseInput { state: bt, button, .. },
                     ..
                 } if bt.is_pressed() => {
+                    if button == MouseButton::Left {
+                        unsafe { CLICKING = true };
+                    }
                     match state.consume(Action::M(button)).unwrap() {
                         Some(Do::MoveCursor) => {
                             text.cursor = text.index_at(cursor_position);
@@ -357,6 +402,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                         }
                         Some(Do::StartSelection) => {
                             let x = text.index_at(cursor_position);
+                            hist.last.cursor = x;
                             *state.sel() = text.extend_selection_to(
                                 x,
                                 text.cursor..text.cursor,
@@ -366,6 +412,14 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                         _ => unreachable!(),
                     }
                 }
+                Event::WindowEvent {
+                    event:
+                        WindowEvent::MouseInput {
+                            button: MouseButton::Left,
+                            ..
+                        },
+                    ..
+                } => unsafe { CLICKING = false },
                 Event::WindowEvent {
                     window_id: _,
                     event:
@@ -425,17 +479,20 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             save!();
                         }
                         Some(Do::Edit) => {
+                            hist.test_push(&text);
                             handle2(event.logical_key, &mut text);
                             text.scroll_to_cursor();
                             hist.record(&text);
                         }
                         Some(Do::Undo) => {
                             hist.test_push(&text);
-                            hist.undo().map(|x| x.apply(&mut text, false));
+                            hist.undo(&mut text);
+                            bar.last_action = "undid".to_string();
                         }
                         Some(Do::Redo) => {
                             hist.test_push(&text);
-                            hist.redo().map(|x| x.apply(&mut text, true));
+                            hist.redo(&mut text);
+                            bar.last_action = "redid".to_string();
                         }
                         Some(Do::Quit) => elwt.exit(),
                         Some(Do::StartSelection) => {
@@ -456,31 +513,35 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             text.scroll_to_cursor();
                         }
                         Some(Do::Insert((x, c))) => {
-                            hist.push(&text);
+                            hist.push_if_changed(&text);
                             text.rope.remove(x.clone());
                             text.cursor = x.start;
                             text.setc();
                             text.insert_(c);
+                            hist.push_if_changed(&text);
                         }
                         Some(Do::Delete(x)) => {
-                            hist.push(&text);
+                            hist.push_if_changed(&text);
                             text.cursor = x.start;
                             text.rope.remove(x);
+                            hist.push_if_changed(&text);
                         }
                         Some(Do::Copy(x)) => {
                             clipp::copy(text.rope.slice(x).to_string());
                         }
                         Some(Do::Cut(x)) => {
-                            hist.push(&text);
+                            hist.push_if_changed(&text);
                             clipp::copy(
                                 text.rope.slice(x.clone()).to_string(),
                             );
                             text.rope.remove(x.clone());
                             text.cursor = x.start;
+                            hist.push_if_changed(&text);
                         }
                         Some(Do::Paste) => {
-                            hist.push(&text);
+                            hist.push_if_changed(&text);
                             text.insert(&clipp::paste());
+                            hist.push_if_changed(&text);
                         }
                         Some(
                             Do::MoveCursor | Do::ExtendSelectionToMouse,
@@ -583,6 +644,8 @@ Default => {
     K(Key::Named(NamedKey::ArrowUp | NamedKey::ArrowLeft | NamedKey::ArrowDown | NamedKey::ArrowRight | NamedKey::Home | NamedKey::End) if shift()) => Selection(Range<usize> => 0..0) [StartSelection],
     M(MouseButton => MouseButton::Left if shift()) => Selection(Range<usize> => 0..0) [StartSelection],
     M(MouseButton => MouseButton::Left) => Default [MoveCursor],
+    C((usize, usize) => _ if unsafe { CLICKING }) => Selection(0..0) [StartSelection],
+    C(_) => Default,
     K(_) => Default [Edit],
     M(_) => Default,
 },
@@ -591,6 +654,8 @@ Selection(x if shift()) => {
     M(MouseButton => MouseButton::Left) => Selection(x) [ExtendSelectionToMouse],
 },
 Selection(x) => {
+    C(y if unsafe { CLICKING }) => Selection(x) [ExtendSelectionToMouse],
+    C(_) => Selection(x),
     M(MouseButton => MouseButton::Left) => Default [MoveCursor],
     K(Key::Named(NamedKey::Backspace)) => Default [Delete(Range<usize> => x)],
     K(Key::Character(y) if y == "x" && ctrl()) => Default [Cut(Range<usize> => x)],
@@ -606,16 +671,24 @@ InputFname(t) => K(Key::Named(NamedKey::Enter)) => Default [SaveTo(String => t.r
 InputFname(t) => K(k) => InputFname(TextArea => handle(k, t)),
 }
 #[test]
-fn x() {
-    let d = diff_match_patch_rs::DiffMatchPatch::new();
-    let diffs = d
-        .diff_main::<Efficient>("previous state th", "previous state")
-        .unwrap();
-    dbg!(&diffs);
-
-    let patch = d.patch_make(PatchInput::new_diffs(&diffs)).unwrap();
-    let x = d.patch_apply(&patch, "previous state th").unwrap().0;
-    assert_eq!(x, "previous state");
-    // diff = -th
-    // undo = previous state
+fn history_test() {
+    let mut t = TextArea::default();
+    let mut h = Hist {
+        history: vec![],
+        redo_history: vec![],
+        last: t.clone(),
+        last_edit: Instant::now(),
+        changed: false,
+    };
+    t.insert("echo");
+    h.push(&t);
+    t.insert(" test");
+    h.push(&t);
+    h.undo(&mut t);
+    h.redo(&mut t);
+    h.undo(&mut t);
+    t.insert(" good");
+    h.push(&t);
+    h.undo(&mut t);
+    assert_eq!(t.rope.to_string(), "echo");
 }
