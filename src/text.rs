@@ -1,12 +1,13 @@
 use std::fmt::{Debug, Display};
-use std::ops::Range;
+use std::ops::{Not as _, Range};
 use std::sync::LazyLock;
 
 use atools::Chunked;
 use diff_match_patch_rs::{DiffMatchPatch, Patch, Patches};
 use dsb::Cell;
 use dsb::cell::Style;
-use ropey::Rope;
+use implicit_fn::implicit_fn;
+use ropey::{Rope, RopeSlice};
 use tree_sitter_highlight::{
     HighlightConfiguration, HighlightEvent, Highlighter,
 };
@@ -127,10 +128,11 @@ impl TextArea {
         [(x1, y1), (x2, y2)]
     }
 
+    /// number of lines
     pub fn l(&self) -> usize {
         self.rope.len_lines()
     }
-    #[implicit_fn::implicit_fn]
+    #[implicit_fn]
     pub fn index_at(&self, (x, y): (usize, usize)) -> usize {
         let l_i = self.vo + y;
         self.rope
@@ -152,7 +154,7 @@ impl TextArea {
         self.setc();
     }
     pub fn insert(&mut self, c: &str) {
-        self.rope.insert(self.cursor, &c);
+        self.rope.insert(self.cursor, c);
         self.cursor += c.chars().count();
         self.setc();
     }
@@ -161,6 +163,10 @@ impl TextArea {
         let y = self.rope.char_to_line(self.cursor);
         let x = self.cursor - self.rope.line_to_char(y);
         (x, y)
+    }
+
+    fn cl(&self) -> RopeSlice<'_> {
+        self.rope.line(self.rope.char_to_line(self.cursor))
     }
 
     pub fn setc(&mut self) {
@@ -174,13 +180,13 @@ impl TextArea {
         self.setc();
     }
 
-    #[implicit_fn::implicit_fn]
+    #[implicit_fn]
     fn indentation(&self) -> usize {
-        let l = self.rope.line(self.rope.char_to_line(self.cursor));
+        let l = self.cl();
         l.chars().take_while(_.is_whitespace()).count()
     }
 
-    #[implicit_fn::implicit_fn]
+    #[implicit_fn]
     pub fn home(&mut self) {
         let beg =
             self.rope.line_to_char(self.rope.char_to_line(self.cursor));
@@ -199,8 +205,7 @@ impl TextArea {
         let i = self.rope.char_to_line(self.cursor);
         let beg = self.rope.line_to_char(i);
 
-        let l = self.rope.line(self.rope.char_to_line(self.cursor));
-        self.cursor = beg + l.len_chars()
+        self.cursor = beg + self.cl().len_chars()
             - self.rope.get_line(i + 1).map(|_| 1).unwrap_or(0);
         self.setc();
     }
@@ -210,6 +215,74 @@ impl TextArea {
         self.cursor += 1;
         self.cursor = self.cursor.min(self.rope.len_chars());
         self.setc();
+    }
+
+    fn at(&self) -> char {
+        self.rope.get_char(self.cursor).unwrap_or('\n')
+    }
+    #[implicit_fn]
+    pub fn word_right(&mut self) {
+        self.cursor += self
+            .rope
+            .slice(self.cursor..)
+            .chars()
+            .take_while(_.is_whitespace())
+            .count();
+
+        self.cursor += if is_word(self.at()).not()
+            && !self.at().is_whitespace()
+            && !is_word(self.rope.char(self.cursor + 1))
+        {
+            self.rope
+                .slice(self.cursor..)
+                .chars()
+                .take_while(|&x| {
+                    is_word(x).not() && x.is_whitespace().not()
+                })
+                .count()
+        } else {
+            self.right();
+            self.rope
+                .slice(self.cursor..)
+                .chars()
+                .take_while(|&x| is_word(x))
+                .count()
+        };
+        self.setc();
+    }
+    // from μ
+    #[lower::apply(saturating)]
+    pub fn word_left(&mut self) {
+        self.left();
+        while self.at().is_whitespace() {
+            if self.cursor == 0 {
+                return;
+            }
+            self.left();
+        }
+        if is_word(self.at()).not()
+            && !self.at().is_whitespace()
+            && !is_word(self.rope.char(self.cursor - 1))
+        {
+            while is_word(self.at()).not()
+                && self.at().is_whitespace().not()
+            {
+                if self.cursor == 0 {
+                    return;
+                }
+                self.left();
+            }
+            self.right();
+        } else {
+            self.left();
+            while is_word(self.at()) {
+                if self.cursor == 0 {
+                    return;
+                }
+                self.left();
+            }
+            self.right();
+        }
     }
 
     pub fn enter(&mut self) {
@@ -289,7 +362,7 @@ impl TextArea {
         }
     }
 
-    #[implicit_fn::implicit_fn]
+    #[implicit_fn]
     pub fn write_to(
         &mut self,
         (c, r): (usize, usize),
@@ -496,6 +569,14 @@ impl TextArea {
                 self.end();
                 right!()
             }
+            NamedKey::ArrowLeft if super::ctrl() => {
+                self.word_left();
+                left!()
+            }
+            NamedKey::ArrowRight if super::ctrl() => {
+                self.word_right();
+                right!()
+            }
             NamedKey::ArrowLeft => {
                 self.left();
                 left!()
@@ -524,7 +605,6 @@ impl TextArea {
         if [r.start, r.end].contains(&to) {
             return r;
         }
-        dbg!(&r, to);
         let r = if self.cursor == r.start {
             if to < r.start {
                 to..r.end
@@ -545,10 +625,13 @@ impl TextArea {
         } else {
             panic!()
         };
-        dbg!(&r);
         assert!(r.start < r.end);
         self.cursor = to;
         self.setc();
         r
     }
+}
+
+fn is_word(r: char) -> bool {
+    matches!(r, 'a'..='z' | 'A'..='Z' | '0'..='9' | '_')
 }

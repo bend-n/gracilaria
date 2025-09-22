@@ -63,7 +63,6 @@ impl Bar {
                         *y = Cell {
                             letter: Some(x),
                             style: Style { flags: z, ..y.style },
-                            ..*y
                         }
                     });
             }

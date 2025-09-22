@@ -10,20 +10,13 @@
     portable_simd
 )]
 #![allow(incomplete_features, redundant_semicolons)]
-use std::collections::VecDeque;
 use std::convert::identity;
-use std::fs::File;
-use std::hint::assert_unchecked;
-use std::iter::zip;
 use std::num::NonZeroU32;
-use std::simd::prelude::*;
-use std::sync::{LazyLock, Mutex};
+use std::sync::LazyLock;
 use std::time::Instant;
 
 use Default::default;
-use array_chunks::*;
-use atools::prelude::*;
-use diff_match_patch_rs::{Efficient, PatchInput};
+use diff_match_patch_rs::PatchInput;
 use dsb::cell::Style;
 use dsb::{Cell, F};
 use fimg::Image;
@@ -79,19 +72,13 @@ impl Hist {
         self.changed = false;
     }
     fn undo_(&mut self) -> Option<Diff> {
-        self.history.pop().map(|x| {
-            self.redo_history.push(x.clone());
-            x
-        })
+        self.history.pop().inspect(|x| self.redo_history.push(x.clone()))
     }
     fn redo_(&mut self) -> Option<Diff> {
-        self.redo_history.pop().map(|x| {
-            self.history.push(x.clone());
-            x
-        })
+        self.redo_history.pop().inspect(|x| self.history.push(x.clone()))
     }
     pub fn undo(&mut self, t: &mut TextArea) {
-        self.push_if_changed(&t);
+        self.push_if_changed(t);
         self.undo_().map(|x| {
             x.apply(t, false);
             self.last = t.clone();
@@ -273,7 +260,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             FG,
                             (&mut cells, (c, r)),
                             r - 1,
-                            &origin.as_deref().unwrap_or("new buffer"),
+                            origin.as_deref().unwrap_or("new buffer"),
                             &state,
                             &text,
                         );
@@ -567,7 +554,6 @@ fn handle2(key: Key, text: &mut TextArea) {
     match key {
         Named(Space) => text.insert(" "),
         Named(Backspace) => text.backspace(),
-        Named(ArrowLeft) => text.left(),
         Named(Home) if ctrl() => {
             text.cursor = 0;
             text.vo = 0;
@@ -578,13 +564,15 @@ fn handle2(key: Key, text: &mut TextArea) {
         }
         Named(Home) => text.home(),
         Named(End) => text.end(),
-        // Named(Tab)
+        Named(ArrowLeft) if ctrl() => text.word_left(),
+        Named(ArrowRight) if ctrl() => text.word_right(),
+        Named(ArrowLeft) => text.left(),
         Named(ArrowRight) => text.right(),
         Named(ArrowUp) => text.up(),
         Named(ArrowDown) => text.down(),
         Named(Enter) => text.enter(),
         Character(x) => {
-            text.insert(&*x);
+            text.insert(&x);
         }
         _ => {}
     };
@@ -615,7 +603,7 @@ pub static BIFONT: LazyLock<Instance<'static>> = LazyLock::new(|| {
 pub static BFONT: LazyLock<Instance<'static>> =
     LazyLock::new(|| FONT.instances().find_by_name("Bold").unwrap());
 fn shift() -> bool {
-    dbg!(unsafe { MODIFIERS }.shift_key())
+    unsafe { MODIFIERS }.shift_key()
 }
 fn ctrl() -> bool {
     unsafe { MODIFIERS }.control_key()
@@ -628,7 +616,6 @@ impl State {
     }
 }
 
-// use NamedKey::Arrow
 use std::ops::Range;
 rust_fsm::state_machine! {
 #[derive(Clone, Debug)]
