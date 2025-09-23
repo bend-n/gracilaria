@@ -16,6 +16,7 @@ use std::sync::LazyLock;
 use std::time::Instant;
 
 use Default::default;
+use NamedKey::*;
 use diff_match_patch_rs::PatchInput;
 use dsb::cell::Style;
 use dsb::{Cell, F};
@@ -438,11 +439,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                 } if event.state == ElementState::Pressed => {
                     if matches!(
                         event.logical_key,
-                        Key::Named(
-                            NamedKey::Shift
-                                | NamedKey::Alt
-                                | NamedKey::Control
-                        )
+                        Key::Named(Shift | Alt | Control)
                     ) {
                         return;
                     }
@@ -530,6 +527,21 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             text.insert(&clipp::paste());
                             hist.push_if_changed(&text);
                         }
+                        Some(Do::OpenFile(x)) => {
+                            origin = Some(x.clone());
+                            text = TextArea::default();
+                            text.insert(
+                                &std::fs::read_to_string(x).unwrap(),
+                            );
+                            text.cursor = 0;
+                            hist = Hist {
+                                history: vec![],
+                                redo_history: vec![],
+                                last: text.clone(),
+                                last_edit: Instant::now(),
+                                changed: false,
+                            };
+                        }
                         Some(
                             Do::MoveCursor | Do::ExtendSelectionToMouse,
                         ) => {
@@ -549,7 +561,6 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
 
 fn handle2(key: Key, text: &mut TextArea) {
     use Key::*;
-    use NamedKey::*;
 
     match key {
         Named(Space) => text.insert(" "),
@@ -617,6 +628,7 @@ impl State {
 }
 
 use std::ops::Range;
+
 rust_fsm::state_machine! {
 #[derive(Clone, Debug)]
 pub(crate) State => Action => Do
@@ -628,7 +640,8 @@ Default => {
     K(Key::Character(x) if x == "v" && ctrl()) => Default [Paste],
     K(Key::Character(x) if x == "z" && ctrl()) => Default [Undo],
     K(Key::Character(x) if x == "y" && ctrl()) => Default [Redo],
-    K(Key::Named(NamedKey::ArrowUp | NamedKey::ArrowLeft | NamedKey::ArrowDown | NamedKey::ArrowRight | NamedKey::Home | NamedKey::End) if shift()) => Selection(Range<usize> => 0..0) [StartSelection],
+    K(Key::Character(x) if x == "o" && ctrl()) => Procure((default(), InputRequest::OpenFile)),
+    K(Key::Named(ArrowUp | ArrowLeft | ArrowDown | ArrowRight | Home | End) if shift()) => Selection(Range<usize> => 0..0) [StartSelection],
     M(MouseButton => MouseButton::Left if shift()) => Selection(Range<usize> => 0..0) [StartSelection],
     M(MouseButton => MouseButton::Left) => Default [MoveCursor],
     C((usize, usize) => _ if unsafe { CLICKING }) => Selection(0..0) [StartSelection],
@@ -637,25 +650,40 @@ Default => {
     M(_) => Default,
 },
 Selection(x if shift()) => {
-    K(Key::Named(NamedKey::ArrowUp | NamedKey::ArrowLeft | NamedKey::ArrowDown | NamedKey::ArrowRight | NamedKey::Home | NamedKey::End)) => Selection(x) [UpdateSelection],
+    K(Key::Named(ArrowUp | ArrowLeft | ArrowDown | ArrowRight | Home | End)) => Selection(x) [UpdateSelection],
     M(MouseButton => MouseButton::Left) => Selection(x) [ExtendSelectionToMouse],
 },
 Selection(x) => {
     C(y if unsafe { CLICKING }) => Selection(x) [ExtendSelectionToMouse],
     C(_) => Selection(x),
     M(MouseButton => MouseButton::Left) => Default [MoveCursor],
-    K(Key::Named(NamedKey::Backspace)) => Default [Delete(Range<usize> => x)],
+    K(Key::Named(Backspace)) => Default [Delete(Range<usize> => x)],
     K(Key::Character(y) if y == "x" && ctrl()) => Default [Cut(Range<usize> => x)],
     K(Key::Character(y) if y == "c" && ctrl()) => Default [Copy(Range<usize> => x)],
     K(Key::Character(y)) => Default [Insert((Range<usize>, SmolStr) => (x, y))],
     K(_) => Default [Edit],
 },
 Save => {
-    RequireFilename => InputFname(TextArea => default()),
+    RequireFilename => Procure((TextArea, InputRequest) => (default(), InputRequest::SaveFile)),
     Saved => Default,
 },
-InputFname(t) => K(Key::Named(NamedKey::Enter)) => Default [SaveTo(String => t.rope.to_string())],
-InputFname(t) => K(k) => InputFname(TextArea => handle(k, t)),
+Procure((t, InputRequest::SaveFile)) => K(Key::Named(Enter)) => Default [SaveTo(String => t.rope.to_string())],
+Procure((t, InputRequest::OpenFile)) => K(Key::Named(Enter)) => Default [OpenFile(String => t.rope.to_string())],
+Procure((t, a)) => K(k) => Procure((handle(k, t), a)),
+}
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum InputRequest {
+    SaveFile,
+    OpenFile,
+}
+
+impl InputRequest {
+    fn prompt(self) -> &'static str {
+        match self {
+            InputRequest::SaveFile => "write to file: ",
+            InputRequest::OpenFile => "open file: ",
+        }
+    }
 }
 #[test]
 fn history_test() {
@@ -678,4 +706,12 @@ fn history_test() {
     h.push(&t);
     h.undo(&mut t);
     assert_eq!(t.rope.to_string(), "echo");
+}
+pub trait M<T> {
+    fn m(&mut self, f: impl FnOnce(T) -> T);
+}
+impl<T> M<T> for Option<T> {
+    fn m(&mut self, f: impl FnOnce(T) -> T) {
+        *self = self.take().map(f);
+    }
 }

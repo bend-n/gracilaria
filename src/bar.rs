@@ -53,8 +53,8 @@ impl Bar {
                     .zip(self.last_action.chars().rev())
                     .for_each(|(x, y)| x.letter = Some(y));
             }
-            State::InputFname(x) => {
-                "write to file: "
+            State::Procure((x, r)) => {
+                r.prompt()
                     .chars()
                     .zip(repeat(Style::BOLD | Style::ITALIC))
                     .chain(s(&x.rope.to_string()))

@@ -6,7 +6,7 @@ edition = "2024"
 [dependencies]
 atools = "0.1.7"
 dsb = { version = "0.1.0", path = "../dsb" }
-fimg = { path = "../fimg" }
+fimg = { git = "https://github.com/bend-n/fimg" }
 implicit-fn = "0.1.0"
 ropey = "1.6.1"
 softbuffer = "0.4.6"
