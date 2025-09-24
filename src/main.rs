@@ -14,6 +14,7 @@ use std::convert::identity;
 use std::num::NonZeroU32;
 use std::sync::LazyLock;
 use std::time::Instant;
+
 use Default::default;
 use NamedKey::*;
 use diff_match_patch_rs::PatchInput;
@@ -65,6 +66,7 @@ impl Hist {
                 (x.cursor, x.column, x.vo),
             ],
         });
+
         println!("push {}", self.history.last().unwrap());
         self.redo_history.clear();
         self.last = x.clone();
@@ -433,12 +435,12 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                     window.request_redraw();
                 }
                 Event::WindowEvent {
-                    event: WindowEvent::KeyboardInput { event, .. },
+                    event: WindowEvent::KeyboardInput { event, is_synthetic: false, .. },
                     ..
                 } if event.state == ElementState::Pressed => {
                     if matches!(
                         event.logical_key,
-                        Key::Named(Shift | Alt | Control)
+                        Key::Named(Shift | Alt | Control | Super)
                     ) {
                         return;
                     }
@@ -574,6 +576,11 @@ fn handle2(key: Key, text: &mut TextArea) {
         }
         Named(Home) => text.home(),
         Named(End) => text.end(),
+        Named(Tab) => text.insert("    "),
+        Named(Delete) => {
+            text.right();
+            text.backspace()
+        }
         Named(ArrowLeft) if ctrl() => text.word_left(),
         Named(ArrowRight) if ctrl() => text.word_right(),
         Named(ArrowLeft) => text.left(),
@@ -618,7 +625,6 @@ fn shift() -> bool {
 fn ctrl() -> bool {
     unsafe { MODIFIERS }.control_key()
 }
-
 impl State {
     fn sel(&mut self) -> &mut Range<usize> {
         let State::Selection(x) = self else { panic!() };
