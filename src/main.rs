@@ -667,6 +667,7 @@ Save => {
     RequireFilename => Procure((TextArea, InputRequest) => (default(), InputRequest::SaveFile)),
     Saved => Default,
 },
+Procure((t, _)) => K(Key::Named(Escape)) => Default,
 Procure((t, InputRequest::SaveFile)) => K(Key::Named(Enter)) => Default [SaveTo(String => t.rope.to_string())],
 Procure((t, InputRequest::OpenFile)) => K(Key::Named(Enter)) => Default [OpenFile(String => t.rope.to_string())],
 Procure((t, a)) => K(k) => Procure((handle(k, t), a)),
