@@ -3,7 +3,7 @@ use std::ops::{Not as _, Range};
 use std::sync::LazyLock;
 
 use atools::Chunked;
-use diff_match_patch_rs::{DiffMatchPatch, Patch, Patches};
+use diff_match_patch_rs::{DiffMatchPatch, Patches};
 use dsb::Cell;
 use dsb::cell::Style;
 use implicit_fn::implicit_fn;
@@ -188,11 +188,14 @@ impl TextArea {
 
     #[implicit_fn]
     pub fn home(&mut self) {
-        let beg =
-            self.rope.line_to_char(self.rope.char_to_line(self.cursor));
+        let l = self.rope.char_to_line(self.cursor);
+        let beg = self.rope.line_to_char(l);
         let i = self.cursor - beg;
         let whitespaces = self.indentation();
-        if i == whitespaces {
+        if self.rope.line(l).chars().all(_.is_whitespace()) {
+            self.cursor = beg;
+            self.column = 0;
+        } else if i == whitespaces {
             self.cursor = beg;
             self.column = 0;
         } else {
@@ -614,7 +617,6 @@ impl TextArea {
                 to..r.end
             }
         } else if self.cursor == r.end {
-            println!("@ en");
             if to > r.end {
                 r.start..to
             } else if to < r.start {

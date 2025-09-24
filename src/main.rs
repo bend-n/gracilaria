@@ -14,7 +14,6 @@ use std::convert::identity;
 use std::num::NonZeroU32;
 use std::sync::LazyLock;
 use std::time::Instant;
-
 use Default::default;
 use NamedKey::*;
 use diff_match_patch_rs::PatchInput;
