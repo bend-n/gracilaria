@@ -435,7 +435,12 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                     window.request_redraw();
                 }
                 Event::WindowEvent {
-                    event: WindowEvent::KeyboardInput { event, is_synthetic: false, .. },
+                    event:
+                        WindowEvent::KeyboardInput {
+                            event,
+                            is_synthetic: false,
+                            ..
+                        },
                     ..
                 } if event.state == ElementState::Pressed => {
                     if matches!(

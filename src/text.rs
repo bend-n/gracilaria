@@ -1,3 +1,4 @@
+use std::cmp::min;
 use std::fmt::{Debug, Display};
 use std::ops::{Not as _, Range};
 use std::sync::LazyLock;
@@ -422,10 +423,16 @@ impl TextArea {
                     // }
                     let y1 = self.rope.byte_to_line(start);
                     let y2 = self.rope.byte_to_line(end);
-                    let x1 = self.rope.byte_to_char(start)
-                        - self.rope.line_to_char(y1);
-                    let x2 = self.rope.byte_to_char(end)
-                        - self.rope.line_to_char(y2);
+                    let x1 = min(
+                        self.rope.byte_to_char(start)
+                            - self.rope.line_to_char(y1),
+                        c,
+                    );
+                    let x2 = min(
+                        self.rope.byte_to_char(end)
+                            - self.rope.line_to_char(y2),
+                        c,
+                    );
 
                     cells.get_mut(y1 * c + x1..y2 * c + x2).map(|x| {
                         x.iter_mut().for_each(|x| {
