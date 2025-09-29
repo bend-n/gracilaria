@@ -7,7 +7,6 @@ use winit::keyboard::{Key, ModifiersState, NamedKey};
 use crate::text::TextArea;
 
 pub struct Bar {
-    pub text: crate::text::TextArea,
     pub last_action: String,
 }
 
@@ -73,6 +72,14 @@ impl Bar {
                     .rev()
                     .zip(row.iter_mut().rev())
                     .for_each(|(x, y)| y.letter = Some(x));
+            }
+            State::Search((x, y, z)) => {
+                format!("{} ({} of {z})", x.as_str(), y + 1)
+                    .chars()
+                    .zip(row)
+                    .for_each(|(c, x)| {
+                        x.letter = Some(c);
+                    });
             }
             State::Save => unreachable!(),
             _ => {}

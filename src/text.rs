@@ -126,7 +126,7 @@ impl TextArea {
         let y2 = self.rope.char_to_line(end);
         let x1 = start - self.rope.line_to_char(y1);
         let x2 = end - self.rope.line_to_char(y2);
-        [(x1, y1), (x2, y2)]
+        [(min(x1, self.c), y1), (min(x2, self.c), y2)]
     }
 
     /// number of lines
@@ -366,16 +366,36 @@ impl TextArea {
         }
     }
 
+    #[lower::apply(saturating)]
+    pub fn scroll_to_cursor_centering(&mut self) {
+        let (_, y) = self.cursor();
+
+        if !(self.vo..self.vo + self.r).contains(&y) {
+            self.vo = y - (self.r / 2);
+        }
+    }
+
+    pub fn slice<'c>(
+        &self,
+        (c, r): (usize, usize),
+        cell: &'c mut [Cell],
+        range: Range<usize>,
+    ) -> &'c mut [Cell] {
+        let [(x1, y1), (x2, y2)] = dbg!(self.position(range));
+        &mut cell[y1 * c + x1..y2 * c + x2]
+    }
+
     #[implicit_fn]
     pub fn write_to(
         &mut self,
-        (c, r): (usize, usize),
         color: [u8; 3],
         bg: [u8; 3],
         (into, (w, _)): (&mut [Cell], (usize, usize)),
         (ox, oy): (usize, usize),
         selection: Option<Range<usize>>,
+        apply: impl FnOnce((usize, usize), &mut Self, &mut [Cell]),
     ) {
+        let (c, r) = (self.c, self.r);
         static HL: LazyLock<HighlightConfiguration> =
             LazyLock::new(|| {
                 let mut x = HighlightConfiguration::new(
@@ -504,6 +524,7 @@ impl TextArea {
                     });
             });
         });
+        apply((c, r), self, &mut cells);
 
         let cells = &cells[self.vo * c..self.vo * c + r * c];
         assert_eq!(cells.len(), c * r);

@@ -21,6 +21,7 @@ use diff_match_patch_rs::PatchInput;
 use dsb::cell::Style;
 use dsb::{Cell, F};
 use fimg::Image;
+use regex::Regex;
 use rust_fsm::StateMachineImpl;
 use swash::{FontRef, Instance};
 use winit::event::{
@@ -131,8 +132,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
     let mut cursor_position = (0, 0);
 
     let mut state = State::Default;
-    let mut bar =
-        Bar { text: TextArea::default(), last_action: String::default() };
+    let mut bar = Bar { last_action: String::default() };
     let mut i = Image::build(1, 1).fill(BG);
     let mut cells = vec![];
     std::env::args().nth(1).map(|x| {
@@ -247,16 +247,42 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             (1, 0),
                         );
                         let t_ox = text.line_number_offset() + 1;
+                        text.c = c - t_ox;
+                        text.r = r - 1;
                         text.write_to(
-                            (c - t_ox, r - 1),
                             FG,
                             BG,
                             (&mut cells, (c, r)),
                             (t_ox, 0),
                             x,
+                            |(c, r), text, x| {
+                                if let State::Search((re, j, _)) = &state {
+                                    re.find_iter(&text.rope.to_string())
+                                        .enumerate()
+                                        .for_each(|(i, m)| {
+                                            for x in text.slice(
+                                                (c, r),
+                                                x,
+                                                text.rope.byte_to_char(
+                                                    m.start(),
+                                                )
+                                                    ..text
+                                                        .rope
+                                                        .byte_to_char(
+                                                            m.end(),
+                                                        ),
+                                            ) {
+                                                x.style.bg = if i == *j {
+                                                    [105, 83, 128]
+                                                } else {
+                                                    [65, 62, 83]
+                                                }
+                                            }
+                                        });
+                                }
+                            },
                         );
-                        text.c = c - t_ox;
-                        text.r = r - 1;
+
                         bar.write_to(
                             BG,
                             FG,
@@ -298,7 +324,12 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             let (x, y) = text.cursor();
                             let x = x + t_ox;
 
-                            if (text.vo..text.vo + r).contains(&y) {
+                            if (text.vo..text.vo + r).contains(&y)
+                                && matches!(
+                                    state,
+                                    State::Default | State::Selection(_)
+                                )
+                            {
                                 i.as_mut().overlay_at(
                                     &cursor,
                                     (x as f32 * fw).floor() as u32,
@@ -449,10 +480,20 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                     ) {
                         return;
                     }
-                    let o = state
+                    let mut o = state
                         .consume(Action::K(event.logical_key.clone()))
                         .unwrap();
                     match o {
+                        Some(Do::Reinsert) =>
+                            o = state
+                                .consume(Action::K(
+                                    event.logical_key.clone(),
+                                ))
+                                .unwrap(),
+                        _ => {}
+                    }
+                    match o {
+                        Some(Do::Reinsert) => panic!(),
                         Some(Do::Save) => match &origin {
                             Some(_) => {
                                 state.consume(Action::Saved).unwrap();
@@ -553,6 +594,33 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                         ) => {
                             unreachable!()
                         }
+                        Some(Do::StartSearch(x)) => {
+                            let s = Regex::new(&x).unwrap();
+                            let n = s
+                                .find_iter(&text.rope.to_string())
+                                .enumerate()
+                                .count();
+                            s.clone()
+                                .find_iter(&text.rope.to_string())
+                                .enumerate()
+                                .find(|(_, x)| x.start() > text.cursor)
+                                .map(|(x, m)| {
+                                    state = State::Search((s, x, n));
+                                    text.cursor =
+                                        text.rope.byte_to_char(m.end());
+                                    text.scroll_to_cursor_centering();
+                                })
+                                .unwrap_or_else(|| {
+                                    bar.last_action = "no matches".into()
+                                });
+                        }
+                        Some(Do::SearchChanged) => {
+                            let (re, index, _) = state.search();
+                            let s = text.rope.to_string();
+                            let m = re.find_iter(&s).nth(*index).unwrap();
+                            text.cursor = text.rope.byte_to_char(m.end());
+                            text.scroll_to_cursor_centering();
+                        }
                         None => {}
                     }
                     window.request_redraw();
@@ -635,6 +703,10 @@ impl State {
         let State::Selection(x) = self else { panic!() };
         x
     }
+    fn search(&mut self) -> &mut (Regex, usize, usize) {
+        let State::Search(x) = self else { panic!() };
+        x
+    }
 }
 
 use std::ops::Range;
@@ -650,7 +722,9 @@ Default => {
     K(Key::Character(x) if x == "v" && ctrl()) => Default [Paste],
     K(Key::Character(x) if x == "z" && ctrl()) => Default [Undo],
     K(Key::Character(x) if x == "y" && ctrl()) => Default [Redo],
+    K(Key::Character(x) if x == "f" && ctrl()) => Procure((default(), InputRequest::Search)),
     K(Key::Character(x) if x == "o" && ctrl()) => Procure((default(), InputRequest::OpenFile)),
+    K(Key::Character(x) if x == "c" && ctrl()) => Default,
     K(Key::Named(ArrowUp | ArrowLeft | ArrowDown | ArrowRight | Home | End) if shift()) => Selection(Range<usize> => 0..0) [StartSelection],
     M(MouseButton => MouseButton::Left if shift()) => Selection(Range<usize> => 0..0) [StartSelection],
     M(MouseButton => MouseButton::Left) => Default [MoveCursor],
@@ -662,9 +736,9 @@ Default => {
 Selection(x if shift()) => {
     K(Key::Named(ArrowUp | ArrowLeft | ArrowDown | ArrowRight | Home | End)) => Selection(x) [UpdateSelection],
     M(MouseButton => MouseButton::Left) => Selection(x) [ExtendSelectionToMouse],
-},
+}, // note: it does in fact fall through. this syntax is not an arm, merely shorthand.
 Selection(x) => {
-    C(y if unsafe { CLICKING }) => Selection(x) [ExtendSelectionToMouse],
+    C(_ if unsafe { CLICKING }) => Selection(x) [ExtendSelectionToMouse],
     C(_) => Selection(x),
     M(MouseButton => MouseButton::Left) => Default [MoveCursor],
     K(Key::Named(Backspace)) => Default [Delete(Range<usize> => x)],
@@ -677,15 +751,24 @@ Save => {
     RequireFilename => Procure((TextArea, InputRequest) => (default(), InputRequest::SaveFile)),
     Saved => Default,
 },
-Procure((t, _)) => K(Key::Named(Escape)) => Default,
+Procure((_, _)) => K(Key::Named(Escape)) => Default,
+Procure((t, InputRequest::Search)) => K(Key::Named(Enter)) => Default [StartSearch(String => t.rope.to_string())],
 Procure((t, InputRequest::SaveFile)) => K(Key::Named(Enter)) => Default [SaveTo(String => t.rope.to_string())],
 Procure((t, InputRequest::OpenFile)) => K(Key::Named(Enter)) => Default [OpenFile(String => t.rope.to_string())],
 Procure((t, a)) => K(k) => Procure((handle(k, t), a)),
+Search((x, y, m)) => {
+    M(MouseButton => MouseButton::Left) => Default [MoveCursor],
+    C(_) => Search((x, y, m)),
+    K(Key::Named(Enter) if shift()) => Search((x, y.checked_sub(1).unwrap_or(m-1), m)) [SearchChanged],
+    K(Key::Named(Enter)) => Search((Regex, usize, usize) => (x,  (y+ 1) % m, m)) [SearchChanged],
+    K(_) => Default [Reinsert],
+}
 }
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 enum InputRequest {
     SaveFile,
     OpenFile,
+    Search,
 }
 
 impl InputRequest {
@@ -693,6 +776,7 @@ impl InputRequest {
         match self {
             InputRequest::SaveFile => "write to file: ",
             InputRequest::OpenFile => "open file: ",
+            InputRequest::Search => "search: ",
         }
     }
 }
