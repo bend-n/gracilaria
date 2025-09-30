@@ -200,7 +200,7 @@ impl TextArea {
     #[implicit_fn]
     fn indentation(&self) -> usize {
         let l = self.cl();
-        l.chars().take_while(_.is_whitespace()).count()
+        l.chars().filter(*_ != '\n').take_while(_.is_whitespace()).count()
     }
 
     #[implicit_fn]
