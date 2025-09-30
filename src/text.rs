@@ -175,6 +175,22 @@ impl TextArea {
             - self.rope.line_to_char(self.rope.char_to_line(self.cursor));
     }
 
+    pub fn page_down(&mut self) {
+        self.cursor = self.rope.line_to_char(min(
+            self.rope.char_to_line(self.cursor) + self.r,
+            self.l(),
+        ));
+        self.scroll_to_cursor();
+    }
+
+    #[lower::apply(saturating)]
+    pub fn page_up(&mut self) {
+        self.cursor = self
+            .rope
+            .line_to_char(self.rope.char_to_line(self.cursor) - self.r);
+        self.scroll_to_cursor();
+    }
+
     #[lower::apply(saturating)]
     pub fn left(&mut self) {
         self.cursor -= 1;

@@ -660,6 +660,8 @@ fn handle2(key: Key, text: &mut TextArea) {
         Named(ArrowRight) => text.right(),
         Named(ArrowUp) => text.up(),
         Named(ArrowDown) => text.down(),
+        Named(PageDown) => text.page_down(),
+        Named(PageUp) => text.page_up(),
         Named(Enter) => text.enter(),
         Character(x) => {
             text.insert(&x);
