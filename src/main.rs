@@ -12,6 +12,7 @@
 #![allow(incomplete_features, redundant_semicolons)]
 use std::convert::identity;
 use std::num::NonZeroU32;
+use std::path::PathBuf;
 use std::sync::LazyLock;
 use std::time::Instant;
 
@@ -22,6 +23,7 @@ use dsb::cell::Style;
 use dsb::{Cell, F};
 use fimg::Image;
 use regex::Regex;
+use ropey::Rope;
 use rust_fsm::StateMachineImpl;
 use swash::{FontRef, Instance};
 use winit::event::{
@@ -121,7 +123,8 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
     let ls = 20.0;
 
     let mut text = TextArea::default();
-    let mut origin = std::env::args().nth(1);
+    let mut origin =
+        std::env::args().nth(1).and_then(|x| PathBuf::try_from(x).ok());
     let mut fonts = dsb::Fonts::new(
         F::FontRef(*FONT, &[(2003265652, 550.0)]),
         F::instance(*FONT, *BFONT),
@@ -146,6 +149,14 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
         last_edit: Instant::now(),
         changed: false,
     };
+    macro_rules! modify {
+        () => {
+            origin
+                .as_ref()
+                .map(|x| x.metadata().unwrap().modified().unwrap())
+        };
+    }
+    let mut mtime = modify!();
     macro_rules! save {
         () => {{
             std::fs::write(
@@ -154,6 +165,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
             )
             .unwrap();
             bar.last_action = "saved".into();
+            mtime = modify!();
         }};
     }
     let app = winit_app::WinitAppBuilder::with_init(
@@ -184,6 +196,10 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                     window.inner_size().height as _,
                 ),
             );
+            if modify!() != mtime {
+                mtime = modify!();
+                state.consume(Action::Changed).unwrap();
+            }
             match event {
                 Event::WindowEvent {
                     window_id,
@@ -256,7 +272,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             (t_ox, 0),
                             x,
                             |(c, r), text, x| {
-                                if let State::Search((re, j, _)) = &state {
+                                if let State::Search(re, j, _) = &state {
                                     re.find_iter(&text.rope.to_string())
                                         .enumerate()
                                         .for_each(|(i, m)| {
@@ -288,7 +304,10 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             FG,
                             (&mut cells, (c, r)),
                             r - 1,
-                            origin.as_deref().unwrap_or("new buffer"),
+                            origin
+                                .as_ref()
+                                .map(|x| x.to_str().unwrap())
+                                .unwrap_or("new buffer"),
                             &state,
                             &text,
                         );
@@ -506,7 +525,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             }
                         },
                         Some(Do::SaveTo(x)) => {
-                            origin = Some(x);
+                            origin = Some(PathBuf::try_from(x).unwrap());
                             save!();
                         }
                         Some(Do::Edit) => {
@@ -543,7 +562,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                                 .extend_selection(y, state.sel().clone());
                             text.scroll_to_cursor();
                         }
-                        Some(Do::Insert((x, c))) => {
+                        Some(Do::Insert(x, c)) => {
                             hist.push_if_changed(&text);
                             text.rope.remove(x.clone());
                             text.cursor = x.start;
@@ -575,7 +594,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             hist.push_if_changed(&text);
                         }
                         Some(Do::OpenFile(x)) => {
-                            origin = Some(x.clone());
+                            origin = Some(PathBuf::try_from(&x).unwrap());
                             text = TextArea::default();
                             text.insert(
                                 &std::fs::read_to_string(x).unwrap(),
@@ -605,7 +624,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                                 .enumerate()
                                 .find(|(_, x)| x.start() > text.cursor)
                                 .map(|(x, m)| {
-                                    state = State::Search((s, x, n));
+                                    state = State::Search(s, x, n);
                                     text.cursor =
                                         text.rope.byte_to_char(m.end());
                                     text.scroll_to_cursor_centering();
@@ -621,6 +640,25 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             text.cursor = text.rope.byte_to_char(m.end());
                             text.scroll_to_cursor_centering();
                         }
+                        Some(Do::Boolean(
+                            BoolRequest::ReloadFile,
+                            true,
+                        )) => {
+                            text.rope = Rope::from_str(
+                                &std::fs::read_to_string(
+                                    origin.as_ref().unwrap(),
+                                )
+                                .unwrap(),
+                            );
+                            text.cursor =
+                                text.cursor.min(text.rope.len_chars());
+                            mtime = modify!();
+                            bar.last_action = "reloaded".into();
+                        }
+                        Some(Do::Boolean(
+                            BoolRequest::ReloadFile,
+                            false,
+                        )) => {}
                         None => {}
                     }
                     window.request_redraw();
@@ -705,9 +743,9 @@ impl State {
         let State::Selection(x) = self else { panic!() };
         x
     }
-    fn search(&mut self) -> &mut (Regex, usize, usize) {
-        let State::Search(x) = self else { panic!() };
-        x
+    fn search(&mut self) -> (&mut Regex, &mut usize, &mut usize) {
+        let State::Search(x, y, z) = self else { panic!() };
+        (x, y, z)
     }
 }
 
@@ -730,10 +768,11 @@ Default => {
     K(Key::Named(ArrowUp | ArrowLeft | ArrowDown | ArrowRight | Home | End) if shift()) => Selection(Range<usize> => 0..0) [StartSelection],
     M(MouseButton => MouseButton::Left if shift()) => Selection(Range<usize> => 0..0) [StartSelection],
     M(MouseButton => MouseButton::Left) => Default [MoveCursor],
-    C((usize, usize) => _ if unsafe { CLICKING }) => Selection(0..0) [StartSelection],
-    C(_) => Default,
-    K(_) => Default [Edit],
-    M(_) => Default,
+    C(((usize, usize)) => .. if unsafe { CLICKING }) => Selection(0..0) [StartSelection],
+    Changed => RequestBoolean(BoolRequest => BoolRequest::ReloadFile),
+    C(_) => _,
+    K(_) => _ [Edit],
+    M(_) => _,
 },
 Selection(x if shift()) => {
     K(Key::Named(ArrowUp | ArrowLeft | ArrowDown | ArrowRight | Home | End)) => Selection(x) [UpdateSelection],
@@ -758,11 +797,19 @@ Procure((t, InputRequest::Search)) => K(Key::Named(Enter)) => Default [StartSear
 Procure((t, InputRequest::SaveFile)) => K(Key::Named(Enter)) => Default [SaveTo(String => t.rope.to_string())],
 Procure((t, InputRequest::OpenFile)) => K(Key::Named(Enter)) => Default [OpenFile(String => t.rope.to_string())],
 Procure((t, a)) => K(k) => Procure((handle(k, t), a)),
+RequestBoolean(t) => {
+    K(Key::Character(x) if x == "y") => Default [Boolean((BoolRequest, bool) => (t, true))],
+    K(Key::Character(x) if x == "n") => Default [Boolean((t, false))],
+    K(Key::Named(Escape)) => Default [Boolean((t, false))],
+    K(_) => RequestBoolean(t),
+    C(_) => _,
+    Changed => _,
+},
 Search((x, y, m)) => {
     M(MouseButton => MouseButton::Left) => Default [MoveCursor],
     C(_) => Search((x, y, m)),
     K(Key::Named(Enter) if shift()) => Search((x, y.checked_sub(1).unwrap_or(m-1), m)) [SearchChanged],
-    K(Key::Named(Enter)) => Search((Regex, usize, usize) => (x,  (y+ 1) % m, m)) [SearchChanged],
+    K(Key::Named(Enter)) => Search((Regex, usize, usize) => (x,   (y+ 1) % m, m)) [SearchChanged],
     K(_) => Default [Reinsert],
 }
 }
@@ -782,6 +829,18 @@ impl InputRequest {
         }
     }
 }
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum BoolRequest {
+    ReloadFile,
+}
+impl BoolRequest {
+    fn prompt(self) -> &'static str {
+        match self {
+            BoolRequest::ReloadFile => "file changed. reload? y/n.",
+        }
+    }
+}
+
 #[test]
 fn history_test() {
     let mut t = TextArea::default();

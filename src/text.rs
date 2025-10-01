@@ -31,6 +31,9 @@ const STYLES: [Option<u8>; 13] = amap::amap! {
     12 => 0,
 };
 
+
+
+
 const fn color(x: &[u8; 6]) -> [u8; 3] {
     car::map!(
         car::map!(x, |b| (b & 0xF) + 9 * (b >> 6)).chunked::<2>(),

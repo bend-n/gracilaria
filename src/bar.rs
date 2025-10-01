@@ -52,11 +52,23 @@ impl Bar {
                     .zip(self.last_action.chars().rev())
                     .for_each(|(x, y)| x.letter = Some(y));
             }
-            State::Procure((x, r)) => {
+            State::Procure(x, r) => {
                 r.prompt()
                     .chars()
                     .zip(repeat(Style::BOLD | Style::ITALIC))
                     .chain(s(&x.rope.to_string()))
+                    .zip(row)
+                    .for_each(|((x, z), y)| {
+                        *y = Cell {
+                            letter: Some(x),
+                            style: Style { flags: z, ..y.style },
+                        }
+                    });
+            }
+            State::RequestBoolean(x) => {
+                x.prompt()
+                    .chars()
+                    .zip(repeat(Style::BOLD | Style::ITALIC))
                     .zip(row)
                     .for_each(|((x, z), y)| {
                         *y = Cell {
@@ -73,7 +85,7 @@ impl Bar {
                     .zip(row.iter_mut().rev())
                     .for_each(|(x, y)| y.letter = Some(x));
             }
-            State::Search((x, y, z)) => {
+            State::Search(x, y, z) => {
                 format!("{} ({} of {z})", x.as_str(), y + 1)
                     .chars()
                     .zip(row)
