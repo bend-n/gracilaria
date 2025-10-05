@@ -14,12 +14,10 @@ swash = "0.2.5"
 winit = "0.30.12"
 
 tree-sitter = "0.25.0"
-tree-sitter-rust = "0.24"
-tree-sitter-highlight = "0.25.0"
 car = "0.1.2"
 memchr = "2.7.5"
 lower = "0.2.0"
-amap = "0.1.2"
+amap = "0.1.3"
 run_times = "0.1.0"
 array_chunks = "1.0.0"
 rust-fsm = { version = "0.8.0", path = "../rust-fsm/rust-fsm", features = [
@@ -29,6 +27,9 @@ clipp = "0.1.0"
 parking_lot = "0.12.4"
 diff-match-patch-rs = "0.5.1"
 regex = "1.11.3"
+tree-house = { version = "0.3.0", features = ["fixtures"] }
+helix-loader = { path = "../helix/helix-loader/" }
+helix-core = { path = "../helix/helix-core/" }
 
 [build-dependencies]
 cc = "*"

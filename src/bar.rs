@@ -33,9 +33,13 @@ impl Bar {
         match state {
             State::Default if super::ctrl() => {
                 let x = "C + { S, Q, V, Z, Y }".chars();
-                x.zip(row).for_each(|(x, y)| {
+                x.zip(&mut *row).for_each(|(x, y)| {
                     y.letter = Some(x);
                 });
+                row.iter_mut()
+                    .rev()
+                    .zip(self.last_action.chars().rev())
+                    .for_each(|(x, y)| x.letter = Some(y));
             }
             State::Default => {
                 row[1.."gracilaria".len() + 1]

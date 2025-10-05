@@ -1,6 +1,8 @@
 // this looks pretty good though
 #![feature(tuple_trait, unboxed_closures, fn_traits)]
 #![feature(
+    const_cmp,
+    const_default,
     import_trait_associated_functions,
     if_let_guard,
     deref_patterns,
@@ -38,6 +40,7 @@ mod bar;
 mod text;
 mod winit_app;
 fn main() {
+    // text::man();
     entry(EventLoop::new().unwrap())
 }
 #[derive(Debug)]
@@ -297,6 +300,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                                         });
                                 }
                             },
+                            origin.as_deref(),
                         );
 
                         bar.write_to(
@@ -312,8 +316,8 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             &text,
                         );
 
-                        // println!("cell=");
-                        // dbg!(now.elapsed());
+                        println!("cell=");
+                        dbg!(now.elapsed());
                         let now = Instant::now();
                         unsafe {
                             dsb::render(
@@ -365,7 +369,13 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
 
                         // }
                         let buffer = surface.buffer_mut().unwrap();
-
+                        let x = unsafe {
+                            std::slice::from_raw_parts_mut(
+                                buffer.as_ptr() as *mut u8,
+                                buffer.len() * 4,
+                            )
+                            .as_chunks_unchecked_mut::<4>()
+                        };
                         fimg::overlay::copy_rgb_bgr_(
                             i.flatten(),
                             unsafe {

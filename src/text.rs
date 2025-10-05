@@ -1,38 +1,59 @@
 use std::cmp::min;
 use std::fmt::{Debug, Display};
 use std::ops::{Not as _, Range};
+use std::path::Path;
 use std::sync::LazyLock;
 
-use atools::Chunked;
+use atools::prelude::*;
 use diff_match_patch_rs::{DiffMatchPatch, Patches};
 use dsb::Cell;
 use dsb::cell::Style;
+use helix_core::Syntax;
+use helix_core::syntax::{HighlightEvent, Loader};
 use implicit_fn::implicit_fn;
 use ropey::{Rope, RopeSlice};
-use tree_sitter_highlight::{
-    HighlightConfiguration, HighlightEvent, Highlighter,
-};
 use winit::keyboard::{NamedKey, SmolStr};
-#[rustfmt::skip]
-const NAMES: [&str; 13] = ["attribute", "comment", "constant", "function", "keyword", "number", "operator", "punctuation",
-                           "string", "tag", "type", "variable", "variable.parameter"];
-#[rustfmt::skip]
-const COLORS: [[u8; 3]; 13] = car::map!(
-    [
-        b"ffd173", b"5c6773", b"DFBFFF", b"FFD173", b"FFAD66", b"dfbfff", b"F29E74", b"cccac2",
-        b"D5FF80", b"DFBFFF", b"73D0FF", b"5ccfe6", b"5ccfe6"
-    ],
-    |x| color(x)
-);
+macro_rules! theme {
+    ($($x:literal $color:literal),+ $(,)?) => {
+        #[rustfmt::skip]
+        const NAMES: [&str; 15] = [$($x),+];
+        #[rustfmt::skip]
+        const COLORS: [[u8; 3]; NAMES.len()] = car::map!([$($color),+], |x| color(x.tail())
+    );};
+}
+theme! {
+    "attribute" b"#ffd173",
+    "comment" b"#5c6773",
+    "constant" b"#DFBFFF",
+    "function" b"#FFD173",
+    "variable.builtin" b"#FFAD66",
+    "keyword" b"#FFAD66",
+    "number" b"#dfbfff",
+    "operator" b"#F29E74",
+    "punctuation" b"#cccac2",
+    "string" b"#D5FF80",
+    "tag" b"#DFBFFF",
+    "type" b"#73D0FF",
+    "variable" b"#cccac2",
+    "variable.parameter" b"#DFBFFF",
+    "namespace" b"#73d0ff",
+}
+const fn of(x: &'static str) -> usize {
+    let mut i = 0;
+    while i < NAMES.len() {
+        if NAMES[i] == x {
+            return i;
+        }
+        i += 1;
+    }
+    panic!()
+}
 
-const STYLES: [Option<u8>; 13] = amap::amap! {
-    4 | 9 => Style::ITALIC| Style::BOLD,
-    1 | 3 => Style::ITALIC,
-    12 => 0,
+const STYLES: [u8; NAMES.len()] = amap::amap_d! {
+    const { of("type") } | const { of("keyword") } | const { of("tag") } => Style::ITALIC | Style::BOLD,
+    const { of("comment") } | const { of("function") }=> Style::ITALIC,
+
 };
-
-
-
 
 const fn color(x: &[u8; 6]) -> [u8; 3] {
     car::map!(
@@ -76,7 +97,6 @@ impl Diff {
 pub struct TextArea {
     pub rope: Rope,
     pub cursor: usize,
-    highlighter: Highlighter,
     pub column: usize,
     /// ┌─────────────────┐
     /// │#invisible text  │
@@ -111,7 +131,6 @@ impl Clone for TextArea {
         Self {
             rope: self.rope.clone(),
             cursor: self.cursor,
-            highlighter: Highlighter::default(),
             column: self.column,
             vo: self.vo,
             r: self.r,
@@ -298,13 +317,13 @@ impl TextArea {
             self.right();
         } else {
             self.left();
+            self.right();
             while is_word(self.at()) {
                 if self.cursor == 0 {
                     return;
                 }
                 self.left();
             }
-            self.right();
         }
     }
 
@@ -413,23 +432,9 @@ impl TextArea {
         (ox, oy): (usize, usize),
         selection: Option<Range<usize>>,
         apply: impl FnOnce((usize, usize), &mut Self, &mut [Cell]),
+        path: Option<&Path>,
     ) {
         let (c, r) = (self.c, self.r);
-        static HL: LazyLock<HighlightConfiguration> =
-            LazyLock::new(|| {
-                let mut x = HighlightConfiguration::new(
-                    tree_sitter_rust::LANGUAGE.into(),
-                    "rust",
-                    include_str!("queries.scm"),
-                    tree_sitter_rust::INJECTIONS_QUERY,
-                    "",
-                )
-                .unwrap();
-
-                x.configure(&NAMES);
-                x
-            });
-
         let mut cells = vec![
             Cell {
                 style: Style { color, bg, flags: 0 },
@@ -438,78 +443,71 @@ impl TextArea {
             (self.l().max(r) + r - 1) * c
         ];
 
-        // dbg!(unsafe {
-        //     String::from_utf8_unchecked(
-        //         self.rope.bytes().collect::<Vec<_>>(),
+        let language = path
+            .and_then(|x| LOADER.language_for_filename(x))
+            .unwrap_or_else(|| LOADER.language_for_name("rust").unwrap());
+        let syntax =
+            Syntax::new(self.rope.slice(..), language, &LOADER).unwrap();
+
+        // println!(
+        //     "{}",
+        //     tree_house::fixtures::highlighter_fixture(
+        //         "hmm",
+        //         &*LOADER,
+        //         |y| NAMES[y.idx()].to_string(),
+        //         &syntax.inner,
+        //         self.rope.slice(..),
+        //         ..,
         //     )
-        // });
-        let mut s = 0;
-        for hl in self
-            .highlighter
-            .highlight(
-                &HL,
-                &self.rope.bytes().collect::<Vec<_>>(),
-                None,
-                |_| None,
-            )
-            .unwrap()
-            .map(Result::unwrap)
-        {
-            match hl {
-                HighlightEvent::Source { start, end } => {
-                    // for elem in start..end {
-                    //     styles[elem] = s;
-                    // }
-                    let y1 = self.rope.byte_to_line(start);
-                    let y2 = self.rope.byte_to_line(end);
-                    let x1 = min(
-                        self.rope.byte_to_char(start)
-                            - self.rope.line_to_char(y1),
-                        c,
-                    );
-                    let x2 = min(
-                        self.rope.byte_to_char(end)
-                            - self.rope.line_to_char(y2),
-                        c,
-                    );
+        // );
+        let s = self.rope.line_to_char(self.vo);
+        let e = self
+            .rope
+            .try_line_to_char(self.vo + self.r + 20)
+            .unwrap_or(self.rope.len_chars());
+        let mut h = syntax.highlighter(
+            self.rope.slice(..),
+            &LOADER,
+            s as u32..e as u32,
+        );
+        let mut at = 0;
+        let mut highlight_stack = Vec::with_capacity(8);
 
-                    cells.get_mut(y1 * c + x1..y2 * c + x2).map(|x| {
-                        x.iter_mut().for_each(|x| {
-                            x.style.flags = STYLES[s].unwrap_or_default();
-                            x.style.color = COLORS[s];
-                        })
-                    });
-                    // println!(
-                    //     "highlight {} {s} {}: {:?}",
-                    //     self.rope.byte_slice(start..end),
-                    //     NAMES[s],
-                    //     COLORS[s],
-                    // )
-                }
-                HighlightEvent::HighlightStart(s_) => s = s_.0,
-                HighlightEvent::HighlightEnd => s = 0,
+        loop {
+            let (e, new_highlights) = h.advance();
+            if e == HighlightEvent::Refresh {
+                highlight_stack.clear();
             }
+            highlight_stack.extend(new_highlights);
+
+            let end = h.next_event_offset() as _;
+            if end == 4294967295 {
+                break;
+            }
+            for &h in &highlight_stack {
+                let y1 = self.rope.byte_to_line(at);
+                let y2 = self.rope.byte_to_line(end);
+                let x1 = min(
+                    self.rope.byte_to_char(at)
+                        - self.rope.line_to_char(y1),
+                    c,
+                );
+                let x2 = min(
+                    self.rope.byte_to_char(end)
+                        - self.rope.line_to_char(y2),
+                    c,
+                );
+
+                cells.get_mut(y1 * c + x1..y2 * c + x2).map(|x| {
+                    x.iter_mut().for_each(|x| {
+                        x.style.flags = STYLES[h.idx()];
+                        x.style.color = COLORS[h.idx()];
+                    })
+                });
+            }
+            at = end;
         }
-
-        // let (a, b) = code.into_iter().collect::<(Vec<_>, Vec<_>)>();
-
-        // let mut i = 0;
-        // let mut y = 0;
-        // let mut x = 0;
-        // while i < code.len() {
-        //     if code[i] == b'\n' {
-        //         x = 0;
-        //         y += 1;
-        //         if y == r {
-        //             break;
-        //         }
-        //     } else {
-        //         cells[y * c + x].letter = Some(code[i] as char);
-        //         cells[y * c + x].style.color = COLORS[styles[i]];
-        //         x += 1
-        //     }
-        //     i += 1;
-        // }
+        drop(h);
 
         for (l, y) in self.rope.lines().zip(0..) {
             for (e, x) in l.chars().take(c).zip(0..) {
@@ -535,7 +533,7 @@ impl TextArea {
                     )
                     .map(|x| {
                         if x.letter == Some(' ') {
-                            x.letter = Some('·'); // tabs? what are those 
+                            x.letter = Some('·'); // tabs? what are those
                             x.style.color = [0x4e, 0x62, 0x79];
                         }
                         x.style.bg = [0x27, 0x43, 0x64];
@@ -683,4 +681,144 @@ impl TextArea {
 
 fn is_word(r: char) -> bool {
     matches!(r, 'a'..='z' | 'A'..='Z' | '0'..='9' | '_')
+}
+static LOADER: LazyLock<Loader> = LazyLock::new(|| {
+    let x = helix_core::config::default_lang_loader();
+    x.set_scopes(NAMES.map(|x| x.to_string()).to_vec());
+    x
+});
+#[test]
+pub fn man() {
+    let query_str = r#"
+        (line_comment)+ @quantified_nodes
+        ((line_comment)+) @quantified_nodes_grouped
+        ((line_comment) (line_comment)) @multiple_nodes_grouped
+        "#;
+    let source = Rope::from_str(
+        r#"
+
+    pub fn extend_selection_to(
+        &mut self,
+        to: usize,
+        r: std::ops::Range<usize>,
+    ) -> std::ops::Range<usize> {
+        if [r.start, r.end].contains(&to) {
+            return r;
+        }
+        let r = if self.cursor == r.start {
+            if to < r.start {
+                to..r.end
+            } else if to > r.end {
+                r.end..to
+            } else {
+                to..r.end
+            }
+        } else if self.cursor == r.end {
+            if to > r.end {
+                r.start..to
+            } else if to < r.start {
+                to..r.start
+            } else {
+                r.start..to
+            }
+        } else {
+            panic!()
+        };
+        assert!(r.start < r.end);
+        self.cursor = to;
+        self.setc();
+        r
+    }
+"#,
+    );
+    let language = LOADER.language_for_name("rust").unwrap();
+    let mut n = 0;
+    let mut set = std::collections::HashMap::new();
+    LOADER.languages().for_each(|(_, x)| {
+        x.syntax_config(&LOADER).map(|x| {
+            x.configure(|x| {
+                let x = set.entry(x.to_string()).or_insert_with(|| {
+                    n += 1;
+                    n
+                });
+                // dbg!(x);
+                // NAMES
+                //     .iter()
+                //     .position(|&y| y == x)
+                //     .map(|x| x as u32)
+                //     .map(helix_core::syntax::Highlight::new)
+                Some(helix_core::syntax::Highlight::new(*x))
+            })
+        });
+    });
+    // let c = LOADER.languages().next().unwrap().1;
+    // let grammar = LOADER.get_config(language).unwrap().grammar;
+    // let query = Query::new(grammar, query_str, |_, _| Ok(())).unwrap();
+    // let textobject = TextObjectQuery::new(query);
+    // reconfigure_highlights(
+    //     LOADER.get_config(language).unwrap(),
+    //     &NAMES.map(|x| x.to_string()),
+    // );
+
+    let syntax = Syntax::new(source.slice(..), language, &LOADER).unwrap();
+    let mut h = syntax.highlighter(
+        source.slice(..),
+        &LOADER,
+        0..source.len_chars() as u32,
+    );
+    println!(
+        "{}",
+        tree_house::fixtures::highlighter_fixture(
+            "hmm",
+            &*LOADER,
+            |y| set
+                .iter()
+                .find(|x| x.1 == &y.get())
+                .unwrap()
+                .0
+                .to_string(),
+            // |y| NAMES[y.idx()].to_string(),
+            &syntax.inner,
+            source.slice(..),
+            ..,
+        )
+    );
+    for n in 0..40 {
+        dbg!(h.next_event_offset());
+        let (e, hl) = h.advance();
+        dbg!(e);
+        // dbg!(hl.map(|x| NAMES[x.idx()]).collect::<Vec<_>>(), e);
+        dbg!(
+            h.active_highlights()
+                .map(|y| set
+                    .iter()
+                    .find(|x| x.1 == &y.get())
+                    .unwrap()
+                    .0
+                    .to_string())
+                // .map(|x| NAMES[x.idx()])
+                .collect::<Vec<_>>()
+        );
+        // panic!()
+    }
+
+    panic!();
+
+    // let root = syntax.tree().root_node();
+    // let test = |capture, range| {
+    //     let matches: Vec<_> = textobject
+    //         .capture_nodes(capture, &root, source.slice(..))
+    //         .unwrap()
+    //         .collect();
+
+    //     assert_eq!(
+    //         matches[0].byte_range(),
+    //         range,
+    //         "@{} expected {:?}",
+    //         capture,
+    //         range
+    //     )
+    // };
+    // test("quantified_nodes", 1..37);
+    panic!()
 }
