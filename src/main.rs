@@ -478,7 +478,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             phase: _,
                         },
                 } => {
-                    let rows = rows * 3.;
+                    let rows = if alt() { rows * 8. } else { rows * 3. };
                     if rows < 0.0 {
                         let rows = rows.ceil().abs() as usize;
                         text.vo = (text.vo + rows).min(text.l() - 1);
@@ -744,6 +744,9 @@ pub static BFONT: LazyLock<Instance<'static>> =
     LazyLock::new(|| FONT.instances().find_by_name("Bold").unwrap());
 fn shift() -> bool {
     unsafe { MODIFIERS }.shift_key()
+}
+fn alt() -> bool {
+    unsafe { MODIFIERS }.alt_key()
 }
 fn ctrl() -> bool {
     unsafe { MODIFIERS }.control_key()
