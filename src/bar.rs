@@ -2,8 +2,10 @@ use std::iter::{once, repeat};
 
 use dsb::Cell;
 use dsb::cell::Style;
+use lsp_types::WorkDoneProgress;
 use winit::keyboard::{Key, ModifiersState, NamedKey};
 
+use crate::lsp::Client;
 use crate::text::TextArea;
 
 pub struct Bar {
@@ -20,6 +22,7 @@ impl Bar {
         fname: &str,
         state: &super::State,
         t: &TextArea,
+        lsp: Option<&Client>,
     ) {
         let row = &mut into[oy * w..oy * w + w];
         row.fill(Cell {
@@ -51,10 +54,28 @@ impl Bar {
                     .iter_mut()
                     .zip(fname.chars())
                     .for_each(|(x, y)| x.letter = Some(y));
-                row.iter_mut()
-                    .rev()
-                    .zip(self.last_action.chars().rev())
-                    .for_each(|(x, y)| x.letter = Some(y));
+                // lsp.map(|x| dbg!(x.progress));
+                if let Some(x) = lsp
+                    && let Some(m) = x
+                        .progress
+                        .iter(&x.progress.guard())
+                        .find_map(|x| match x.1 {
+                            Some(WorkDoneProgress::Report(x)) =>
+                                x.message.clone(),
+                            _ => None,
+                        })
+                {
+                    dbg!(&m);
+                    row.iter_mut()
+                        .rev()
+                        .zip(m.chars().rev())
+                        .for_each(|(x, y)| x.letter = Some(y));
+                } else {
+                    row.iter_mut()
+                        .rev()
+                        .zip(self.last_action.chars().rev())
+                        .for_each(|(x, y)| x.letter = Some(y));
+                }
             }
             State::Procure(x, r) => {
                 r.prompt()

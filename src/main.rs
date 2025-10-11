@@ -1,6 +1,7 @@
 // this looks pretty good though
 #![feature(tuple_trait, unboxed_closures, fn_traits)]
 #![feature(
+    mpmc_channel,
     const_cmp,
     const_default,
     import_trait_associated_functions,
@@ -13,8 +14,10 @@
 )]
 #![allow(incomplete_features, redundant_semicolons)]
 use std::convert::identity;
+use std::io::BufReader;
 use std::num::NonZeroU32;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 use std::sync::LazyLock;
 use std::time::Instant;
 
@@ -24,10 +27,16 @@ use diff_match_patch_rs::PatchInput;
 use dsb::cell::Style;
 use dsb::{Cell, F};
 use fimg::Image;
+use lsp_types::{
+    SemanticTokensOptions, SemanticTokensServerCapabilities,
+    ServerCapabilities, TextDocumentIdentifier,
+    TextDocumentPositionParams, WorkspaceFolder,
+};
 use regex::Regex;
 use ropey::Rope;
 use rust_fsm::StateMachineImpl;
 use swash::{FontRef, Instance};
+use url::Url;
 use winit::event::{
     ElementState, Event, MouseButton, MouseScrollDelta, WindowEvent,
 };
@@ -37,10 +46,12 @@ use winit::keyboard::{Key, ModifiersState, NamedKey, SmolStr};
 use crate::bar::Bar;
 use crate::text::{Diff, TextArea};
 mod bar;
+mod lsp;
 mod text;
 mod winit_app;
 fn main() {
-    // text::man();
+    env_logger::init();
+    // lsp::x();
     entry(EventLoop::new().unwrap())
 }
 #[derive(Debug)]
@@ -108,10 +119,13 @@ impl Hist {
             self.push_if_changed(x);
         }
     }
-    pub fn record(&mut self, _: &TextArea) {
+    pub fn record(&mut self, new: &TextArea) -> bool {
         // self.test_push(x);
-        self.last_edit = Instant::now();
-        self.changed = true;
+        if new.rope != self.last.rope {
+            self.last_edit = Instant::now();
+            self.changed = true;
+        }
+        new.rope != self.last.rope
     }
 }
 
@@ -126,8 +140,10 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
     let ls = 20.0;
 
     let mut text = TextArea::default();
-    let mut origin =
-        std::env::args().nth(1).and_then(|x| PathBuf::try_from(x).ok());
+    let mut origin = std::env::args()
+        .nth(1)
+        .and_then(|x| PathBuf::try_from(x).ok())
+        .and_then(|x| x.canonicalize().ok());
     let mut fonts = dsb::Fonts::new(
         F::FontRef(*FONT, &[(2003265652, 550.0)]),
         F::instance(*FONT, *BFONT),
@@ -145,6 +161,48 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
         text.insert(&std::fs::read_to_string(x).unwrap());
         text.cursor = 0;
     });
+    fn rooter(x: &Path) -> Option<PathBuf> {
+        for f in std::fs::read_dir(&x).unwrap().filter_map(Result::ok) {
+            if f.file_name() == "Cargo.toml" {
+                return Some(f.path().with_file_name("").to_path_buf());
+            }
+        }
+        x.parent().and_then(rooter)
+    }
+    let workspace = origin
+        .as_ref()
+        .and_then(|x| rooter(&x.parent().unwrap()))
+        .and_then(|x| x.canonicalize().ok());
+    let c = workspace.zip(origin.clone()).map(|(workspace, origin)| {
+        let mut c = Command::new("rust-analyzer")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .spawn()
+            .unwrap();
+
+        let (c, t, t2) = lsp::run(
+            lsp_server::stdio::stdio_transport(
+                BufReader::new(c.stdout.take().unwrap()),
+                c.stdin.take().unwrap(),
+            ),
+            WorkspaceFolder {
+                uri: Url::from_file_path(&workspace).unwrap(),
+                name: workspace
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned(),
+            },
+        );
+        c.open(&origin, std::fs::read_to_string(&origin).unwrap())
+            .unwrap();
+        ((c, origin), (t, t2))
+    });
+    let (lsp, t) = c.unzip();
+
+    // let mut hl_result = None;
+
     let mut hist = Hist {
         history: vec![],
         redo_history: vec![],
@@ -159,6 +217,19 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                 .map(|x| x.metadata().unwrap().modified().unwrap())
         };
     }
+    macro_rules! change {
+        () => {
+            lsp.as_ref()
+                .map(|(x, origin)| {
+                    x.edit(&origin, text.rope.to_string()).unwrap();
+                    x.rq_semantic_tokens(origin).unwrap();
+                })
+                .unwrap();
+        };
+    }
+    lsp.as_ref()
+        .map(|(x, origin)| x.rq_semantic_tokens(origin).unwrap())
+        .unwrap();
     let mut mtime = modify!();
     macro_rules! save {
         () => {{
@@ -301,6 +372,16 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                                 }
                             },
                             origin.as_deref(),
+                                 lsp.as_ref().and_then(|(x, _)| { match &x.initialized {
+                                    Some(lsp_types::InitializeResult {
+                                        capabilities: ServerCapabilities {
+                                        semantic_tokens_provider:
+                                        Some(SemanticTokensServerCapabilities::SemanticTokensOptions(SemanticTokensOptions{
+                                        legend,..
+                                        })),..
+                                    },..
+                                    }) => Some(legend), _ => None, }}.map(|leg|(x.semantic_tokens.0.load(), leg))
+                                ),
                         );
 
                         bar.write_to(
@@ -314,6 +395,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                                 .unwrap_or("new buffer"),
                             &state,
                             &text,
+                            lsp.as_ref().map(|x| &x.0)
                         );
 
                         println!("cell=");
@@ -376,16 +458,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             )
                             .as_chunks_unchecked_mut::<4>()
                         };
-                        fimg::overlay::copy_rgb_bgr_(
-                            i.flatten(),
-                            unsafe {
-                                std::slice::from_raw_parts_mut(
-                                    buffer.as_ptr() as *mut u8,
-                                    buffer.len() * 4,
-                                )
-                                .as_chunks_unchecked_mut::<4>()
-                            },
-                        );
+                        fimg::overlay::copy_rgb_bgr_(i.flatten(), x);
                         // dbg!(now.elapsed());
                         buffer.present().unwrap();
                     }
@@ -438,7 +511,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                     if button == MouseButton::Left {
                         unsafe { CLICKING = true };
                     }
-                    match state.consume(Action::M(button)).unwrap() {
+                    match dbg!(state.consume(Action::M(button)).unwrap() ){
                         Some(Do::MoveCursor) => {
                             text.cursor = text.index_at(cursor_position);
                             text.setc();
@@ -460,6 +533,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                         None => {}
                         _ => unreachable!(),
                     }
+                    window.request_redraw();
                 }
                 Event::WindowEvent {
                     event:
@@ -486,6 +560,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                         let rows = rows.floor() as usize;
                         text.vo = text.vo.saturating_sub(rows);
                     }
+                    window.request_redraw();
                 }
                 Event::WindowEvent {
                     event: WindowEvent::ModifiersChanged(modifiers),
@@ -542,17 +617,21 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             hist.test_push(&text);
                             handle2(event.logical_key, &mut text);
                             text.scroll_to_cursor();
-                            hist.record(&text);
+                            if hist.record(&text) {
+                                change!();
+                            }
                         }
                         Some(Do::Undo) => {
                             hist.test_push(&text);
                             hist.undo(&mut text);
                             bar.last_action = "undid".to_string();
+                            change!();
                         }
                         Some(Do::Redo) => {
                             hist.test_push(&text);
                             hist.redo(&mut text);
                             bar.last_action = "redid".to_string();
+                            change!();
                         }
                         Some(Do::Quit) => elwt.exit(),
                         Some(Do::StartSelection) => {
@@ -604,7 +683,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             hist.push_if_changed(&text);
                         }
                         Some(Do::OpenFile(x)) => {
-                            origin = Some(PathBuf::try_from(&x).unwrap());
+                            origin = Some(PathBuf::from(&x));
                             text = TextArea::default();
                             text.insert(
                                 &std::fs::read_to_string(x).unwrap(),

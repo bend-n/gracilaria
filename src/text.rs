@@ -1,8 +1,8 @@
 use std::cmp::min;
 use std::fmt::{Debug, Display};
-use std::ops::{Not as _, Range};
+use std::ops::{Deref, Not as _, Range};
 use std::path::Path;
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock};
 
 use atools::prelude::*;
 use diff_match_patch_rs::{DiffMatchPatch, Patches};
@@ -11,32 +11,124 @@ use dsb::cell::Style;
 use helix_core::Syntax;
 use helix_core::syntax::{HighlightEvent, Loader};
 use implicit_fn::implicit_fn;
+use log::error;
+use lsp_types::{
+    SemanticToken, SemanticTokensLegend, SemanticTokensServerCapabilities,
+};
 use ropey::{Rope, RopeSlice};
+use tree_house::fixtures;
 use winit::keyboard::{NamedKey, SmolStr};
+
+use crate::MODIFIERS;
+use crate::text::semantic::{MCOLORS, MODIFIED, MSTYLE};
 macro_rules! theme {
-    ($($x:literal $color:literal),+ $(,)?) => {
+    ($n:literal $($x:literal $color:literal $($style:expr)?),+ $(,)?) => {
         #[rustfmt::skip]
-        const NAMES: [&str; 15] = [$($x),+];
+        pub const NAMES: [&str; $n] = [$($x),+];
         #[rustfmt::skip]
-        const COLORS: [[u8; 3]; NAMES.len()] = car::map!([$($color),+], |x| color(x.tail())
-    );};
+        pub const COLORS: [[u8; 3]; NAMES.len()] = car::map!([$($color),+], |x| color(x.tail()));
+        pub const STYLES: [u8; NAMES.len()] = [$(
+            ($($style, )? 0, ).0
+        ),+];
+    };
 }
-theme! {
+theme! { 15
     "attribute" b"#ffd173",
-    "comment" b"#5c6773",
+    "comment" b"#5c6773" Style::ITALIC,
     "constant" b"#DFBFFF",
-    "function" b"#FFD173",
+    "function" b"#FFD173" Style::ITALIC,
     "variable.builtin" b"#FFAD66",
-    "keyword" b"#FFAD66",
+    "keyword" b"#FFAD66"  Style::ITALIC | Style::BOLD,
     "number" b"#dfbfff",
     "operator" b"#F29E74",
     "punctuation" b"#cccac2",
     "string" b"#D5FF80",
-    "tag" b"#DFBFFF",
-    "type" b"#73D0FF",
+    "tag" b"#5CCFE6"  Style::ITALIC | Style::BOLD,
+    "type" b"#73D0FF"  Style::ITALIC | Style::BOLD,
     "variable" b"#cccac2",
     "variable.parameter" b"#DFBFFF",
     "namespace" b"#73d0ff",
+}
+
+mod semantic {
+    use atools::prelude::*;
+    use dsb::cell::Style;
+    macro_rules! modified {
+        ($count:literal $($x:literal . $mod:literal $color:literal $($style:expr)?,)+ $(,)?) => {
+            pub const MODIFIED: [(&str, &str); $count] = [
+                $(($x, $mod),)+
+            ];
+            pub const MCOLORS: [[u8;3]; MODIFIED.len()] = car::map!([$($color),+], |x| color(x.tail()));
+            pub const MSTYLE: [u8; MODIFIED.len()] = [$(($($style, )? 0, ).0 ,)+];
+        };
+    }
+    use super::color;
+    theme! { 19
+    "comment" b"#5c6773" Style::ITALIC,
+    // "decorator" b"#cccac2",
+    // "enumMember" b"#cccac2",
+    "function" b"#FFD173" Style::ITALIC,
+    "interface" b"#5CCFE6",
+    "keyword" b"#FFAD66"  Style::ITALIC | Style::BOLD,
+    "macro" b"#fbc351" Style::BOLD,
+    "method" b"#FFD173" Style::ITALIC,
+    // "namespace" b"#cccac2",
+    "number" b"#dfbfff",
+    "operator" b"#F29E74",
+    // "property" b"#cccac2",
+    "string" b"#D5FF80",
+    // "struct" b"#cccac2",
+    // "typeParameter" b"#cccac2",
+    "enum" b"#73b9ff" Style::ITALIC | Style::BOLD,
+    "builtinType" b"#73d0ff" Style::ITALIC,
+    // "type" b"#73d0ff" Style::ITALIC | Style::BOLD,
+    "typeAlias" b"#5ce6d8" Style::ITALIC | Style::BOLD,
+    "struct" b"#73d0ff" Style::ITALIC | Style::BOLD,
+    // "variable" b"#cccac2",
+    // "angle" b"#cccac2",
+    // "arithmetic" b"#cccac2",
+    // "attributeBracket" b"#cccac2",
+    "parameter" b"#DFBFFF",
+    "namespace" b"#73d0ff",
+    // "attributeBracket" b"#cccac2",
+    // "attribute" b"#cccac2",
+    // "bitwise" b"#cccac2",
+    // "boolean" b"#cccac2",
+    // "brace" b"#cccac2",
+    // "bracket" b"#cccac2",
+    // "builtinAttribute" b"#cccac2",
+    // "character" b"#cccac2",
+    // "colon" b"#cccac2",
+    // "comma" b"#cccac2",
+    // "comparison" b"#cccac2",
+    // "constParameter" b"#cccac2",
+    "const" b"#DFBFFF",
+    // "deriveHelper" b"#cccac2",
+    // "derive" b"#cccac2",
+    // "dot" b"#cccac2",
+    // "escapeSequence" b"#cccac2",
+    // "formatSpecifier" b"#cccac2",
+    // "generic" b"#cccac2",
+    // "invalidEscapeSequence" b"#cccac2",
+    // "label" b"#cccac2",
+    // "lifetime" b"#cccac2",
+    // "logical" b"#cccac2",
+    "macroBang" b"#f28f74",
+    // "parenthesis" b"#cccac2",
+    // "procMacro" b"#cccac2",
+    // "punctuation" b"#cccac2",
+    "selfKeyword" b"#FFAD66"  Style::ITALIC | Style::BOLD,
+    "selfTypeKeyword" b"#FFAD66"  Style::ITALIC | Style::BOLD,
+    // "semicolon" b"#cccac2",
+    // "static" b"#cccac2",
+    // "toolModule" b"#cccac2",
+    // "union" b"#cccac2",
+    // "unresolvedReference" b"#cccac2",
+    }
+    modified! { 2
+        "function" . "library" b"#F28779",
+        "variable" . "mutable" b"#e6dab6",
+    }
 }
 const fn of(x: &'static str) -> usize {
     let mut i = 0;
@@ -48,12 +140,6 @@ const fn of(x: &'static str) -> usize {
     }
     panic!()
 }
-
-const STYLES: [u8; NAMES.len()] = amap::amap_d! {
-    const { of("type") } | const { of("keyword") } | const { of("tag") } => Style::ITALIC | Style::BOLD,
-    const { of("comment") } | const { of("function") }=> Style::ITALIC,
-
-};
 
 const fn color(x: &[u8; 6]) -> [u8; 3] {
     car::map!(
@@ -115,6 +201,7 @@ pub struct TextArea {
 }
 impl Debug for TextArea {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        String::new();
         f.debug_struct("TextArea")
             .field("rope", &self.rope)
             .field("cursor", &self.cursor)
@@ -168,7 +255,8 @@ impl TextArea {
                     .unwrap_or_default())
                 .min(x.saturating_sub(self.line_number_offset() + 1))
             })
-            .unwrap_or(self.rope.len_chars())
+            .unwrap_or(usize::MAX)
+            .min(self.rope.len_chars())
     }
 
     pub fn insert_(&mut self, c: SmolStr) {
@@ -413,36 +501,7 @@ impl TextArea {
         }
     }
 
-    pub fn slice<'c>(
-        &self,
-        (c, r): (usize, usize),
-        cell: &'c mut [Cell],
-        range: Range<usize>,
-    ) -> &'c mut [Cell] {
-        let [(x1, y1), (x2, y2)] = dbg!(self.position(range));
-        &mut cell[y1 * c + x1..y2 * c + x2]
-    }
-
-    #[implicit_fn]
-    pub fn write_to(
-        &mut self,
-        color: [u8; 3],
-        bg: [u8; 3],
-        (into, (w, _)): (&mut [Cell], (usize, usize)),
-        (ox, oy): (usize, usize),
-        selection: Option<Range<usize>>,
-        apply: impl FnOnce((usize, usize), &mut Self, &mut [Cell]),
-        path: Option<&Path>,
-    ) {
-        let (c, r) = (self.c, self.r);
-        let mut cells = vec![
-            Cell {
-                style: Style { color, bg, flags: 0 },
-                letter: None,
-            };
-            (self.l().max(r) + r - 1) * c
-        ];
-
+    pub fn tree_sit<'c>(&self, path: Option<&Path>, cell: &'c mut [Cell]) {
         let language = path
             .and_then(|x| LOADER.language_for_filename(x))
             .unwrap_or_else(|| LOADER.language_for_name("rust").unwrap());
@@ -471,8 +530,9 @@ impl TextArea {
             s as u32..e as u32,
         );
         let mut at = 0;
-        let mut highlight_stack = Vec::with_capacity(8);
+        let (c, r) = (self.c, self.r);
 
+        let mut highlight_stack = Vec::with_capacity(8);
         loop {
             let (e, new_highlights) = h.advance();
             if e == HighlightEvent::Refresh {
@@ -498,16 +558,50 @@ impl TextArea {
                     c,
                 );
 
-                cells.get_mut(y1 * c + x1..y2 * c + x2).map(|x| {
+                cell.get_mut(y1 * c + x1..y2 * c + x2).map(|x| {
                     x.iter_mut().for_each(|x| {
-                        x.style.flags = STYLES[h.idx()];
+                        x.style.flags |= STYLES[h.idx()];
                         x.style.color = COLORS[h.idx()];
                     })
                 });
             }
             at = end;
         }
-        drop(h);
+    }
+
+    pub fn slice<'c>(
+        &self,
+        (c, r): (usize, usize),
+        cell: &'c mut [Cell],
+        range: Range<usize>,
+    ) -> &'c mut [Cell] {
+        let [(x1, y1), (x2, y2)] = self.position(range);
+        &mut cell[y1 * c + x1..y2 * c + x2]
+    }
+
+    #[implicit_fn]
+    pub fn write_to<'lsp>(
+        &mut self,
+        color: [u8; 3],
+        bg: [u8; 3],
+        (into, (w, _)): (&mut [Cell], (usize, usize)),
+        (ox, oy): (usize, usize),
+        selection: Option<Range<usize>>,
+        apply: impl FnOnce((usize, usize), &mut Self, &mut [Cell]),
+        path: Option<&Path>,
+        tokens: Option<(
+            arc_swap::Guard<Arc<Box<[SemanticToken]>>>,
+            &SemanticTokensLegend,
+        )>,
+    ) {
+        let (c, r) = (self.c, self.r);
+        let mut cells = vec![
+            Cell {
+                style: Style { color, bg, flags: 0 },
+                letter: None,
+            };
+            (self.l().max(r) + r - 1) * c
+        ];
 
         for (l, y) in self.rope.lines().zip(0..) {
             for (e, x) in l.chars().take(c).zip(0..) {
@@ -516,6 +610,89 @@ impl TextArea {
                 }
             }
         }
+
+        if let Some((t, leg)) = tokens
+            && t.len() > 0
+        {
+            let mut ln = 0;
+            let mut ch = 0;
+            for t in &**t {
+                ln += t.delta_line;
+                ch = match t.delta_line {
+                    1.. => t.delta_start,
+                    0 => ch + t.delta_start,
+                };
+                let x: Result<(usize, usize), ropey::Error> = try {
+                    let x1 = self.rope.try_byte_to_char(
+                        self.rope.try_line_to_byte(ln as _)? + ch as usize,
+                    )? - self.rope.try_line_to_char(ln as _)?;
+                    let x2 = self.rope.try_byte_to_char(
+                        self.rope.try_line_to_byte(ln as _)?
+                            + ch as usize
+                            + t.length as usize,
+                    )? - self.rope.try_line_to_char(ln as _)?;
+                    (x1, x2)
+                };
+                let Ok((x1, x2)) = x else {
+                    continue;
+                };
+
+                if ln as usize * c + x1 < self.vo * c {
+                    continue;
+                } else if ln as usize * c + x1 > self.vo * c + r * c {
+                    break;
+                }
+                let slice = cells
+                    .get_mut(ln as usize * c + x1..ln as usize * c + x2)
+                    .expect("good slice");
+                let Some(tty) = leg.token_types.get(t.token_type as usize)
+                else {
+                    error!(
+                        "issue while loading semantic token {t:?}; \
+                         couldnt find in legend"
+                    );
+                    continue;
+                };
+                if let Some(f) =
+                    semantic::NAMES.iter().position(|&x| x == tty.as_str())
+                {
+                    slice.iter_mut().for_each(|x| {
+                        x.style.color = semantic::COLORS[f];
+                        x.style.flags |= semantic::STYLES[f];
+                    });
+                }
+                // println!(
+                //     "{tty:?}: {}",
+                //     slice
+                //         .iter()
+                //         .flat_map(|x| x.letter)
+                //         .collect::<String>()
+                // );
+                let mut modi = t.token_modifiers_bitset;
+                while modi != 0 {
+                    let bit = modi.trailing_zeros();
+
+                    leg.token_modifiers
+                        .get(bit as usize)
+                        .and_then(|modi| {
+                            MODIFIED.iter().position(|&(x, y)| {
+                                (x == tty.as_str()) & (y == modi.as_str())
+                            })
+                        })
+                        .map(|i| {
+                            slice.iter_mut().for_each(|x| {
+                                x.style.color = MCOLORS[i];
+                                x.style.flags |= MSTYLE[i];
+                            });
+                        });
+
+                    modi &= !(1 << bit);
+                }
+            }
+        } else {
+            self.tree_sit(path, &mut cells);
+        }
+
         selection.map(|x| self.position(x)).map(|[(x1, y1), (x2, y2)]| {
             (y1 * c + x1..y2 * c + x2).for_each(|x| {
                 cells
@@ -673,6 +850,8 @@ impl TextArea {
             panic!()
         };
         assert!(r.start < r.end);
+        dbg!(to, &r);
+
         self.cursor = to;
         self.setc();
         r
