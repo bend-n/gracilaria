@@ -243,6 +243,7 @@ impl TextArea {
         self.rope.len_lines()
     }
     #[implicit_fn]
+    #[lower::apply(saturating)]
     pub fn index_at(&self, (x, y): (usize, usize)) -> usize {
         let l_i = self.vo + y;
         self.rope
@@ -253,7 +254,7 @@ impl TextArea {
                     .get_line(l_i)
                     .map(_.len_chars() - 1)
                     .unwrap_or_default())
-                .min(x.saturating_sub(self.line_number_offset() + 1))
+                .min(x - (self.line_number_offset() + 1))
             })
             .unwrap_or(usize::MAX)
             .min(self.rope.len_chars())

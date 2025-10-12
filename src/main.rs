@@ -42,6 +42,8 @@ use winit::event::{
 };
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::keyboard::{Key, ModifiersState, NamedKey, SmolStr};
+use winit::platform::wayland::WindowAttributesExtWayland;
+use winit::window::Icon;
 
 use crate::bar::Bar;
 use crate::text::{Diff, TextArea};
@@ -219,17 +221,13 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
     }
     macro_rules! change {
         () => {
-            lsp.as_ref()
-                .map(|(x, origin)| {
-                    x.edit(&origin, text.rope.to_string()).unwrap();
-                    x.rq_semantic_tokens(origin).unwrap();
-                })
-                .unwrap();
+            lsp.as_ref().map(|(x, origin)| {
+                x.edit(&origin, text.rope.to_string()).unwrap();
+                x.rq_semantic_tokens(origin).unwrap();
+            });
         };
     }
-    lsp.as_ref()
-        .map(|(x, origin)| x.rq_semantic_tokens(origin).unwrap())
-        .unwrap();
+    lsp.as_ref().map(|(x, origin)| x.rq_semantic_tokens(origin).unwrap());
     let mut mtime = modify!();
     macro_rules! save {
         () => {{
@@ -244,7 +242,11 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
     }
     let app = winit_app::WinitAppBuilder::with_init(
         |elwt| {
-            let window = winit_app::make_window(elwt, identity);
+            let window = winit_app::make_window(elwt, |x| {
+                x.with_title("gracilaria")
+                    .with_name("com.bendn.gracilaria", "")
+                    .with_window_icon(Some(Icon::from_rgba(include_bytes!("../dist/icon-32").to_vec(), 32, 32).unwrap()))
+            }); 
             window.set_ime_allowed(true);
             window.set_ime_purpose(winit::window::ImePurpose::Terminal);
 
