@@ -1,6 +1,6 @@
 /// Common boilerplate for setting up a winit application.
 use std::marker::PhantomData;
-use std::rc::Rc;
+use std::sync::Arc;
 
 use winit::application::ApplicationHandler;
 use winit::event::{Event, WindowEvent};
@@ -25,7 +25,7 @@ pub(crate) fn run_app(
 pub(crate) fn make_window(
     elwt: &ActiveEventLoop,
     f: impl FnOnce(WindowAttributes) -> WindowAttributes,
-) -> Rc<Window> {
+) -> Arc<Window> {
     let attributes = f(WindowAttributes::default());
     #[cfg(target_arch = "wasm32")]
     let attributes =
@@ -33,7 +33,7 @@ pub(crate) fn make_window(
             attributes, true,
         );
     let window = elwt.create_window(attributes);
-    Rc::new(window.unwrap())
+    Arc::new(window.unwrap())
 }
 
 /// Easily constructable winit application.

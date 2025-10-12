@@ -4,6 +4,7 @@
     mpmc_channel,
     const_cmp,
     const_default,
+    cell_get_cloned,
     import_trait_associated_functions,
     if_let_guard,
     deref_patterns,
@@ -18,7 +19,9 @@ use std::io::BufReader;
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::LazyLock;
+use std::rc::Rc;
+use std::sync::{Arc, LazyLock, OnceLock};
+use std::thread;
 use std::time::Instant;
 
 use Default::default;
@@ -32,6 +35,7 @@ use lsp_types::{
     ServerCapabilities, TextDocumentIdentifier,
     TextDocumentPositionParams, WorkspaceFolder,
 };
+use parking_lot::RwLock;
 use regex::Regex;
 use ropey::Rope;
 use rust_fsm::StateMachineImpl;
@@ -43,7 +47,7 @@ use winit::event::{
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::keyboard::{Key, ModifiersState, NamedKey, SmolStr};
 use winit::platform::wayland::WindowAttributesExtWayland;
-use winit::window::Icon;
+use winit::window::{Icon, Window};
 
 use crate::bar::Bar;
 use crate::text::{Diff, TextArea};
@@ -183,7 +187,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
             .spawn()
             .unwrap();
 
-        let (c, t, t2) = lsp::run(
+        let (c, t, t2, changed) = lsp::run(
             lsp_server::stdio::stdio_transport(
                 BufReader::new(c.stdout.take().unwrap()),
                 c.stdin.take().unwrap(),
@@ -199,9 +203,14 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
         );
         c.open(&origin, std::fs::read_to_string(&origin).unwrap())
             .unwrap();
-        ((c, origin), (t, t2))
+        ((c, origin), (t, t2), changed)
     });
-    let (lsp, t) = c.unzip();
+    let (lsp, t, ch) = match c {
+        Some((a,b,c)) => {
+            (Some(a), Some(b), Some(c))
+        },
+        None => { (None, None, None) }
+    }; 
 
     // let mut hl_result = None;
 
@@ -240,8 +249,9 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
             mtime = modify!();
         }};
     }
+    static PUT: OnceLock<Arc<Window>> = OnceLock::new();
     let app = winit_app::WinitAppBuilder::with_init(
-        |elwt| {
+        move |elwt| {
             let window = winit_app::make_window(elwt, |x| {
                 x.with_title("gracilaria")
                     .with_name("com.bendn.gracilaria", "")
@@ -249,7 +259,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
             }); 
             window.set_ime_allowed(true);
             window.set_ime_purpose(winit::window::ImePurpose::Terminal);
-
+            PUT.set(window.clone()).unwrap();
             let context =
                 softbuffer::Context::new(window.clone()).unwrap();
 
@@ -275,8 +285,10 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
             if modify!() != mtime {
                 mtime = modify!();
                 state.consume(Action::Changed).unwrap();
+                window.request_redraw();
             }
             match event {
+                Event::AboutToWait => {}
                 Event::WindowEvent {
                     window_id,
                     event: WindowEvent::Resized(size),
@@ -399,10 +411,6 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             &text,
                             lsp.as_ref().map(|x| &x.0)
                         );
-
-                        println!("cell=");
-                        dbg!(now.elapsed());
-                        let now = Instant::now();
                         unsafe {
                             dsb::render(
                                 &cells,
@@ -415,11 +423,8 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                                 i.as_mut(),
                             )
                         };
-                        // eprint!("rend=");
-                        // dbg!(now.elapsed());
                         let met = FONT.metrics(&[]);
                         let fac = ppem / met.units_per_em as f32;
-                        let now = Instant::now();
 
                         // if x.view_o == Some(x.cells.row) || x.view_o.is_none() {
                         use fimg::OverlayAt;
@@ -449,9 +454,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                                 );
                             }
                         };
-                        // eprint!("conv = ");
 
-                        // }
                         let buffer = surface.buffer_mut().unwrap();
                         let x = unsafe {
                             std::slice::from_raw_parts_mut(
@@ -461,7 +464,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             .as_chunks_unchecked_mut::<4>()
                         };
                         fimg::overlay::copy_rgb_bgr_(i.flatten(), x);
-                        // dbg!(now.elapsed());
+                        dbg!(now.elapsed());
                         buffer.present().unwrap();
                     }
                 }
@@ -757,8 +760,12 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                 _ => {}
             };
         },
-    );
-
+    );    
+    ch.map(|ch| thread::spawn(move || {
+        for () in ch {
+            PUT.get().map(|x| x.request_redraw());
+        }
+    }));
     winit_app::run_app(event_loop, app);
 }
 

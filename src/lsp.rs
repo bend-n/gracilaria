@@ -35,6 +35,7 @@ pub struct Client {
     pub initialized: Option<InitializeResult>,
     // pub pending: HashMap<i32, oneshot::Sender<Re>>,
     pub send_to: Sender<(i32, oneshot::Sender<Re>)>,
+    pub ch_tx: Sender<()>,
     pub progress:
         &'static papaya::HashMap<ProgressToken, Option<WorkDoneProgress>>,
     pub not_rx: Receiver<N>,
@@ -134,6 +135,7 @@ impl Client {
             },
         )?;
         let d = self.semantic_tokens.0;
+        let ch = self.ch_tx.clone();
         let x = self.runtime.spawn(async move {
             let x = rx.await?;
             debug!("received semantic tokens");
@@ -145,6 +147,7 @@ impl Client {
                 SemanticTokensResult::Tokens(x) =>
                     d.store(x.data.into_boxed_slice().into()),
             };
+            ch.send(())?;
             anyhow::Ok(())
         });
         *p = Some((x, id));
@@ -159,14 +162,16 @@ pub fn run(
         lsp_server::IoThreads,
     ),
     workspace: WorkspaceFolder,
-) -> (Client, lsp_server::IoThreads, JoinHandle<()>) {
+) -> (Client, lsp_server::IoThreads, JoinHandle<()>, Receiver<()>) {
     let now = Instant::now();
     let (req_tx, req_rx) = unbounded();
     let (not_tx, not_rx) = unbounded();
     let (_req_tx, _req_rx) = unbounded();
+    let (ch_tx, ch_rx) = unbounded();
     let mut c = Client {
         tx,
         req_rx: _req_rx,
+        ch_tx: ch_tx.clone(),
         progress: Box::leak(Box::new(papaya::HashMap::new())),
         runtime: tokio::runtime::Builder::new_multi_thread()
             .thread_name("lsp runtime")
@@ -337,6 +342,7 @@ pub fn run(
                     Ok(Message::Notification(x @ N { method: "$/progress", .. })) => {
                         let ProgressParams {token,value:ProgressParamsValue::WorkDone(x) } = x.load::<Progress>().unwrap();
                         progress.update(token, move |_| Some(x.clone()), &progress.guard());
+                        _ = ch_tx.send(());
                     }
                     Ok(Message::Notification(notification)) => {
                         debug!("rx {notification:?}");
@@ -349,7 +355,7 @@ pub fn run(
             }
         }
     });
-    (c, iot, h)
+    (c, iot, h, ch_rx)
 }
 
 pub fn x() {
@@ -362,7 +368,7 @@ pub fn x() {
 
     log::info!("helol");
 
-    let (c, rx, iot) = run(
+    let (c, rx, iot, ch) = run(
         lsp_server::stdio::stdio_transport(
             BufReader::new(c.stdout.take().unwrap()),
             c.stdin.take().unwrap(),
