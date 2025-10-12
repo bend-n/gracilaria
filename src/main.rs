@@ -761,7 +761,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
             };
         },
     );    
-    ch.map(|ch| thread::spawn(move || {
+    ch.map(|ch| thread::Builder::new().name("redrawer".into()).spawn(move || {
         for () in ch {
             PUT.get().map(|x| x.request_redraw());
         }

@@ -174,6 +174,7 @@ pub fn run(
         ch_tx: ch_tx.clone(),
         progress: Box::leak(Box::new(papaya::HashMap::new())),
         runtime: tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
             .thread_name("lsp runtime")
             .build()
             .unwrap(),
