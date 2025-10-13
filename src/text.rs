@@ -1,22 +1,24 @@
 use std::cmp::min;
 use std::fmt::{Debug, Display};
-use std::ops::{Deref, Not as _, Range};
+use std::ops::{Deref, Not as _, Range, RangeBounds};
 use std::path::Path;
+use std::pin::{Pin, pin};
 use std::sync::{Arc, LazyLock};
+use std::vec::Vec;
 
 use atools::prelude::*;
 use diff_match_patch_rs::{DiffMatchPatch, Patches};
 use dsb::Cell;
 use dsb::cell::Style;
 use helix_core::Syntax;
-use helix_core::syntax::{HighlightEvent, Loader};
+use helix_core::syntax::{HighlightEvent, Loader, reconfigure_highlights};
 use implicit_fn::implicit_fn;
 use log::error;
 use lsp_types::{
     SemanticToken, SemanticTokensLegend, SemanticTokensServerCapabilities,
 };
 use ropey::{Rope, RopeSlice};
-use tree_house::fixtures;
+use tree_house::{Language, fixtures};
 use winit::keyboard::{NamedKey, SmolStr};
 
 use crate::MODIFIERS;
@@ -32,11 +34,12 @@ macro_rules! theme {
         ),+];
     };
 }
-theme! { 15
+theme! { 16
     "attribute" b"#ffd173",
     "comment" b"#5c6773" Style::ITALIC,
     "constant" b"#DFBFFF",
     "function" b"#FFD173" Style::ITALIC,
+    "function.macro" b"#fbc351",
     "variable.builtin" b"#FFAD66",
     "keyword" b"#FFAD66"  Style::ITALIC | Style::BOLD,
     "number" b"#dfbfff",
@@ -82,7 +85,7 @@ mod semantic {
     "enum" b"#73b9ff" Style::ITALIC | Style::BOLD,
     "builtinType" b"#73d0ff" Style::ITALIC,
     // "type" b"#73d0ff" Style::ITALIC | Style::BOLD,
-    "typeAlias" b"#5ce6d8" Style::ITALIC | Style::BOLD,
+    "typeAlias" b"#69caed" Style::ITALIC | Style::BOLD,
     "struct" b"#73d0ff" Style::ITALIC | Style::BOLD,
     // "variable" b"#cccac2",
     // "angle" b"#cccac2",
@@ -201,7 +204,6 @@ pub struct TextArea {
 }
 impl Debug for TextArea {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        String::new();
         f.debug_struct("TextArea")
             .field("rope", &self.rope)
             .field("cursor", &self.cursor)
@@ -272,8 +274,12 @@ impl TextArea {
     }
 
     pub fn cursor(&self) -> (usize, usize) {
-        let y = self.rope.char_to_line(self.cursor);
-        let x = self.cursor - self.rope.line_to_char(y);
+        self.xy(self.cursor)
+    }
+
+    pub fn xy(&self, c: usize) -> (usize, usize) {
+        let y = self.rope.char_to_line(c);
+        let x = c - self.rope.line_to_char(y);
         (x, y)
     }
 
@@ -506,68 +512,56 @@ impl TextArea {
         let language = path
             .and_then(|x| LOADER.language_for_filename(x))
             .unwrap_or_else(|| LOADER.language_for_name("rust").unwrap());
-        let syntax =
-            Syntax::new(self.rope.slice(..), language, &LOADER).unwrap();
 
-        // println!(
-        //     "{}",
-        //     tree_house::fixtures::highlighter_fixture(
-        //         "hmm",
-        //         &*LOADER,
-        //         |y| NAMES[y.idx()].to_string(),
-        //         &syntax.inner,
-        //         self.rope.slice(..),
-        //         ..,
-        //     )
-        // );
         let s = self.rope.line_to_char(self.vo);
         let e = self
             .rope
-            .try_line_to_char(self.vo + self.r + 20)
+            .try_line_to_char(self.vo + self.r * self.c)
             .unwrap_or(self.rope.len_chars());
-        let mut h = syntax.highlighter(
-            self.rope.slice(..),
-            &LOADER,
-            s as u32..e as u32,
-        );
-        let mut at = 0;
-        let (c, r) = (self.c, self.r);
-
-        let mut highlight_stack = Vec::with_capacity(8);
-        loop {
-            let (e, new_highlights) = h.advance();
-            if e == HighlightEvent::Refresh {
-                highlight_stack.clear();
-            }
-            highlight_stack.extend(new_highlights);
-
-            let end = h.next_event_offset() as _;
-            if end == 4294967295 {
-                break;
-            }
-            for &h in &highlight_stack {
-                let y1 = self.rope.byte_to_line(at);
-                let y2 = self.rope.byte_to_line(end);
-                let x1 = min(
-                    self.rope.byte_to_char(at)
-                        - self.rope.line_to_char(y1),
-                    c,
-                );
-                let x2 = min(
-                    self.rope.byte_to_char(end)
-                        - self.rope.line_to_char(y2),
-                    c,
-                );
-
-                cell.get_mut(y1 * c + x1..y2 * c + x2).map(|x| {
-                    x.iter_mut().for_each(|x| {
-                        x.style.flags |= STYLES[h.idx()];
-                        x.style.color = COLORS[h.idx()];
-                    })
-                });
-            }
-            at = end;
+        for ((x1, y1), (x2, y2), s, _) in std::iter::from_coroutine(pin!(
+            hl(language, &self.rope, s as u32..e as u32, self.c)
+        )) {
+            cell.get_mut(y1 * self.c + x1..y2 * self.c + x2)
+                .map(|x| x.iter_mut().for_each(|x| x.style |= s));
         }
+
+        // let mut highlight_stack = Vec::with_capacity(8);
+        // loop {
+        //     let (e, new_highlights) = h.advance();
+        //     if e == HighlightEvent::Refresh {
+        //         highlight_stack.clear();
+        //     }
+        //     highlight_stack.extend(new_highlights);
+
+        //     let end = h.next_event_offset() as _;
+        //     if end == 4294967295 {
+        //         break;
+        //     }
+        //     for &h in &highlight_stack {
+        //         let y1 = self.rope.byte_to_line(at);
+        //         let y2 = self.rope.byte_to_line(end);
+        //         let x1 = min(
+        //             self.rope.byte_to_char(at)
+        //                 - self.rope.line_to_char(y1),
+        //             self.c,
+        //         );
+        //         let x2 = min(
+        //             self.rope.byte_to_char(end)
+        //                 - self.rope.line_to_char(y2),
+        //             self.c,
+        //         );
+
+        //         cell.get_mut(y1 * self.c + x1..y2 * self.c + x2).map(
+        //             |x| {
+        //                 x.iter_mut().for_each(|x| {
+        //                     x.style.flags |= STYLES[h.idx()];
+        //                     x.style.color = COLORS[h.idx()];
+        //                 })
+        //             },
+        //         );
+        //     }
+        //     at = end;
+        // }
     }
 
     pub fn slice<'c>(
@@ -611,7 +605,10 @@ impl TextArea {
                 }
             }
         }
-
+        // let tokens = None::<(
+        //     arc_swap::Guard<Arc<Box<[SemanticToken]>>>,
+        //     &SemanticTokensLegend,
+        // )>;
         if let Some((t, leg)) = tokens
             && t.len() > 0
         {
@@ -862,75 +859,89 @@ impl TextArea {
 fn is_word(r: char) -> bool {
     matches!(r, 'a'..='z' | 'A'..='Z' | '0'..='9' | '_')
 }
-static LOADER: LazyLock<Loader> = LazyLock::new(|| {
+pub static LOADER: LazyLock<Loader> = LazyLock::new(|| {
     let x = helix_core::config::default_lang_loader();
     x.set_scopes(NAMES.map(|x| x.to_string()).to_vec());
+
+    // x.languages().for_each(|(_, x)| {
+    //     x.syntax_config(&LOADER).map(|x| {
+    //         x.configure(|x| {
+    //             // let x = set.entry(x.to_string()).or_insert_with(|| {
+    //             //     n += 1;
+    //             //     n
+    //             // });
+    //             // dbg!(x);
+    //             NAMES
+    //                 .iter()
+    //                 .position(|&y| y == x)
+    //                 .map(|x| x as u32)
+    //                 .map(helix_core::syntax::Highlight::new)
+    //             // Some(helix_core::syntax::Highlight::new(*x))
+    //         })
+    //     });
+    // });
     x
 });
-#[test]
+// #[test]
 pub fn man() {
     let query_str = r#"
         (line_comment)+ @quantified_nodes
         ((line_comment)+) @quantified_nodes_grouped
         ((line_comment) (line_comment)) @multiple_nodes_grouped
         "#;
-    let source = Rope::from_str(
-        r#"
-
-    pub fn extend_selection_to(
-        &mut self,
-        to: usize,
-        r: std::ops::Range<usize>,
-    ) -> std::ops::Range<usize> {
-        if [r.start, r.end].contains(&to) {
-            return r;
-        }
-        let r = if self.cursor == r.start {
-            if to < r.start {
-                to..r.end
-            } else if to > r.end {
-                r.end..to
-            } else {
-                to..r.end
-            }
-        } else if self.cursor == r.end {
-            if to > r.end {
-                r.start..to
-            } else if to < r.start {
-                to..r.start
-            } else {
-                r.start..to
-            }
-        } else {
-            panic!()
-        };
-        assert!(r.start < r.end);
-        self.cursor = to;
-        self.setc();
-        r
-    }
-"#,
-    );
-    let language = LOADER.language_for_name("rust").unwrap();
+    let source = Rope::from_str(r#"assert_eq!(0, Some(0));"#);
+    // dbg!(source.slice(70..));
+    // let mut set = std::collections::HashMap::new();
     let mut n = 0;
-    let mut set = std::collections::HashMap::new();
-    LOADER.languages().for_each(|(_, x)| {
-        x.syntax_config(&LOADER).map(|x| {
-            x.configure(|x| {
-                let x = set.entry(x.to_string()).or_insert_with(|| {
-                    n += 1;
-                    n
-                });
-                // dbg!(x);
-                // NAMES
-                //     .iter()
-                //     .position(|&y| y == x)
-                //     .map(|x| x as u32)
-                //     .map(helix_core::syntax::Highlight::new)
-                Some(helix_core::syntax::Highlight::new(*x))
-            })
-        });
-    });
+    let loader = &*LOADER;
+    // loader.set_scopes(nam.map(|x| x.to_string()).to_vec());
+    let language = loader.language_for_name("rust").unwrap();
+    // for lang in [
+    //     "rust-format-args",
+    //     "rust-format-args-macro",
+    //     "rust",
+    //     "markdown-rustdoc",
+    //     "comment",
+    //     "regex",
+    // ] {
+    //     let c = LOADER
+    //         .language(LOADER.language_for_name(lang).unwrap())
+    //         .syntax_config(&LOADER)
+    //         .unwrap();
+    //     reconfigure_highlights(c, &NAMES.map(|x| x.to_string()));
+    //     // c.configure(|x| {
+    //     //     // NAMES
+    //     //     //     .iter()
+    //     //     //     .position(|&y| y == x)
+    //     //     //     .map(|x| x as u32)
+    //     //     //     .map(helix_core::syntax::Highlight::new)
+    //     //     let x = set.entry(x.to_string()).or_insert_with(|| {
+    //     //         n += 1;
+    //     //         n
+
+    //     //     });
+    //     //     dbg!(*x);
+    //     //     Some(helix_core::syntax::Highlight::new(*x))
+    //     // })
+    // }
+    // let mut set = std::collections::HashMap::new();
+    // LOADER.languages().for_each(|(_, x)| {
+    //     x.syntax_config(&LOADER).map(|x| {
+    //         x.configure(|x| {
+    //             // let x = set.entry(x.to_string()).or_insert_with(|| {
+    //             //     n += 1;
+    //             //     n
+    //             // });
+    //             // dbg!(x);
+    //             NAMES
+    //                 .iter()
+    //                 .position(|&y| y == x)
+    //                 .map(|x| x as u32)
+    //                 .map(helix_core::syntax::Highlight::new)
+    //             // Some(helix_core::syntax::Highlight::new(*x))
+    //         })
+    //     });
+    // });
     // let c = LOADER.languages().next().unwrap().1;
     // let grammar = LOADER.get_config(language).unwrap().grammar;
     // let query = Query::new(grammar, query_str, |_, _| Ok(())).unwrap();
@@ -940,24 +951,24 @@ pub fn man() {
     //     &NAMES.map(|x| x.to_string()),
     // );
 
-    let syntax = Syntax::new(source.slice(..), language, &LOADER).unwrap();
+    let syntax = Syntax::new(source.slice(..), language, &loader).unwrap();
     let mut h = syntax.highlighter(
         source.slice(..),
-        &LOADER,
+        &loader,
         0..source.len_chars() as u32,
     );
     println!(
         "{}",
         tree_house::fixtures::highlighter_fixture(
             "hmm",
-            &*LOADER,
-            |y| set
-                .iter()
-                .find(|x| x.1 == &y.get())
-                .unwrap()
-                .0
-                .to_string(),
-            // |y| NAMES[y.idx()].to_string(),
+            &loader,
+            // |y| set
+            //     .iter()
+            //     .find(|x| x.1 == &y.get())
+            //     .unwrap()
+            //     .0
+            //     .to_string(),
+            |y| NAMES[y.idx()].to_string(),
             &syntax.inner,
             source.slice(..),
             ..,
@@ -970,13 +981,13 @@ pub fn man() {
         // dbg!(hl.map(|x| NAMES[x.idx()]).collect::<Vec<_>>(), e);
         dbg!(
             h.active_highlights()
-                .map(|y| set
-                    .iter()
-                    .find(|x| x.1 == &y.get())
-                    .unwrap()
-                    .0
-                    .to_string())
-                // .map(|x| NAMES[x.idx()])
+                // .map(|y| set
+                //     .iter()
+                //     .find(|x| x.1 == &y.get())
+                //     .unwrap()
+                //     .0
+                //     .to_string())
+                .map(|x| NAMES[x.idx()])
                 .collect::<Vec<_>>()
         );
         // panic!()
@@ -1001,4 +1012,69 @@ pub fn man() {
     // };
     // test("quantified_nodes", 1..37);
     panic!()
+}
+
+pub fn hl(
+    lang: Language,
+    text: &'_ Rope,
+    r: impl RangeBounds<u32>,
+    c: usize,
+) -> impl std::ops::Coroutine<
+    Yield = ((usize, usize), (usize, usize), (u8, [u8; 3]), RopeSlice<'_>),
+    Return = (),
+> {
+    // println!(
+    //     "{}",
+    //     tree_house::fixtures::highlighter_fixture(
+    //         "hmm",
+    //         &*LOADER,
+    //         |y| NAMES[y.idx()].to_string(),
+    //         &syntax.inner,
+    //         self.rope.slice(..),
+    //         ..,
+    //     )
+    // );
+    #[coroutine]
+    static move || {
+        println!("`\n{text}\n`");
+        let syntax = Syntax::new(text.slice(..), lang, &LOADER).unwrap();
+        let mut h = syntax.highlighter(text.slice(..), &LOADER, r);
+        let mut at = 0;
+
+        let mut highlight_stack = Vec::with_capacity(8);
+        loop {
+            let (e, new_highlights) = h.advance();
+            if e == HighlightEvent::Refresh {
+                highlight_stack.clear();
+            }
+            highlight_stack.extend(new_highlights);
+
+            let end = h.next_event_offset() as _;
+            if end == 4294967295 {
+                break;
+            }
+            for &h in &highlight_stack {
+                let y1 = text.byte_to_line(at);
+                let y2 = text.byte_to_line(end);
+                let x1 =
+                    min(text.byte_to_char(at) - text.line_to_char(y1), c);
+                let x2 =
+                    min(text.byte_to_char(end) - text.line_to_char(y2), c);
+
+                yield (
+                    (x1, y1),
+                    (x2, y2),
+                    (STYLES[h.idx()], COLORS[h.idx()]),
+                    (text.byte_slice(at..end)),
+                )
+            }
+            at = end;
+        }
+    }
+    // };
+    // std::iter::from_fn(move || {
+    //     //
+    //     use std::ops::Coroutine;
+    //     Some(Pin::new(&mut x).resume(()))
+    // })
 }

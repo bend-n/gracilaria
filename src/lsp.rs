@@ -198,6 +198,13 @@ pub fn run(
                 ..default()
             }),
             text_document: Some(TextDocumentClientCapabilities {
+                hover: Some(HoverClientCapabilities {
+                    dynamic_registration: None,
+                    content_format: Some(vec![
+                        MarkupKind::PlainText,
+                        MarkupKind::Markdown,
+                    ]),
+                }),
                 semantic_tokens: Some(SemanticTokensClientCapabilities {
                     dynamic_registration: Some(false),
                     requests: SemanticTokensClientCapabilitiesRequests {
@@ -303,7 +310,7 @@ pub fn run(
                 recv(req_rx) -> x => match x {
                     Ok((x, y)) => {
                         debug!("received request {x}");
-                        assert!(map.insert(x, y).is_none());
+                        assert!(map.insert(x, (y, Instant::now())).is_none());
                     }
                     Err(RecvError) => return,
                 },
@@ -326,7 +333,8 @@ pub fn run(
                         }
                     }
                     Ok(Message::Response(x)) => {
-                        if let Some(s) = map.remove(&x.id.i32()) {
+                        if let Some((s, took)) = map.remove(&x.id.i32()) {
+                            debug!("request {} took {:?}", x.id, took.elapsed());
                             match s.send(x) {
                                 Ok(()) => {}
                                 Err(e) => {

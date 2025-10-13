@@ -39,19 +39,19 @@ pub(crate) fn make_window(
 /// Easily constructable winit application.
 pub(crate) struct WinitApp<T, S, Init, InitSurface, Handler> {
     /// Closure to initialize `state`.
-    init: Init,
+    pub init: Init,
 
     /// Closure to initialize `surface_state`.
-    init_surface: InitSurface,
+    pub init_surface: InitSurface,
 
     /// Closure to run on window events.
-    event: Handler,
+    pub event: Handler,
 
     /// Contained state.
-    state: Option<T>,
+    pub state: Option<T>,
 
     /// Contained surface state.
-    surface_state: Option<S>,
+    pub surface_state: Option<S>,
 }
 
 /// Builder that makes it so we don't have to name `T`.

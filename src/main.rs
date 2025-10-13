@@ -1,9 +1,13 @@
 // this looks pretty good though
 #![feature(tuple_trait, unboxed_closures, fn_traits)]
 #![feature(
+    stmt_expr_attributes,
     mpmc_channel,
     const_cmp,
+    // generator_trait,
+    gen_blocks,
     const_default,
+    coroutines,iter_from_coroutine,coroutine_trait,
     cell_get_cloned,
     import_trait_associated_functions,
     if_let_guard,
@@ -16,6 +20,7 @@
 #![allow(incomplete_features, redundant_semicolons)]
 use std::convert::identity;
 use std::io::BufReader;
+use std::mem::forget;
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -30,11 +35,11 @@ use diff_match_patch_rs::PatchInput;
 use dsb::cell::Style;
 use dsb::{Cell, F};
 use fimg::Image;
+use lsp_types::request::HoverRequest;
 use lsp_types::{
-    SemanticTokensOptions, SemanticTokensServerCapabilities,
-    ServerCapabilities, TextDocumentIdentifier,
-    TextDocumentPositionParams, WorkspaceFolder,
+    Hover, HoverParams, Position, SemanticTokensOptions, SemanticTokensServerCapabilities, ServerCapabilities, TextDocumentIdentifier, TextDocumentPositionParams, WorkspaceFolder
 };
+use minimad::{Composite, CompositeStyle};
 use parking_lot::RwLock;
 use regex::Regex;
 use ropey::Rope;
@@ -55,6 +60,7 @@ mod bar;
 mod lsp;
 mod text;
 mod winit_app;
+mod hov;
 fn main() {
     env_logger::init();
     // lsp::x();
@@ -503,6 +509,36 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             text.cursor = x;
                             *state.sel() = x..x;
                         }
+                        Some(Do::Hover) => {
+                            let hover = text.index_at(cursor_position);
+                            let (x, y) =text.xy(hover);
+                            let s = lsp.as_ref().map(|(c, o)| {
+                                let (rx, id) = c.request::<HoverRequest>(&HoverParams {
+                                    text_document_position_params: TextDocumentPositionParams { text_document: TextDocumentIdentifier::new(Url::from_file_path(o).unwrap()), position: Position {
+                                        line: y as _, character: x as _,
+                                    }},
+                                    work_done_progress_params:default() }).unwrap();
+                                    c.runtime.spawn(async {
+                                        let x = rx.await?.load::<Hover>()?;
+                                        // dbg!(&x);
+                                        match x.contents {
+                                            lsp_types::HoverContents::Scalar(marked_string) => {
+                                                println!("{marked_string:?}");
+                                            },
+                                            lsp_types::HoverContents::Array(marked_strings) => {
+                                                println!("{marked_strings:?}");
+
+                                            },
+                                            lsp_types::HoverContents::Markup(markup_content) => {
+                                                println!("{}", markup_content.value);
+                                                // dbg!(minimad::Text::from(&*markup_content.value));
+                                            },
+                                        }
+                                        anyhow::Ok(())
+                                    })
+                                });
+                                
+                        }
                         None => {}
                         x => unreachable!("{x:?}"),
                     }
@@ -516,7 +552,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                     if button == MouseButton::Left {
                         unsafe { CLICKING = true };
                     }
-                    match dbg!(state.consume(Action::M(button)).unwrap() ){
+                    match state.consume(Action::M(button)).unwrap() {
                         Some(Do::MoveCursor) => {
                             text.cursor = text.index_at(cursor_position);
                             text.setc();
@@ -703,7 +739,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             };
                         }
                         Some(
-                            Do::MoveCursor | Do::ExtendSelectionToMouse,
+                            Do::MoveCursor | Do::ExtendSelectionToMouse | Do::Hover,
                         ) => {
                             unreachable!()
                         }
@@ -860,17 +896,18 @@ Dead => K(Key => _) => Dead,
 Default => {
     K(Key::Character(x) if x == "s" && ctrl()) => Save [Save],
     K(Key::Character(x) if x == "q" && ctrl()) => Dead [Quit],
-    K(Key::Character(x) if x == "v" && ctrl()) => Default [Paste],
-    K(Key::Character(x) if x == "z" && ctrl()) => Default [Undo],
-    K(Key::Character(x) if x == "y" && ctrl()) => Default [Redo],
+    K(Key::Character(x) if x == "v" && ctrl()) => _ [Paste],
+    K(Key::Character(x) if x == "z" && ctrl()) => _ [Undo],
+    K(Key::Character(x) if x == "y" && ctrl()) => _ [Redo],
     K(Key::Character(x) if x == "f" && ctrl()) => Procure((default(), InputRequest::Search)),
     K(Key::Character(x) if x == "o" && ctrl()) => Procure((default(), InputRequest::OpenFile)),
-    K(Key::Character(x) if x == "c" && ctrl()) => Default,
+    K(Key::Character(x) if x == "c" && ctrl()) => _,
     K(Key::Named(ArrowUp | ArrowLeft | ArrowDown | ArrowRight | Home | End) if shift()) => Selection(Range<usize> => 0..0) [StartSelection],
     M(MouseButton => MouseButton::Left if shift()) => Selection(Range<usize> => 0..0) [StartSelection],
-    M(MouseButton => MouseButton::Left) => Default [MoveCursor],
+    M(MouseButton => MouseButton::Left) => _ [MoveCursor],
     C(((usize, usize)) => .. if unsafe { CLICKING }) => Selection(0..0) [StartSelection],
     Changed => RequestBoolean(BoolRequest => BoolRequest::ReloadFile),
+    C(_ if false) => _ [Hover],
     C(_) => _,
     K(_) => _ [Edit],
     M(_) => _,
@@ -880,7 +917,7 @@ Selection(x if shift()) => {
     M(MouseButton => MouseButton::Left) => Selection(x) [ExtendSelectionToMouse],
 }, // note: it does in fact fall through. this syntax is not an arm, merely shorthand.
 Selection(x) => {
-    C(_ if unsafe { CLICKING }) => Selection(x) [ExtendSelectionToMouse],
+    C(_ if unsafe { CLICKING }) => _ [ExtendSelectionToMouse],
     C(_) => Selection(x),
     M(MouseButton => MouseButton::Left) => Default [MoveCursor],
     K(Key::Named(Backspace)) => Default [Delete(Range<usize> => x)],
