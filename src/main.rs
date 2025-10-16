@@ -441,7 +441,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                                 &mut fonts,
                                 ls,
                                 true,
-                                i.as_mut(),
+                                i.as_mut(),(0,0)
                         )
                         };
                         hovering.lock().as_ref().map(|x| x.span.clone().map(|sp| {
@@ -469,7 +469,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                                 window.inner_size().width as usize- w as usize
                             } else { position.0 };
 
-                            let mut i2 = Image::build(w as _, h as _).fill(BG);
+                            // let mut i2 = Image::build(w as _, h as _).fill(BG);
                             unsafe{ dsb::render(
                                 &c,
                                 (x.item.c, 0),
@@ -477,12 +477,13 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                                 hov::BG,
                                 &mut fonts,
                                 ls,
-                                true,
-                                i2.as_mut(),
+                                true, 
+                                i.as_mut(),
+                                (left as _, top as _)
                             )};
                             // dbg!(w, h, i2.width(), i2.height(), window.inner_size(), i.width(),i.height());
-                            unsafe { i.overlay_at(&i2.as_ref(), left as u32, top as u32) };
-                            i.r#box((left .saturating_sub(1) as _, top.saturating_sub(1) as _), i2.width(), i2.height(), [0;3]);
+                            // unsafe { i.overlay_at(&i2.as_ref(), left as u32, top as u32) };
+                            i.r#box((left .saturating_sub(1) as _, top.saturating_sub(1) as _), w as _,h as _, [0;3]);
                         }));
                         let met = FONT.metrics(&[]);
                         let fac = ppem / met.units_per_em as f32;
