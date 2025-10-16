@@ -1,4 +1,5 @@
-use std::iter::{once, repeat};
+use std::iter::{empty, once, repeat_n};
+use std::ops::Range;
 use std::pin::pin;
 use std::time::Instant;
 use std::vec::Vec;
@@ -7,375 +8,274 @@ use dsb::cell::Style;
 use dsb::{Cell, F};
 use fimg::Image;
 use itertools::Itertools;
-use minimad::*;
+use markdown::mdast::{self, Node};
 use ropey::Rope;
+const D: Cell =
+    Cell { letter: None, style: Style { bg: BG, color: FG, flags: 0 } };
+use crate::{FG, text};
 
-use crate::{BG, FG, M, text};
-fn f(x: &Compound) -> u8 {
-    let mut s = 0;
-    if x.bold {
-        s |= Style::BOLD;
-    }
-    if x.italic {
-        s |= Style::ITALIC;
-    }
-    if x.strikeout {
-        s |= Style::STRIKETHROUGH
-    }
-    s
+struct Builder {
+    c: usize,
+    to: Vec<Cell>,
+    scratch: Vec<Cell>,
 }
-fn markdown(c: usize, x: &str) -> Vec<Cell> {
-    let mut cells = vec![];
-    // println!(
-    //     "{:#?}",
-    //     markdown::to_mdast(
-    //         include_str!("../vec.md"),
-    //         &markdown::ParseOptions::default()
-    //     )
-    //     .unwrap()
-    // );
-    use Default::default;
-    // std::fs::write(
-    //     "vec.ast",
-    //     format!(
-    //         "{:#?}",
-    //         minimad::parse_text(
-    //             include_str!("../vec.md"),
-    //             Options { keep_code_fences: true, ..default() },
-    //         )
-    //         .lines
-    //     ),
-    // )
-    // .unwrap();
-    const D: Cell = Cell {
-        letter: None,
-        style: Style { bg: BG, color: FG, flags: 0 },
-    };
-    let mut l = minimad::parse_text(
-        x,
-        Options { keep_code_fences: true, ..default() },
-    )
-    .lines
-    .into_iter()
-    .peekable();
-    'l: while let Some(line) = l.next() {
-        match line {
-            minimad::Line::Normal(Composite { style, compounds }) => {
-                let mut compounded = l
-                    .by_ref()
-                    .peeking_take_while(|x| matches!(x, Line::Normal(Composite{style, compounds}) if !matches!(style, CompositeStyle::Header(_))))
-                    .flat_map(|x| match x {
-                        Line::Normal(Composite { style, compounds }) =>
-                            compounds.into_iter().flat_map(move |x| {
-                                x.as_str().chars().zip(repeat(f(&x)).map(
-                                    move |flags| match style {
-                                        CompositeStyle::Paragraph =>
-                                            Style {
-                                                color: FG,
-                                                bg: BG,
-                                                flags,
-                                            },
-                                        CompositeStyle::Header(x) =>
-                                            Style {
-                                                color: [255; 3],
-                                                bg: BG,
-                                                flags: flags | Style::BOLD,
-                                            },
-                                        CompositeStyle::ListItem(x) =>
-                                            Style {
-                                                color: FG,
-                                                bg: BG,
-                                                flags,
-                                            },
-                                        CompositeStyle::Code => Style {
-                                            color: [244,244,244],
-                                            bg: [5,5,5],
-                                            flags,
-                                        },
-                                        CompositeStyle::Quote => Style {
-                                            color: [128; 3],
-                                            bg: [0; 3],
-                                            flags,
-                                        },
-                                    },
-                                ))
-                            }).chain(once((' ', Style { color: FG, bg: BG, flags : 0 }))),
-                        _ => panic!(),
-                    })
-                    .chunk_by(|x| x.0.is_whitespace());
-                let mut compounded = compounded.into_iter();
-                let mut out = vec![];
+enum Action {
+    Put(Vec<Cell>),
+    Just(Vec<Cell>),
+    Finish,
+}
+impl Builder {
+    fn finish(&mut self) {
+        assert!(self.scratch.len() < self.c);
+        self.to.extend(&self.scratch);
+        self.to.extend(repeat_n(D, self.c - self.scratch.len()));
+        self.scratch.clear();
+        assert!(self.to.len() % self.c == 0);
+    }
+    fn put_wrapping(
+        &mut self,
+        mut c: impl Iterator<Item = Cell>,
+        mut l: usize,
+    ) {
+        self.to.extend(self.scratch.drain(..));
+        let fill = self.c - (self.to.len() % self.c);
+        self.to.extend(c.by_ref().take(fill));
+        l -= fill;
+        let n = l - (l % self.c);
+        self.to.extend(c.by_ref().take(n));
+        c.collect_into(&mut self.scratch);
+        assert!(self.to.len() % self.c == 0);
+        assert!(self.scratch.len() < self.c);
+    }
+    fn put(&mut self, c: impl Iterator<Item = Cell> + Clone) {
+        let mut c = c.map(|x| match x.letter {
+            Some('\n') => x.style.empty(),
+            _ => x,
+        });
+        assert!(self.scratch.len() < self.c);
+        loop {
+            let n = c
+                .clone()
+                .take_while_inclusive(|x| {
+                    !x.letter.is_none_or(char::is_whitespace)
+                })
+                .count();
+            let next = c.by_ref().take_while_inclusive(|x| {
+                !x.letter.is_none_or(char::is_whitespace)
+            });
 
-                // let mut compounds = compounds.iter();
-                while let Some((x, word)) = compounded.next() {
-                    if x {
-                        continue;
-                    }
-                    if out.len() > c {
-                        panic!()
-                    }
-                    let word = word.collect::<Vec<_>>();
-                    if word.len() > c {
-                        let mut w = word.iter().map(|&(x, style)| Cell {
-                            letter: Some(x),
-                            style,
-                        });
-                        out.extend(w);
-                        cells.extend(
-                            out.drain(..out.len() - out.len() % c),
-                        );
-                        // 'out: loop {
-                        //     while out.len() != c {
-                        //         let Some(x) = w.next() else {
-                        //             break 'out;
-                        //         };
-                        //         out.push(x);
-                        //     }
-                        //     cells.extend(&out);
-                        //     out.clear();
-                        // }
-                        continue;
-                        // cells.extend(&out);
-                        // out.clear();
-                        // cells.extend(
-                        //     w.by_ref()
-                        //         .take(c.saturating_sub(out.len() + 1)),
-                        // );
-                        // cells.push(Cell::basic('-'));
-                        // cells.extend(w);
-                    }
-
-                    if out.len() + word.len() > c {
-                        assert_eq!(cells.len() % c, 0);
-                        cells.extend(&out);
-                        cells.extend(std::iter::repeat_n(
-                            D,
-                            c.saturating_sub(out.len()),
-                        ));
-                        dbg!(out.len(), c);
-                        out.clear();
-                        assert_eq!(cells.len() % c, 0);
-                    }
-
-                    out.extend(word.iter().map(|&(x, style)| Cell {
-                        letter: Some(x),
-                        style,
-                    }));
-                    if out.len() != c {
-                        out.push(D);
-                    } else {
-                        cells.extend(&out);
-                        out.clear();
-                    }
-                    dbg!(out.len());
-
-                    // }
-                }
-                //     if out.len() > c {
-                //         panic!();
-                //     }
-                //     if out.len() + next.char_length() > c {
-                //         cells.extend(&out);
-                //         cells.extend(std::iter::repeat_n(
-                //             Cell::default(),
-                //             c.saturating_sub(out.len()),
-                //         ));
-                //         out.clear();
-                //         assert_eq!(cells.len() % c, 0);
-                //     }
-                //     out.extend(
-                //         next.as_str()
-                //             .chars()
-                //             .map(|x| Cell { letter: Some(x), style }),
-                //     );
-                // }
-                if !out.is_empty() {
-                    assert!(out.len() <= c, "{} < c", out.len());
-                    cells.extend(&out);
-                    cells.extend(std::iter::repeat_n(
-                        D,
-                        c.saturating_sub(out.len()),
-                    ));
-                    assert_eq!(cells.len() % c, 0);
-                }
-                continue 'l;
+            if n == 0 {
+                break;
             }
-            minimad::Line::TableRow(table_row) => todo!(),
-            minimad::Line::TableRule(table_rule) => todo!(),
-            minimad::Line::HorizontalRule => vec![Cell::basic('-')],
-            minimad::Line::CodeFence(Composite {
-                compounds: [Compound { src: lang, .. }],
-                ..
-            }) => {
-                let mut r = Rope::new();
-                while let Some(x) = l.next() {
-                    match x {
-                        Line::CodeFence(Composite {
-                            compounds: [],
-                            ..
-                        }) => {
-                            break;
-                        }
-                        Line::Normal(Composite {
-                            compounds: [Compound { src, .. }],
-                            ..
-                        }) => {
-                            r.insert(r.len_chars(), src);
-                            r.insert_char(r.len_chars(), '\n');
-                        }
-                        _ => {}
-                    }
-                }
-                let mut cell = vec![D; c * r.len_lines()];
+
+            if n + self.scratch.len() < self.c {
+                self.scratch.extend(next);
+            } else if n < self.c {
+                self.finish();
+                self.scratch.extend(next);
+            } else {
+                self.put_wrapping(next.into_iter(), n);
+            }
+        }
+        // assert!(self.scratch.len() == 0);
+        // }
+        assert!(self.scratch.len() < self.c);
+
+        // self.scratch.extend(after);
+        // self.scratch.extend(c);
+        assert!(self.to.len() % self.c == 0);
+        assert!(self.scratch.len() < self.c);
+    }
+    fn extend_(
+        &self,
+        n: &mdast::Node,
+        i: impl IntoIterator<Item = Action>,
+        inherit: Style,
+    ) -> Vec<Action> {
+        n.children()
+            .iter()
+            .flat_map(|i| *i)
+            .flat_map(|x| self.run(x, inherit))
+            .chain(i)
+            .collect()
+    }
+    fn extend(&self, n: &Node, inherit: Style) -> Vec<Action> {
+        self.extend_(n, empty(), inherit)
+    }
+    fn run(&self, node: &mdast::Node, mut inherit: Style) -> Vec<Action> {
+        match node {
+            Node::Break(_) => vec![Action::Finish],
+            Node::InlineCode(x) => {
+                inherit.bg = [21, 24, 30];
+                vec![Action::Put(
+                    x.value.chars().map(|x| inherit.basic(x)).collect(),
+                )]
+            }
+            // Node::Html(Html { value: "code", .. }) => {}
+            Node::Delete(_) => todo!(),
+            Node::Emphasis(_) => {
+                inherit.flags |= Style::ITALIC;
+                self.extend(node, inherit | Style::ITALIC)
+            }
+            Node::Link(_) => {
+                inherit.flags |= Style::UNDERLINE;
+                inherit.color = [244, 196, 98];
+                self.extend(node, inherit)
+            }
+            Node::LinkReference(_) => {
+                inherit.flags |= Style::UNDERLINE;
+                inherit.color = [244, 196, 98];
+                self.extend(node, inherit)
+            }
+            Node::Heading(_) => {
+                inherit.flags |= Style::BOLD;
+                inherit.color = [255, 255, 255];
+                self.extend_(node, [Action::Finish], inherit)
+            }
+
+            Node::Strong(_) => self.extend(node, inherit | Style::BOLD),
+            Node::Text(text) => vec![Action::Put(
+                text.value
+                    .chars()
+                    .map(|x| if x == '\n' { ' ' } else { x })
+                    .map(|x| inherit.basic(x))
+                    .collect(),
+            )],
+            Node::Code(code) => {
+                let r = Rope::from_str(&code.value);
+                let mut cell = vec![D; self.c * r.len_lines()];
 
                 for (l, y) in r.lines().zip(0..) {
-                    for (e, x) in l.chars().take(c).zip(0..) {
+                    for (e, x) in l.chars().take(self.c).zip(0..) {
                         if e != '\n' {
-                            cell[y * c + x].letter = Some(e);
+                            cell[y * self.c + x].letter = Some(e);
                         }
                     }
                 }
                 for ((x1, y1), (x2, y2), s, txt) in
                     std::iter::from_coroutine(pin!(text::hl(
-                        text::LOADER.language_for_name(lang).unwrap_or(
-                            text::LOADER
-                                .language_for_name("rust")
-                                .unwrap()
-                        ),
+                        text::LOADER
+                            .language_for_name(
+                                code.lang.as_deref().unwrap_or("rust")
+                            )
+                            .unwrap_or(
+                                text::LOADER
+                                    .language_for_name("rust")
+                                    .unwrap()
+                            ),
                         &r,
                         ..,
-                        c,
+                        self.c,
                     )))
                 {
-                    cell.get_mut(y1 * c + x1..y2 * c + x2).map(|x| {
-                        x.iter_mut().zip(txt.chars()).for_each(|(x, c)| {
-                            x.style |= s;
-                            x.letter = Some(c);
-                        })
-                    });
+                    cell.get_mut(y1 * self.c + x1..y2 * self.c + x2).map(
+                        |x| {
+                            x.iter_mut().zip(txt.chars()).for_each(
+                                |(x, c)| {
+                                    x.style |= s;
+                                    x.letter = Some(c);
+                                },
+                            )
+                        },
+                    );
                 }
-                cells.extend(cell);
-                assert_eq!(cells.len() % c, 0);
-                continue 'l;
+                assert_eq!(self.to.len() % self.c, 0);
+                vec![Action::Finish, Action::Just(cell)]
             }
-            _ => panic!(),
-        };
-        // if out.len() > c {
-        //     out.drain(c - 1..);
-        //     out.push(Cell::basic('…'));
-        // } else {
-        //     out.extend(std::iter::repeat_n(
-        //         Cell::default(),
-        //         c.saturating_sub(out.len()),
-        //     ));
-        // }
-        // assert_eq!(out.len(), c);
-        // cells.extend(out);
-    }
-    assert_eq!(cells.len() % c, 0);
-    cells
-}
+            Node::ThematicBreak(_) => {
+                vec![Action::Finish, Action::Finish]
+            }
 
+            Node::Paragraph(paragraph) => paragraph
+                .children
+                .iter()
+                .flat_map(|c| self.run(&c, inherit))
+                .chain([Action::Finish, Action::Finish])
+                .collect(),
+            n => self.extend(n, inherit),
+        }
+    }
+}
+pub fn p(x: &str) -> Option<Node> {
+    markdown::to_mdast(x, &markdown::ParseOptions::gfm()).ok()
+}
+fn len(node: &mdast::Node) -> Vec<usize> {
+    match node {
+        Node::Break(_) => vec![usize::MAX],
+        Node::InlineCode(x) => vec![x.value.chars().count()],
+        Node::Code(x) => once(usize::MAX)
+            .chain(
+                Iterator::intersperse(
+                    x.value.lines().map(|l| l.chars().count()),
+                    usize::MAX,
+                )
+                .chain([usize::MAX]),
+            )
+            .collect(),
+        // Node::Html(Html { value: "code", .. }) => {}
+        Node::Text(text) => vec![text.value.chars().count()],
+        Node::Paragraph(x) =>
+            x.children.iter().flat_map(len).chain([usize::MAX]).collect(),
+        n => n.children().iter().flat_map(|x| *x).flat_map(len).collect(),
+    }
+}
+pub fn l(node: &Node) -> Vec<usize> {
+    len(node)
+        .into_iter()
+        .chunk_by(|&x| x != usize::MAX)
+        .into_iter()
+        .filter_map(|x| x.0.then(|| x.1.sum::<usize>()))
+        .collect::<Vec<_>>()
+}
+#[implicit_fn::implicit_fn]
+pub fn markdown2(c: usize, x: &Node) -> Vec<Cell> {
+    let mut r = Builder { c, to: vec![], scratch: vec![] };
+    for (is_put, act) in r
+        .run(&x, Style { bg: BG, color: FG, flags: 0 })
+        .into_iter()
+        .chunk_by(|x| matches!(x, Action::Put(_)))
+        .into_iter()
+    {
+        if is_put {
+            r.put(
+                act.flat_map(|x| match x {
+                    Action::Put(x) => x,
+                    _ => panic!(),
+                })
+                .collect::<Vec<_>>()
+                .into_iter(),
+            );
+        } else {
+            for act in act {
+                match act {
+                    Action::Put(cells) => r.put(cells.into_iter()),
+                    Action::Just(cells) => r.to.extend(cells),
+                    Action::Finish => r.finish(),
+                }
+            }
+        }
+    }
+    if r.to.iter().take(c).all(_.letter.is_none()) {
+        r.to.drain(..c);
+    }
+    if r.to.iter().rev().take(c).all(_.letter.is_none()) {
+        r.to.drain(r.to.len() - c..);
+    }
+    r.to
+}
+pub const BG: [u8; 3] = text::color(b"191E27");
 #[test]
 fn t() {
     let ppem = 18.0;
     let lh = 10.0;
-    let (w, h) = (800, 8000);
+    let (w, h) = (400, 8000);
     let (c, r) = dsb::fit(&crate::FONT, ppem, lh, (w, h));
-    std::fs::write(
-        "mdast2",
-        format!(
-            "{:#?}",
-            markdown::to_mdast(
-                include_str!("../vec.md"),
-                &markdown::ParseOptions::gfm()
-            )
-            .unwrap()
-        ),
-    );
-    let mut cells = markdown(c, include_str!("../vec.md"));
-    // use Default::default;
-    // for line in dbg!(minimad::parse_text(
-    //     include_str!("../vec.md"),
-    //     Options { keep_code_fences: true, ..default() },
-    // ))
-    // .lines
-    // {
-    //     fn f(x: &Compound) -> u8 {
-    //         let mut s = 0;
-    //         if x.bold {
-    //             s |= Style::BOLD;
-    //         }
-    //         if x.italic {
-    //             s |= Style::ITALIC;
-    //         }
-    //         if x.strikeout {
-    //             s |= Style::STRIKETHROUGH
-    //         }
-    //         s
-    //     }
-    //     let mut out = match line {
-    //         minimad::Line::Normal(Composite { style, compounds }) =>
-    //             compounds
-    //                 .iter()
-    //                 .flat_map(|c| {
-    //                     c.as_str().chars().map(move |x| {
-    //                         let flags = f(&c);
-    //                         let style = match style {
-    //                             CompositeStyle::Paragraph => Style {
-    //                                 color: [128; 3],
-    //                                 bg: [0; 3],
-    //                                 flags,
-    //                             },
-    //                             CompositeStyle::Header(x) => Style {
-    //                                 color: [255; 3],
-    //                                 bg: [0; 3],
-    //                                 flags: flags | Style::BOLD,
-    //                             },
-    //                             CompositeStyle::ListItem(x) => Style {
-    //                                 color: [128; 3],
-    //                                 bg: [0; 3],
-    //                                 flags,
-    //                             },
-    //                             CompositeStyle::Code => Style {
-    //                                 color: [100; 3],
-    //                                 bg: [0; 3],
-    //                                 flags,
-    //                             },
-    //                             CompositeStyle::Quote => Style {
-    //                                 color: [128; 3],
-    //                                 bg: [0; 3],
-    //                                 flags,
-    //                             },
-    //                         };
-    //                         Cell { letter: Some(x), style }
-    //                     })
-    //                 })
-    //                 .collect::<Vec<_>>(),
-    //         minimad::Line::TableRow(table_row) => todo!(),
-    //         minimad::Line::TableRule(table_rule) => todo!(),
-    //         minimad::Line::HorizontalRule => vec![Cell::basic('-')],
-    //         minimad::Line::CodeFence(composite) => {
-    //             vec![]
-    //         }
-    //     };
-    //     if out.len() > c {
-    //         out.drain(c - 1..);
-    //         out.push(Cell::basic('…'));
-    //     } else {
-    //         out.extend(std::iter::repeat_n(
-    //             Cell::default(),
-    //             c - out.len(),
-    //         ));
-    //     }
-    //     assert_eq!(out.len(), c);
-    //     cells.extend(out);
-    // }
+
+    let cells = markdown2(c, &p(include_str!("vec.md")).unwrap());
+    dbg!(l(&p(include_str!("vec.md")).unwrap()));
     dbg!(cells.len() / c);
-    // let (fw, fh) = dsb::dims(&FONT, ppem);
     dbg!(w, h);
     dbg!(c, r);
-    // panic!();
 
     let mut fonts = dsb::Fonts::new(
         F::FontRef(*crate::FONT, &[(2003265652, 550.0)]),
@@ -400,4 +300,8 @@ fn t() {
     };
     println!("{:?}", now.elapsed());
     x.as_ref().save("x");
+}
+pub struct Hovr {
+    pub(crate) span: Option<Range<usize>>,
+    pub(crate) item: crate::text::CellBuffer,
 }

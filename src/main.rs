@@ -1,13 +1,17 @@
 // this looks pretty good though
 #![feature(tuple_trait, unboxed_closures, fn_traits)]
 #![feature(
+    iter_intersperse,
     stmt_expr_attributes,
+    new_range_api,
+    iter_collect_into,
     mpmc_channel,
     const_cmp,
-    // generator_trait,
     gen_blocks,
     const_default,
-    coroutines,iter_from_coroutine,coroutine_trait,
+    coroutines,
+    iter_from_coroutine,
+    coroutine_trait,
     cell_get_cloned,
     import_trait_associated_functions,
     if_let_guard,
@@ -18,33 +22,34 @@
     portable_simd
 )]
 #![allow(incomplete_features, redundant_semicolons)]
-use std::convert::identity;
+use std::borrow::Cow;
 use std::io::BufReader;
-use std::mem::forget;
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::rc::Rc;
 use std::sync::{Arc, LazyLock, OnceLock};
 use std::thread;
 use std::time::Instant;
 
 use Default::default;
 use NamedKey::*;
+use atools::prelude::AASAdd;
 use diff_match_patch_rs::PatchInput;
 use dsb::cell::Style;
 use dsb::{Cell, F};
-use fimg::Image;
+use fimg::{Image, OverlayAt};
 use lsp_types::request::HoverRequest;
 use lsp_types::{
-    Hover, HoverParams, Position, SemanticTokensOptions, SemanticTokensServerCapabilities, ServerCapabilities, TextDocumentIdentifier, TextDocumentPositionParams, WorkspaceFolder
+    Hover, HoverParams, MarkedString, Position, SemanticTokensOptions,
+    SemanticTokensServerCapabilities, ServerCapabilities,
+    TextDocumentIdentifier, TextDocumentPositionParams, WorkspaceFolder,
 };
-use minimad::{Composite, CompositeStyle};
-use parking_lot::RwLock;
+use parking_lot::Mutex;
 use regex::Regex;
 use ropey::Rope;
 use rust_fsm::StateMachineImpl;
 use swash::{FontRef, Instance};
+use tokio::task::spawn_blocking;
 use url::Url;
 use winit::event::{
     ElementState, Event, MouseButton, MouseScrollDelta, WindowEvent,
@@ -55,12 +60,13 @@ use winit::platform::wayland::WindowAttributesExtWayland;
 use winit::window::{Icon, Window};
 
 use crate::bar::Bar;
+use crate::hov::Hovr;
 use crate::text::{Diff, TextArea};
 mod bar;
+pub mod hov;
 mod lsp;
 mod text;
 mod winit_app;
-mod hov;
 fn main() {
     env_logger::init();
     // lsp::x();
@@ -185,38 +191,44 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
         .as_ref()
         .and_then(|x| rooter(&x.parent().unwrap()))
         .and_then(|x| x.canonicalize().ok());
-    let c = workspace.zip(origin.clone()).map(|(workspace, origin)| {
-        let mut c = Command::new("rust-analyzer")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
-            .spawn()
-            .unwrap();
+    let c = workspace.as_ref().zip(origin.clone()).map(
+        |(workspace, origin)| {
+            let mut c = Command::new("rust-analyzer")
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::inherit())
+                .spawn()
+                .unwrap();
 
-        let (c, t, t2, changed) = lsp::run(
-            lsp_server::stdio::stdio_transport(
-                BufReader::new(c.stdout.take().unwrap()),
-                c.stdin.take().unwrap(),
-            ),
-            WorkspaceFolder {
-                uri: Url::from_file_path(&workspace).unwrap(),
-                name: workspace
-                    .file_name()
-                    .unwrap()
-                    .to_string_lossy()
-                    .into_owned(),
-            },
-        );
-        c.open(&origin, std::fs::read_to_string(&origin).unwrap())
-            .unwrap();
-        ((c, origin), (t, t2), changed)
-    });
-    let (lsp, t, ch) = match c {
-        Some((a,b,c)) => {
-            (Some(a), Some(b), Some(c))
+            let (c, t, t2, changed) = lsp::run(
+                lsp_server::stdio::stdio_transport(
+                    BufReader::new(c.stdout.take().unwrap()),
+                    c.stdin.take().unwrap(),
+                ),
+                WorkspaceFolder {
+                    uri: Url::from_file_path(&workspace).unwrap(),
+                    name: workspace
+                        .file_name()
+                        .unwrap()
+                        .to_string_lossy()
+                        .into_owned(),
+                },
+            );
+            c.open(&origin, std::fs::read_to_string(&origin).unwrap())
+                .unwrap();
+            (c, (t, t2), changed)
         },
-        None => { (None, None, None) }
-    }; 
+    );
+    let (lsp, t, ch) = match c {
+        Some((a, b, c)) => (Some(a), Some(b), Some(c)),
+        None => (None, None, None),
+    };
+    macro_rules! lsp {
+        () => {
+            lsp.as_ref().zip(origin.as_deref())
+        };
+    }
+    let hovering = &*Box::leak(Box::new(Mutex::new(None::<hov::Hovr>)));
 
     // let mut hl_result = None;
 
@@ -236,13 +248,13 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
     }
     macro_rules! change {
         () => {
-            lsp.as_ref().map(|(x, origin)| {
+            lsp!().map(|(x, origin)| {
                 x.edit(&origin, text.rope.to_string()).unwrap();
                 x.rq_semantic_tokens(origin).unwrap();
             });
         };
     }
-    lsp.as_ref().map(|(x, origin)| x.rq_semantic_tokens(origin).unwrap());
+    lsp!().map(|(x, origin)| x.rq_semantic_tokens(origin).unwrap());
     let mut mtime = modify!();
     macro_rules! save {
         () => {{
@@ -341,6 +353,9 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
 
                     if size.height != 0 && size.width != 0 {
                         let now = Instant::now();
+                        if c*r!=cells.len(){
+                            return;
+                        }
                         cells.fill(Cell {
                             style: Style { color: BG, bg: BG, flags: 0 },
                             letter: None,
@@ -392,7 +407,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                                 }
                             },
                             origin.as_deref(),
-                                 lsp.as_ref().and_then(|(x, _)| { match &x.initialized {
+                                 lsp!().and_then(|(x, _)| { match &x.initialized {
                                     Some(lsp_types::InitializeResult {
                                         capabilities: ServerCapabilities {
                                         semantic_tokens_provider:
@@ -411,11 +426,11 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             r - 1,
                             origin
                                 .as_ref()
-                                .map(|x| x.to_str().unwrap())
+                                .map(|x| workspace.as_ref().and_then(|w| x.strip_prefix(w).ok()).unwrap_or(&x).to_str().unwrap())
                                 .unwrap_or("new buffer"),
                             &state,
                             &text,
-                            lsp.as_ref().map(|x| &x.0)
+                            lsp.as_ref()
                         );
                         unsafe {
                             dsb::render(
@@ -427,13 +442,52 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                                 ls,
                                 true,
                                 i.as_mut(),
-                            )
+                        )
                         };
+                        hovering.lock().as_ref().map(|x| x.span.clone().map(|sp| {
+                            let met = FONT.metrics(&[]);
+                            let fac = ppem / met.units_per_em as f32;
+                            let [(_x, _y), (_x2, _)] = text.position(sp);
+                            let [_x, _x2] = [_x, _x2].add(text.line_number_offset()+1);
+                            let _y = _y - text.vo;
+                            if !(cursor_position.1 == _y && (_x..=_x2).contains(&cursor_position.0)) {
+                                return;
+                            }
+                            let position = (
+                                ((_x) as f32 * fw).round() as usize,
+                                ((_y as f32 as f32) * (fh + ls * fac)).round() as usize,
+                            );
+
+                            let ppem = 18.0;
+                            let ls = 10.0;
+                            let r = x.item.l().min(15);
+                            let c = x.item.displayable(r);
+                            let (w, h) = dsb::size(&fonts.regular, ppem, ls, (x.item.c, r));                           
+                            let top = position.1.checked_sub(h).unwrap_or((((_y + 1) as f32) * (fh + ls * fac)).round() as usize,);
+                            let left =
+                            if position.0 + w as usize > window.inner_size().width as usize {
+                                window.inner_size().width as usize- w as usize
+                            } else { position.0 };
+
+                            let mut i2 = Image::build(w as _, h as _).fill(BG);
+                            unsafe{ dsb::render(
+                                &c,
+                                (x.item.c, 0),
+                                ppem,
+                                hov::BG,
+                                &mut fonts,
+                                ls,
+                                true,
+                                i2.as_mut(),
+                            )};
+                            // dbg!(w, h, i2.width(), i2.height(), window.inner_size(), i.width(),i.height());
+                            unsafe { i.overlay_at(&i2.as_ref(), left as u32, top as u32) };
+                            i.r#box((left .saturating_sub(1) as _, top.saturating_sub(1) as _), i2.width(), i2.height(), [0;3]);
+                        }));
                         let met = FONT.metrics(&[]);
                         let fac = ppem / met.units_per_em as f32;
 
                         // if x.view_o == Some(x.cells.row) || x.view_o.is_none() {
-                        use fimg::OverlayAt;
                         let (fw, fh) = dsb::dims(&FONT, ppem);
                         let cursor =
                             Image::<_, 4>::build(3, (fh).ceil() as u32)
@@ -509,41 +563,76 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             text.cursor = x;
                             *state.sel() = x..x;
                         }
-                        Some(Do::Hover) => {
-                            let hover = text.index_at(cursor_position);
+                        Some(Do::Hover) if let Some(hover) = text.raw_index_at(cursor_position) => {
+                            assert_eq!(hover, text.index_at(cursor_position));
                             let (x, y) =text.xy(hover);
-                            let s = lsp.as_ref().map(|(c, o)| {
-                                let (rx, id) = c.request::<HoverRequest>(&HoverParams {
-                                    text_document_position_params: TextDocumentPositionParams { text_document: TextDocumentIdentifier::new(Url::from_file_path(o).unwrap()), position: Position {
-                                        line: y as _, character: x as _,
-                                    }},
-                                    work_done_progress_params:default() }).unwrap();
-                                    c.runtime.spawn(async {
-                                        let x = rx.await?.load::<Hover>()?;
-                                        // dbg!(&x);
-                                        match x.contents {
-                                            lsp_types::HoverContents::Scalar(marked_string) => {
-                                                println!("{marked_string:?}");
-                                            },
-                                            lsp_types::HoverContents::Array(marked_strings) => {
-                                                println!("{marked_strings:?}");
-
-                                            },
-                                            lsp_types::HoverContents::Markup(markup_content) => {
-                                                println!("{}", markup_content.value);
-                                                // dbg!(minimad::Text::from(&*markup_content.value));
-                                            },
-                                        }
-                                        anyhow::Ok(())
-                                    })
+                            let text = text.clone();
+                        {
+                            let mut l = hovering.lock();
+                            if let  Some(Hovr{ span: Some(span),..}) = &*l {
+                            let [(_x, _y), (_x2, _)] = text.position(span.clone());
+                            let [_x, _x2] = [_x, _x2].add(text.line_number_offset()+1);
+                            let _y = _y - text.vo;
+                            if cursor_position.1 == _y && (_x.._x2).contains(&cursor_position.0) {
+                                return
+                            } else {
+                                *l = None;
+                                window.request_redraw();
+                            }
+                        }
+                            }
+                            let hovering = hovering;
+                            lsp!().map(|(cl, o)| {
+let window = window.clone();
+static RUNNING: LazyLock< papaya::HashSet<usize,  >>= LazyLock::new(||papaya::HashSet::new());
+if !RUNNING.insert(hover, &RUNNING.guard()) {return}
+let (rx, _) = cl.request::<HoverRequest>(&HoverParams {
+text_document_position_params: TextDocumentPositionParams { text_document: TextDocumentIdentifier::new(Url::from_file_path(o).unwrap()), position: Position {
+    line: y as _, character: x as _,
+}},
+work_done_progress_params:default() }).unwrap();
+cl.runtime.spawn(async move {
+    let x = rx.await?.load::<Hover>()?;
+    let (w, cells) = spawn_blocking(move || {
+        let x = match &x.contents {
+        lsp_types::HoverContents::Scalar(marked_string) => {
+            match marked_string{
+                MarkedString::LanguageString(x) =>Cow::Borrowed(&*x.value),
+                MarkedString::String(x) => Cow::Borrowed(&**x),
+            }
+        },
+        lsp_types::HoverContents::Array(marked_strings) => {
+            Cow::Owned(marked_strings.iter().map(|x| match x{
+                MarkedString::LanguageString(x) => &*x.value,
+                MarkedString::String(x) => &*x,
+            }).collect::<String>())
+        },
+        lsp_types::HoverContents::Markup(markup_content) => {
+            Cow::Borrowed(&*markup_content.value)
+        },
+    };
+    let x = hov::p(&x).unwrap();
+    let m = hov::l(&x).into_iter().max().map(_+2).unwrap_or(usize::MAX).min(c-10);
+    (m, hov::markdown2(m, &x))
+}).await.unwrap();
+RUNNING.remove(&hover,&RUNNING.guard());
+    let span = x.range.and_then(|x| {
+        Some(text.l_position(x.start).ok()?..text.l_position(x.end).ok()?)
+    });
+    *hovering.lock()= Some( hov::Hovr { span, item: text::CellBuffer { c: w, vo: 0, cells: cells.into() }}.into());
+    window.request_redraw();
+    anyhow::Ok(())
+});
                                 });
-                                
+                        }
+                        Some(Do::Hover) => {
+                            *hovering.lock() = None;
+                            window.request_redraw();
                         }
                         None => {}
                         x => unreachable!("{x:?}"),
                     }
                 }
-
                 Event::WindowEvent {
                     event:
                         WindowEvent::MouseInput { state: bt, button, .. },
@@ -796,12 +885,17 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                 _ => {}
             };
         },
-    );    
-    ch.map(|ch| thread::Builder::new().name("redrawer".into()).spawn(move || {
-        for () in ch {
-            PUT.get().map(|x| x.request_redraw());
-        }
-    }));
+    );
+    ch.map(|ch| {
+        thread::Builder::new().name("redrawer".into()).spawn(move || {
+            for () in ch {
+                PUT.get().map(|x| {
+                    x.request_redraw();
+                    println!("rq redraw");
+                });
+            }
+        })
+    });
     winit_app::run_app(event_loop, app);
 }
 
@@ -886,7 +980,7 @@ impl State {
     }
 }
 
-use std::ops::Range;
+use std::ops::{Not, Range};
 
 rust_fsm::state_machine! {
 #[derive(Clone, Debug)]
@@ -907,8 +1001,7 @@ Default => {
     M(MouseButton => MouseButton::Left) => _ [MoveCursor],
     C(((usize, usize)) => .. if unsafe { CLICKING }) => Selection(0..0) [StartSelection],
     Changed => RequestBoolean(BoolRequest => BoolRequest::ReloadFile),
-    C(_ if false) => _ [Hover],
-    C(_) => _,
+    C(_) => _ [Hover],
     K(_) => _ [Edit],
     M(_) => _,
 },

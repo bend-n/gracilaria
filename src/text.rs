@@ -2,7 +2,7 @@ use std::cmp::min;
 use std::fmt::{Debug, Display};
 use std::ops::{Deref, Not as _, Range, RangeBounds};
 use std::path::Path;
-use std::pin::{Pin, pin};
+use std::pin::pin;
 use std::sync::{Arc, LazyLock};
 use std::vec::Vec;
 
@@ -11,17 +11,14 @@ use diff_match_patch_rs::{DiffMatchPatch, Patches};
 use dsb::Cell;
 use dsb::cell::Style;
 use helix_core::Syntax;
-use helix_core::syntax::{HighlightEvent, Loader, reconfigure_highlights};
+use helix_core::syntax::{HighlightEvent, Loader};
 use implicit_fn::implicit_fn;
 use log::error;
-use lsp_types::{
-    SemanticToken, SemanticTokensLegend, SemanticTokensServerCapabilities,
-};
+use lsp_types::{Position, SemanticToken, SemanticTokensLegend};
 use ropey::{Rope, RopeSlice};
-use tree_house::{Language, fixtures};
+use tree_house::Language;
 use winit::keyboard::{NamedKey, SmolStr};
 
-use crate::MODIFIERS;
 use crate::text::semantic::{MCOLORS, MODIFIED, MSTYLE};
 macro_rules! theme {
     ($n:literal $($x:literal $color:literal $($style:expr)?),+ $(,)?) => {
@@ -144,7 +141,7 @@ const fn of(x: &'static str) -> usize {
     panic!()
 }
 
-const fn color(x: &[u8; 6]) -> [u8; 3] {
+pub const fn color(x: &[u8; 6]) -> [u8; 3] {
     car::map!(
         car::map!(x, |b| (b & 0xF) + 9 * (b >> 6)).chunked::<2>(),
         |[a, b]| a * 16 + b
@@ -202,6 +199,29 @@ pub struct TextArea {
     pub r: usize,
     pub c: usize,
 }
+
+pub struct CellBuffer {
+    pub c: usize,
+    pub vo: usize,
+    pub cells: Box<[Cell]>,
+}
+impl Deref for CellBuffer {
+    type Target = [Cell];
+
+    fn deref(&self) -> &Self::Target {
+        &self.cells
+    }
+}
+
+impl CellBuffer {
+    pub fn displayable(&self, r: usize) -> &[Cell] {
+        &self[self.vo * self.c..((self.vo + r) * self.c).min(self.len())]
+    }
+    pub fn l(&self) -> usize {
+        self.len() / self.c
+    }
+}
+
 impl Debug for TextArea {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("TextArea")
@@ -260,6 +280,13 @@ impl TextArea {
             })
             .unwrap_or(usize::MAX)
             .min(self.rope.len_chars())
+    }
+
+    pub fn raw_index_at(&self, (x, y): (usize, usize)) -> Option<usize> {
+        let x = x.checked_sub(self.line_number_offset() + 1)?;
+        Some(self.vo + y)
+            .filter(|&l| self.rope.line(l).len_chars() > x)
+            .and_then(|l| Some(self.rope.try_line_to_char(l).ok()? + x))
     }
 
     pub fn insert_(&mut self, c: SmolStr) {
@@ -574,6 +601,12 @@ impl TextArea {
         &mut cell[y1 * c + x1..y2 * c + x2]
     }
 
+    pub fn l_position(&self, p: Position) -> Result<usize, ropey::Error> {
+        Ok(self.rope.try_line_to_char(p.line as _)?
+            + (p.character as usize)
+                .min(self.rope.line(p.line as _).len_chars()))
+    }
+
     #[implicit_fn]
     pub fn write_to<'lsp>(
         &mut self,
@@ -629,7 +662,7 @@ impl TextArea {
                             + ch as usize
                             + t.length as usize,
                     )? - self.rope.try_line_to_char(ln as _)?;
-                    (x1, x2)
+                    (x1.min(self.c), x2.min(self.c))
                 };
                 let Ok((x1, x2)) = x else {
                     continue;
@@ -1036,7 +1069,6 @@ pub fn hl(
     // );
     #[coroutine]
     static move || {
-        println!("`\n{text}\n`");
         let syntax = Syntax::new(text.slice(..), lang, &LOADER).unwrap();
         let mut h = syntax.highlighter(text.slice(..), &LOADER, r);
         let mut at = 0;

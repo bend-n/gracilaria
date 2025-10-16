@@ -117,6 +117,10 @@ impl Client {
     }
     pub fn rq_semantic_tokens(&self, f: &Path) -> anyhow::Result<()> {
         debug!("requested semantic tokens");
+        let Some(b"rs") = f.extension().map(|x| x.as_encoded_bytes())
+        else {
+            return Ok(());
+        };
         let mut p = self.semantic_tokens.1.lock();
         if let Some((h, task)) = &*p {
             if !h.is_finished() {
