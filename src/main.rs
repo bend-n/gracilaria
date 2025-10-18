@@ -380,23 +380,18 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             (&mut cells, (c, r)),
                             (t_ox, 0),
                             x,
-                            |(c, r), text, x| {
+                            |(c, r), text,  mut x| {
                                 if let State::Search(re, j, _) = &state {
                                     re.find_iter(&text.rope.to_string())
                                         .enumerate()
                                         .for_each(|(i, m)| {
-                                            for x in text.slice(
-                                                (c, r),
-                                                x,
-                                                text.rope.byte_to_char(
-                                                    m.start(),
-                                                )
-                                                    ..text
+                                            for x in x.get_char_range(
+                                            text.rope.byte_to_char(m.start()), text
                                                         .rope
                                                         .byte_to_char(
                                                             m.end(),
-                                                        ),
-                                            ) {
+                                                        ))
+                                             {
                                                 x.style.bg = if i == *j {
                                                     [105, 83, 128]
                                                 } else {
@@ -437,7 +432,6 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                                 &cells,
                                 (c, r),
                                 ppem,
-                                BG,
                                 &mut fonts,
                                 ls,
                                 true,
@@ -449,7 +443,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             let fac = ppem / met.units_per_em as f32;
                             let [(_x, _y), (_x2, _)] = text.position(sp);
                             let [_x, _x2] = [_x, _x2].add(text.line_number_offset()+1);
-                            let _y = _y - text.vo;
+                            let _y = _y.wrapping_sub(text.vo);
                             if !(cursor_position.1 == _y && (_x..=_x2).contains(&cursor_position.0)) {
                                 return;
                             }
@@ -460,21 +454,23 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
 
                             let ppem = 18.0;
                             let ls = 10.0;
-                            let r = x.item.l().min(15);
-                            let c = x.item.displayable(r);
+                            let mut r = x.item.l().min(15);
                             let (w, h) = dsb::size(&fonts.regular, ppem, ls, (x.item.c, r));                           
                             let top = position.1.checked_sub(h).unwrap_or((((_y + 1) as f32) * (fh + ls * fac)).round() as usize,);
+                            let (_, y) = dsb::fit(&fonts.regular, ppem, ls, (window.inner_size().width as _ /* - left */,( window.inner_size().height as usize - top ) ));
+                            r = r.min(y);
+                            let c = x.item.displayable(r);
                             let left =
                             if position.0 + w as usize > window.inner_size().width as usize {
                                 window.inner_size().width as usize- w as usize
                             } else { position.0 };
 
+                            let (w, h) = dsb::size(&fonts.regular, ppem, ls, (x.item.c, r));
                             // let mut i2 = Image::build(w as _, h as _).fill(BG);
                             unsafe{ dsb::render(
                                 &c,
                                 (x.item.c, 0),
                                 ppem,
-                                hov::BG,
                                 &mut fonts,
                                 ls,
                                 true, 

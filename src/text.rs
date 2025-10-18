@@ -1,6 +1,7 @@
 use std::cmp::min;
 use std::fmt::{Debug, Display};
-use std::ops::{Deref, Not as _, Range, RangeBounds};
+use std::marker::Tuple;
+use std::ops::{Deref, Index, IndexMut, Not as _, Range, RangeBounds};
 use std::path::Path;
 use std::pin::pin;
 use std::sync::{Arc, LazyLock};
@@ -179,7 +180,7 @@ impl Diff {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct TextArea {
     pub rope: Rope,
     pub cursor: usize,
@@ -195,6 +196,7 @@ pub struct TextArea {
     /// └─────────────────┘   default to 5 more lines
     ///
     pub vo: usize,
+    pub ho: usize,
 
     pub r: usize,
     pub c: usize,
@@ -232,19 +234,6 @@ impl Debug for TextArea {
             .field("r", &self.r)
             .field("c", &self.c)
             .finish()
-    }
-}
-
-impl Clone for TextArea {
-    fn clone(&self) -> Self {
-        Self {
-            rope: self.rope.clone(),
-            cursor: self.cursor,
-            column: self.column,
-            vo: self.vo,
-            r: self.r,
-            c: self.c,
-        }
     }
 }
 
@@ -535,7 +524,7 @@ impl TextArea {
         }
     }
 
-    pub fn tree_sit<'c>(&self, path: Option<&Path>, cell: &'c mut [Cell]) {
+    pub fn tree_sit<'c>(&self, path: Option<&Path>, cell: &mut Output) {
         let language = path
             .and_then(|x| LOADER.language_for_filename(x))
             .unwrap_or_else(|| LOADER.language_for_name("rust").unwrap());
@@ -548,8 +537,7 @@ impl TextArea {
         for ((x1, y1), (x2, y2), s, _) in std::iter::from_coroutine(pin!(
             hl(language, &self.rope, s as u32..e as u32, self.c)
         )) {
-            cell.get_mut(y1 * self.c + x1..y2 * self.c + x2)
-                .map(|x| x.iter_mut().for_each(|x| x.style |= s));
+            cell.get_range((x1, y1), (x2, y2)).for_each(|x| x.style |= s);
         }
 
         // let mut highlight_stack = Vec::with_capacity(8);
@@ -612,10 +600,10 @@ impl TextArea {
         &mut self,
         color: [u8; 3],
         bg: [u8; 3],
-        (into, (w, _)): (&mut [Cell], (usize, usize)),
+        (into, into_s): (&mut [Cell], (usize, usize)),
         (ox, oy): (usize, usize),
         selection: Option<Range<usize>>,
-        apply: impl FnOnce((usize, usize), &mut Self, &mut [Cell]),
+        apply: impl FnOnce((usize, usize), &mut Self, Output),
         path: Option<&Path>,
         tokens: Option<(
             arc_swap::Guard<Arc<Box<[SemanticToken]>>>,
@@ -623,21 +611,37 @@ impl TextArea {
         )>,
     ) {
         let (c, r) = (self.c, self.r);
-        let mut cells = vec![
-            Cell {
-                style: Style { color, bg, flags: 0 },
-                letter: None,
-            };
-            (self.l().max(r) + r - 1) * c
-        ];
-
-        for (l, y) in self.rope.lines().zip(0..) {
-            for (e, x) in l.chars().take(c).zip(0..) {
+        let mut cells = Output {
+            into,
+            output: Output_ {
+                into_s,
+                ox,
+                oy,
+                from_c: c,
+                from_r: r,
+                vo: self.vo,
+                ho: self.ho,
+            },
+        };
+        // let mut cells = vec![
+        //     Cell {
+        //         style: Style { color, bg, flags: 0 },
+        //         letter: None,
+        //     };
+        //     (self.l().max(r) + r - 1) * c
+        // ];
+        let lns = self.vo..self.vo + r;
+        for (l, y) in lns.clone().map(self.rope.get_line(_)).zip(lns) {
+            for (e, x) in l.iter().flat_map(|x| x.chars()).take(c).zip(0..)
+            {
                 if e != '\n' {
-                    cells[y * c + x].letter = Some(e);
+                    cells[(x, y)].letter = Some(e);
+                    cells[(x, y)].style.color = crate::FG;
+                    cells[(x, y)].style.bg = crate::BG;
                 }
             }
         }
+
         // let tokens = None::<(
         //     arc_swap::Guard<Arc<Box<[SemanticToken]>>>,
         //     &SemanticTokensLegend,
@@ -673,9 +677,6 @@ impl TextArea {
                 } else if ln as usize * c + x1 > self.vo * c + r * c {
                     break;
                 }
-                let slice = cells
-                    .get_mut(ln as usize * c + x1..ln as usize * c + x2)
-                    .expect("good slice");
                 let Some(tty) = leg.token_types.get(t.token_type as usize)
                 else {
                     error!(
@@ -687,10 +688,12 @@ impl TextArea {
                 if let Some(f) =
                     semantic::NAMES.iter().position(|&x| x == tty.as_str())
                 {
-                    slice.iter_mut().for_each(|x| {
-                        x.style.color = semantic::COLORS[f];
-                        x.style.flags |= semantic::STYLES[f];
-                    });
+                    cells
+                        .get_range((x1, ln as _), (x2, ln as _))
+                        .for_each(|x| {
+                            x.style.color = semantic::COLORS[f];
+                            x.style.flags |= semantic::STYLES[f];
+                        });
                 }
                 // println!(
                 //     "{tty:?}: {}",
@@ -711,10 +714,12 @@ impl TextArea {
                             })
                         })
                         .map(|i| {
-                            slice.iter_mut().for_each(|x| {
-                                x.style.color = MCOLORS[i];
-                                x.style.flags |= MSTYLE[i];
-                            });
+                            cells
+                                .get_range((x1, ln as _), (x2, ln as _))
+                                .for_each(|x| {
+                                    x.style.color = MCOLORS[i];
+                                    x.style.flags |= MSTYLE[i];
+                                });
                         });
 
                     modi &= !(1 << bit);
@@ -724,41 +729,31 @@ impl TextArea {
             self.tree_sit(path, &mut cells);
         }
 
-        selection.map(|x| self.position(x)).map(|[(x1, y1), (x2, y2)]| {
-            (y1 * c + x1..y2 * c + x2).for_each(|x| {
-                cells
-                    .get_mut(x)
-                    .filter(
-                        _.letter.is_some()
-                            || (x % c == 0)
-                            || (self
-                                .rope
-                                .get_line(x / c)
-                                .map(_.len_chars())
-                                .unwrap_or_default()
-                                .saturating_sub(1)
-                                == x % c),
-                    )
-                    .map(|x| {
-                        if x.letter == Some(' ') {
-                            x.letter = Some('·'); // tabs? what are those
-                            x.style.color = [0x4e, 0x62, 0x79];
-                        }
-                        x.style.bg = [0x27, 0x43, 0x64];
-                        // 0x23, 0x34, 0x4B
-                    });
-            });
+        selection.map(|x| {
+            let [a, b] = self.position(x);
+            cells
+                .get_range_enumerated(a, b)
+                .filter(|(c, (x, y))| {
+                    c.letter.is_some()
+                        || *x == 0
+                        || (self
+                            .rope
+                            .get_line(*y)
+                            .map(_.len_chars())
+                            .unwrap_or_default()
+                            .saturating_sub(1)
+                            == *x)
+                })
+                .for_each(|(x, _)| {
+                    if x.letter == Some(' ') {
+                        x.letter = Some('·'); // tabs? what are those
+                        x.style.color = [0x4e, 0x62, 0x79];
+                    }
+                    x.style.bg = [0x27, 0x43, 0x64];
+                    // 0x23, 0x34, 0x4B
+                })
         });
-        apply((c, r), self, &mut cells);
-
-        let cells = &cells[self.vo * c..self.vo * c + r * c];
-        assert_eq!(cells.len(), c * r);
-
-        for y in 0..r {
-            for x in 0..c {
-                into[(y + oy) * w + (x + ox)] = cells[y * c + x];
-            }
-        }
+        apply((c, r), self, cells);
     }
     pub fn line_number_offset(&self) -> usize {
         self.l().ilog10() as usize + 2
@@ -1109,4 +1104,121 @@ pub fn hl(
     //     use std::ops::Coroutine;
     //     Some(Pin::new(&mut x).resume(()))
     // })
+}
+
+#[derive(Copy, Clone)]
+///      ╎ text above view offset
+///      ├╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶ view offset
+/// ┏━━━━┿━━━━━━━━━━━━┓
+/// ┃    ╎← offset y  ┃
+/// ┃ ┏╺╺┿╺╺╺╺╺╺╺╺╺╺╺╺┃
+/// ┃ ╏  ╎valid output┃
+/// ┃ ╏  ╎goes here   ┃
+/// ┃ ╏  ╎            ┃
+/// ┃ ╏  ╎            ┃
+/// ┃ ╏  ╎            ┃
+/// ┗━━━━━━━━━━━━━━━━━┛
+///  ═ ══╎
+///  ↑ ↑ ╎
+///  │ ╰ horiz scroll
+///  ╰ horizontal offset
+pub struct Output_ {
+    /// c, r
+    pub into_s: (usize, usize),
+    pub ox: usize,
+    pub oy: usize,
+
+    pub from_c: usize,
+    pub from_r: usize,
+    pub vo: usize,
+    pub ho: usize,
+}
+pub struct Output<'a> {
+    pub into: &'a mut [Cell],
+    pub output: Output_,
+}
+impl Deref for Output<'_> {
+    type Target = Output_;
+
+    fn deref(&self) -> &Self::Target {
+        &self.output
+    }
+}
+
+impl Output_ {
+    fn translate(&self, index: usize) -> (usize, usize) {
+        (index % self.from_c, index / self.from_c)
+    }
+    fn translate_(&self, (x, y): (usize, usize)) -> usize {
+        (y + self.oy - self.vo) * self.into_s.0 + x + self.ox - self.ho
+    }
+    fn etalsnart(&self, index: usize) -> (usize, usize) {
+        (index % self.into_s.0, index / self.into_s.0)
+    }
+    fn etalsnart_(
+        &self,
+        (x, y): (usize, usize),
+    ) -> Option<(usize, usize)> {
+        Some((
+            x.checked_sub(self.ho)?.checked_sub(self.ox)?,
+            y.checked_sub(self.oy)? + self.vo,
+        ))
+    }
+}
+impl<'a> Output<'a> {
+    pub fn get_range(
+        &mut self,
+        a: (usize, usize),
+        b: (usize, usize),
+    ) -> impl Iterator<Item = &mut Cell> {
+        self.get_range_enumerated(a, b).map(|x| x.0)
+    }
+    pub fn get_char_range(
+        &mut self,
+        a: usize,
+        b: usize,
+    ) -> impl Iterator<Item = &mut Cell> {
+        self.get_range(self.translate(a), self.translate(b))
+    }
+    pub fn get_range_enumerated(
+        &mut self,
+        a: (usize, usize),
+        b: (usize, usize),
+    ) -> impl Iterator<Item = (&mut Cell, (usize, usize))> {
+        let o = self.output;
+        let r = self.translate_(a)..self.translate_(b);
+
+        self.into.get_mut(r.clone()).into_iter().flatten().zip(r).flat_map(
+            move |(c, i)| o.etalsnart_(o.etalsnart(i)).map(|x| (c, x)),
+        )
+    }
+}
+
+impl<'a> Index<usize> for Output<'a> {
+    type Output = Cell;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self[self.translate(index)]
+    }
+}
+
+impl<'a> IndexMut<usize> for Output<'a> {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        let x = self.translate(index);
+        &mut self[x]
+    }
+}
+
+impl<'a> Index<(usize, usize)> for Output<'a> {
+    type Output = Cell;
+
+    fn index(&self, p: (usize, usize)) -> &Self::Output {
+        &self.into[self.translate_(p)]
+    }
+}
+impl<'a> IndexMut<(usize, usize)> for Output<'a> {
+    fn index_mut(&mut self, p: (usize, usize)) -> &mut Self::Output {
+        let x = self.translate_(p);
+        &mut self.into[x]
+    }
 }
