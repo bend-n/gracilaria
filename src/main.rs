@@ -61,7 +61,7 @@ use winit::window::{Icon, Window};
 
 use crate::bar::Bar;
 use crate::hov::Hovr;
-use crate::text::{Diff, TextArea};
+use crate::text::{ Diff, TextArea};
 mod bar;
 pub mod hov;
 mod lsp;
@@ -375,8 +375,6 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                         text.c = c - t_ox;
                         text.r = r - 1;
                         text.write_to(
-                            FG,
-                            BG,
                             (&mut cells, (c, r)),
                             (t_ox, 0),
                             x,
@@ -491,7 +489,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                                 .fill([0xFF, 0xCC, 0x66, 255]);
                         unsafe {
                             let (x, y) = text.cursor();
-                            let x = x + t_ox;
+                            let x = (x + t_ox).saturating_sub(text.ho)%c;
 
                             if (text.vo..text.vo + r).contains(&y)
                                 && matches!(
@@ -561,7 +559,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             *state.sel() = x..x;
                         }
                         Some(Do::Hover) if let Some(hover) = text.raw_index_at(cursor_position) => {
-                            assert_eq!(hover, text.index_at(cursor_position));
+                            // assert_eq!(hover, text.index_at(cursor_position));
                             let (x, y) =text.xy(hover);
                             let text = text.clone();
                         {

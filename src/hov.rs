@@ -291,11 +291,11 @@ fn t() {
             &cells,
             (c, r),
             ppem,
-            BG,
             &mut fonts,
             lh,
             true,
             x.as_mut(),
+            (0, 0),
         )
     };
     println!("{:?}", now.elapsed());

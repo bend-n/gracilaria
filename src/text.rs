@@ -1,5 +1,6 @@
-use std::cmp::min;
+use std::cmp::{Ordering, min};
 use std::fmt::{Debug, Display};
+use std::iter::empty;
 use std::marker::Tuple;
 use std::ops::{Deref, Index, IndexMut, Not as _, Range, RangeBounds};
 use std::path::Path;
@@ -265,28 +266,27 @@ impl TextArea {
                     .get_line(l_i)
                     .map(_.len_chars() - 1)
                     .unwrap_or_default())
-                .min(x - (self.line_number_offset() + 1))
+                .min((x - (self.line_number_offset() + 1)) + self.ho)
             })
             .unwrap_or(usize::MAX)
             .min(self.rope.len_chars())
     }
 
     pub fn raw_index_at(&self, (x, y): (usize, usize)) -> Option<usize> {
-        let x = x.checked_sub(self.line_number_offset() + 1)?;
+        let x = x.checked_sub(self.line_number_offset() + 1)? + self.ho;
         Some(self.vo + y)
             .filter(|&l| self.rope.line(l).len_chars() > x)
             .and_then(|l| Some(self.rope.try_line_to_char(l).ok()? + x))
     }
 
     pub fn insert_(&mut self, c: SmolStr) {
-        self.rope.insert(self.cursor, &c);
-        self.cursor += c.chars().count();
-        self.setc();
+        self.insert(&c);
     }
     pub fn insert(&mut self, c: &str) {
         self.rope.insert(self.cursor, c);
         self.cursor += c.chars().count();
         self.setc();
+        self.set_ho();
     }
 
     pub fn cursor(&self) -> (usize, usize) {
@@ -328,6 +328,7 @@ impl TextArea {
     pub fn left(&mut self) {
         self.cursor -= 1;
         self.setc();
+        self.set_ho();
     }
 
     #[implicit_fn]
@@ -352,6 +353,7 @@ impl TextArea {
             self.cursor = whitespaces + beg;
             self.column = whitespaces;
         }
+        self.set_ho();
     }
 
     pub fn end(&mut self) {
@@ -361,6 +363,16 @@ impl TextArea {
         self.cursor = beg + self.cl().len_chars()
             - self.rope.get_line(i + 1).map(|_| 1).unwrap_or(0);
         self.setc();
+        self.set_ho();
+    }
+
+    pub fn set_ho(&mut self) {
+        let x = self.cursor().0;
+        if x < self.ho + 4 {
+            self.ho = x.saturating_sub(4);
+        } else if x + 4 > (self.ho + self.c) {
+            self.ho = (x - self.c) + 4;
+        }
     }
 
     #[lower::apply(saturating)]
@@ -368,6 +380,7 @@ impl TextArea {
         self.cursor += 1;
         self.cursor = self.cursor.min(self.rope.len_chars());
         self.setc();
+        self.set_ho();
     }
 
     fn at(&self) -> char {
@@ -402,6 +415,7 @@ impl TextArea {
                 .count()
         };
         self.setc();
+        self.set_ho();
     }
     // from μ
     #[lower::apply(saturating)]
@@ -436,6 +450,8 @@ impl TextArea {
                 self.left();
             }
         }
+        self.setc();
+        self.set_ho();
     }
 
     pub fn enter(&mut self) {
@@ -443,6 +459,7 @@ impl TextArea {
         let n = self.indentation();
         self.insert("\n");
         (|| self.insert(" ")).run(n);
+        self.set_ho();
     }
 
     pub fn down(&mut self) {
@@ -475,6 +492,7 @@ impl TextArea {
             self.vo += 1;
             // self.vo = self.vo.min(self.l() - self.r);
         }
+        self.set_ho();
     }
 
     pub fn up(&mut self) {
@@ -492,11 +510,13 @@ impl TextArea {
         {
             self.vo = self.vo.saturating_sub(1);
         }
+        self.set_ho();
     }
     #[lower::apply(saturating)]
     pub fn backspace(&mut self) {
         _ = self.rope.try_remove(self.cursor - 1..self.cursor);
         self.cursor = self.cursor - 1;
+        self.set_ho();
     }
 
     #[lower::apply(saturating)]
@@ -598,8 +618,6 @@ impl TextArea {
     #[implicit_fn]
     pub fn write_to<'lsp>(
         &mut self,
-        color: [u8; 3],
-        bg: [u8; 3],
         (into, into_s): (&mut [Cell], (usize, usize)),
         (ox, oy): (usize, usize),
         selection: Option<Range<usize>>,
@@ -613,7 +631,7 @@ impl TextArea {
         let (c, r) = (self.c, self.r);
         let mut cells = Output {
             into,
-            output: Output_ {
+            output: Mapper {
                 into_s,
                 ox,
                 oy,
@@ -632,12 +650,16 @@ impl TextArea {
         // ];
         let lns = self.vo..self.vo + r;
         for (l, y) in lns.clone().map(self.rope.get_line(_)).zip(lns) {
-            for (e, x) in l.iter().flat_map(|x| x.chars()).take(c).zip(0..)
+            for (e, x) in l
+                .iter()
+                .flat_map(|x| x.chars().skip(self.ho))
+                .take(c)
+                .zip(0..)
             {
                 if e != '\n' {
-                    cells[(x, y)].letter = Some(e);
-                    cells[(x, y)].style.color = crate::FG;
-                    cells[(x, y)].style.bg = crate::BG;
+                    cells[(x + self.ho, y)].letter = Some(e);
+                    cells[(x + self.ho, y)].style.color = crate::FG;
+                    cells[(x + self.ho, y)].style.bg = crate::BG;
                 }
             }
         }
@@ -666,16 +688,16 @@ impl TextArea {
                             + ch as usize
                             + t.length as usize,
                     )? - self.rope.try_line_to_char(ln as _)?;
-                    (x1.min(self.c), x2.min(self.c))
+                    (x1, x2)
                 };
                 let Ok((x1, x2)) = x else {
                     continue;
                 };
 
                 if ln as usize * c + x1 < self.vo * c {
-                    continue;
+                    // continue;
                 } else if ln as usize * c + x1 > self.vo * c + r * c {
-                    break;
+                    // break;
                 }
                 let Some(tty) = leg.token_types.get(t.token_type as usize)
                 else {
@@ -1107,13 +1129,17 @@ pub fn hl(
 }
 
 #[derive(Copy, Clone)]
-///      ╎ text above view offset
-///      ├╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶ view offset
-/// ┏━━━━┿━━━━━━━━━━━━┓
-/// ┃    ╎← offset y  ┃
+/// this struct is made to mimic a simple 2d vec
+/// over the entire text area
+/// without requiring that entire allocation, and the subsequent copy into the output area.
+/// ```text
+///     text above view offset (global text area)²
+/// ╶╶╶╶╶├╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶ view offset
+/// ┏━━━━┿━━━━━━━━━━━━┓← into_ and into_s³
+/// ┃    ╏← offset y  ┃
 /// ┃ ┏╺╺┿╺╺╺╺╺╺╺╺╺╺╺╺┃
-/// ┃ ╏  ╎valid output┃
-/// ┃ ╏  ╎goes here   ┃
+/// ┃ ╏ v╎iewable area┃
+/// ┃ ╏ g╎oes here¹   ┃
 /// ┃ ╏  ╎            ┃
 /// ┃ ╏  ╎            ┃
 /// ┃ ╏  ╎            ┃
@@ -1122,7 +1148,8 @@ pub fn hl(
 ///  ↑ ↑ ╎
 ///  │ ╰ horiz scroll
 ///  ╰ horizontal offset
-pub struct Output_ {
+/// ```
+pub struct Mapper {
     /// c, r
     pub into_s: (usize, usize),
     pub ox: usize,
@@ -1135,37 +1162,64 @@ pub struct Output_ {
 }
 pub struct Output<'a> {
     pub into: &'a mut [Cell],
-    pub output: Output_,
+    pub output: Mapper,
 }
 impl Deref for Output<'_> {
-    type Target = Output_;
+    type Target = Mapper;
 
     fn deref(&self) -> &Self::Target {
         &self.output
     }
 }
 
-impl Output_ {
-    fn translate(&self, index: usize) -> (usize, usize) {
-        (index % self.from_c, index / self.from_c)
+impl Mapper {
+    /// translate an index into the global text buffer² into an (x, y), of the global text buffer
+    fn to_point(&self, index: usize) -> (usize, usize) {
+        ((index % self.from_c), (index / self.from_c))
     }
-    fn translate_(&self, (x, y): (usize, usize)) -> usize {
-        (y + self.oy - self.vo) * self.into_s.0 + x + self.ox - self.ho
+    // fn from_point(&self, (x, y): (usize, usize)) -> usize {
+    //     y * self.from_c + x
+    // }
+
+    /// translate an (x, y) into the global text buffer²
+    /// to a point over the viewable area¹ (offset by the given offsets) of the global text buffer,
+    /// returning none if the given point is outside of the viewable area
+    fn translate(&self, (x, y): (usize, usize)) -> Option<(usize, usize)> {
+        let (x, y) = (
+            x.checked_sub(self.ho)? + self.ox,
+            y.checked_sub(self.vo)? + self.oy,
+        );
+        ((x < self.into_s.0) & (y < self.into_s.1)
+            & (x >= self.ox) // this is kind of forced already but its ok
+            & (y >= self.oy)) // "
+            .then_some((x, y))
     }
-    fn etalsnart(&self, index: usize) -> (usize, usize) {
-        (index % self.into_s.0, index / self.into_s.0)
+    /// converts an (x, y) of the viewable area¹ to an index into [`Output::into`]
+    fn from_point_global(&self, (x, y): (usize, usize)) -> usize {
+        y * self.into_s.0 + x
     }
-    fn etalsnart_(
-        &self,
-        (x, y): (usize, usize),
-    ) -> Option<(usize, usize)> {
-        Some((
-            x.checked_sub(self.ho)?.checked_sub(self.ox)?,
-            y.checked_sub(self.oy)? + self.vo,
-        ))
-    }
+    // /// translate an index into a (x, y), of the output³
+    // fn to_point_global(&self, index: usize) -> (usize, usize) {
+    //     (index % self.into_s.0, index / self.into_s.0)
+    // }
+    // fn etalsnart_(
+    //     &self,
+    //     (x, y): (usize, usize),
+    // ) -> Option<(usize, usize)> {
+    //     Some((
+    //         x.checked_sub(self.ox)? + self.ho, //
+    //         y.checked_sub(self.oy)? + self.vo,
+    //     ))
+    // }
 }
 impl<'a> Output<'a> {
+    // /// get an index thats relative over the viewable area¹ of the global text area
+    // fn get_at_compensated(
+    //     &mut self,
+    //     (x, y): (usize, usize),
+    // ) -> Option<&mut Cell> {
+    //     Some(&mut self.into[(y + self.oy) * self.into_s.0 + (x + self.ox)])
+    // }
     pub fn get_range(
         &mut self,
         a: (usize, usize),
@@ -1178,47 +1232,133 @@ impl<'a> Output<'a> {
         a: usize,
         b: usize,
     ) -> impl Iterator<Item = &mut Cell> {
-        self.get_range(self.translate(a), self.translate(b))
+        self.get_range_enumerated(self.to_point(a), self.to_point(b))
+            .map(|x| x.0)
     }
-    pub fn get_range_enumerated(
+    //// coords reference global text buffer²
+    pub gen fn get_range_enumerated(
         &mut self,
-        a: (usize, usize),
-        b: (usize, usize),
-    ) -> impl Iterator<Item = (&mut Cell, (usize, usize))> {
-        let o = self.output;
-        let r = self.translate_(a)..self.translate_(b);
+        (x1, y1): (usize, usize),
+        (x2, y2): (usize, usize),
+        //  impl Iterator<Item = (&mut Cell, (usize, usize))> {
+    ) -> (&mut Cell, (usize, usize)) {
+        let m = self.output;
+        let c = self.into.as_mut_ptr();
+        // x1 = x1.checked_sub(m.ho).unwrap_or(m.ho);
+        // x2 = x2.checked_sub(m.ho).unwrap_or(m.ho);
+        // y1 = y1.checked_sub(m.vo).unwrap_or(m.vo);
+        // y2 = y2.checked_sub(m.vo).unwrap_or(m.vo);
+        // let a = m.from_point((x1, y1));
+        // let b = m.from_point((x2, y2));
+        // let a = m.from_point_global(m.translate(m.to_point(a)).unwrap());
+        // let b = m.from_point_global(m.translate(m.to_point(b)).unwrap());
+        // dbg!(a, b);
+        let mut p = (x1, y1);
+        while p != (x2, y2) {
+            if let Some(x) = m.translate(p) {
+                // SAFETY: trust me very disjoint
+                yield (unsafe { &mut *c.add(m.from_point_global(x)) }, p)
+            }
+            p.0 += 1;
+            if p.0.checked_sub(m.ho) == Some(m.from_c) {
+                p.0 = 0;
+                p.1 += 1;
+                if p.1 > y2 {
+                    break;
+                }
+            }
+            if let Some(x) = p.0.checked_sub(m.ho)
+                && x > m.from_c
+            {
+                break;
+            }
+        }
 
-        self.into.get_mut(r.clone()).into_iter().flatten().zip(r).flat_map(
-            move |(c, i)| o.etalsnart_(o.etalsnart(i)).map(|x| (c, x)),
-        )
+        // (a..=b)
+        //     .filter_map(move |x| {
+        //         // println!("{:?} {x}", m.translate(m.to_point(x)));
+        //         let (x, y) = m.to_point(x);
+        //         m.translate((x, y))
+        //         // m.to_point_global(x)
+        //     })
+        //     .inspect(move |x| {
+        //         assert!(x.0 < self.into_s.0 && x.1 < self.into_s.1);
+        //         assert!(m.from_point_global(*x) < self.into.len());
+        //     })
+        //     .map(move |x| {
+        //         // SAFETY: :)
+        //         (unsafe { &mut *p.add(m.from_point_global(x)) }, x)
+        //     })
+        // self.get_char_range_enumerated(
+        //     self.output.from_point(a),
+        //     self.output.from_point(b),
+        // )
     }
 }
 
-impl<'a> Index<usize> for Output<'a> {
-    type Output = Cell;
+// impl<'a> Index<usize> for Output<'a> {
+//     type Output = Cell;
 
-    fn index(&self, index: usize) -> &Self::Output {
-        &self[self.translate(index)]
-    }
-}
+//     fn index(&self, index: usize) -> &Self::Output {
+//         &self[self.translate(index).unwrap()]
+//     }
+// }
 
-impl<'a> IndexMut<usize> for Output<'a> {
-    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-        let x = self.translate(index);
-        &mut self[x]
-    }
-}
+// impl<'a> IndexMut<usize> for Output<'a> {
+//     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+//         let x = self.translate(index).unwrap();
+//         &mut self[x]
+//     }
+// }
 
 impl<'a> Index<(usize, usize)> for Output<'a> {
     type Output = Cell;
 
     fn index(&self, p: (usize, usize)) -> &Self::Output {
-        &self.into[self.translate_(p)]
+        &self.into[self.from_point_global(self.translate(p).unwrap())]
     }
 }
 impl<'a> IndexMut<(usize, usize)> for Output<'a> {
     fn index_mut(&mut self, p: (usize, usize)) -> &mut Self::Output {
-        let x = self.translate_(p);
+        let x = self.from_point_global(self.translate(p).unwrap());
         &mut self.into[x]
     }
 }
+
+#[test]
+fn txt() {
+    let mut o = vec![Cell::default(); 4 * 2];
+    let mut o_ = Output {
+        into: &mut o,
+        output: Mapper {
+            into_s: (4, 2),
+            ox: 0,
+            oy: 0,
+            from_c: 4,
+            from_r: 4,
+            vo: 0,
+            ho: 1,
+        },
+    };
+
+    o_.into[0].letter = Some('_');
+    o_.into[4].letter = Some('_');
+    // dbg!(o_.translate(dbg!(o_.to_point(4))).unwrap());
+
+    o_.get_range_enumerated((1, 0), (5, 0)).for_each(|x| {
+        x.0.letter = Some('.');
+        // dbg!(x.1);
+    });
+
+    dbg!(o.as_chunks::<4>().0);
+}
+
+// pub trait CoerceOption<T> {
+//     fn coerce(self) -> impl Iterator<Item = T>;
+// }
+// impl<I: Iterator<Item = T>, T> CoerceOption<T> for Option<I> {
+//     #[allow(refining_impl_trait)]
+//     fn coerce(self) -> std::iter::Flatten<std::option::IntoIter<I>> {
+//         self.into_iter().flatten()
+//     }
+// }
