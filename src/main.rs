@@ -587,29 +587,29 @@ text_document_position_params: TextDocumentPositionParams { text_document: TextD
 }},
 work_done_progress_params:default() }).unwrap();
 cl.runtime.spawn(async move {
-    let x = rx.await?.load::<Hover>()?;
+    let Some(x) = rx.await? else {return Ok(())};
     let (w, cells) = spawn_blocking(move || {
         let x = match &x.contents {
-        lsp_types::HoverContents::Scalar(marked_string) => {
-            match marked_string{
-                MarkedString::LanguageString(x) =>Cow::Borrowed(&*x.value),
-                MarkedString::String(x) => Cow::Borrowed(&**x),
-            }
-        },
-        lsp_types::HoverContents::Array(marked_strings) => {
-            Cow::Owned(marked_strings.iter().map(|x| match x{
-                MarkedString::LanguageString(x) => &*x.value,
-                MarkedString::String(x) => &*x,
-            }).collect::<String>())
-        },
-        lsp_types::HoverContents::Markup(markup_content) => {
-            Cow::Borrowed(&*markup_content.value)
-        },
-    };
-    let x = hov::p(&x).unwrap();
-    let m = hov::l(&x).into_iter().max().map(_+2).unwrap_or(usize::MAX).min(c-10);
-    (m, hov::markdown2(m, &x))
-}).await.unwrap();
+            lsp_types::HoverContents::Scalar(marked_string) => {
+                match marked_string{
+                    MarkedString::LanguageString(x) =>Cow::Borrowed(&*x.value),
+                    MarkedString::String(x) => Cow::Borrowed(&**x),
+                }
+            },
+            lsp_types::HoverContents::Array(marked_strings) => {
+                Cow::Owned(marked_strings.iter().map(|x| match x{
+                    MarkedString::LanguageString(x) => &*x.value,
+                    MarkedString::String(x) => &*x,
+                }).collect::<String>())
+            },
+            lsp_types::HoverContents::Markup(markup_content) => {
+                Cow::Borrowed(&*markup_content.value)
+            },
+        };
+        let x = hov::p(&x).unwrap();
+        let m = hov::l(&x).into_iter().max().map(_+2).unwrap_or(usize::MAX).min(c-10);
+        (m, hov::markdown2(m, &x))
+    }).await.unwrap();
 RUNNING.remove(&hover,&RUNNING.guard());
     let span = x.range.and_then(|x| {
         Some(text.l_position(x.start).ok()?..text.l_position(x.end).ok()?)
@@ -745,6 +745,7 @@ RUNNING.remove(&hover,&RUNNING.guard());
                             if hist.record(&text) {
                                 change!();
                             }
+lsp!().map(|x|x.0.request_complete(x.1, text.cursor()));;
                         }
                         Some(Do::Undo) => {
                             hist.test_push(&text);

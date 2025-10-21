@@ -1,9 +1,11 @@
 use std::collections::HashMap;
 use std::io::BufReader;
 use std::path::Path;
+use std::pin::Pin;
 use std::process::{Command, Stdio};
 use std::sync::atomic::AtomicI32;
 use std::sync::atomic::Ordering::Relaxed;
+use std::task::Poll;
 use std::thread::{JoinHandle, sleep, spawn};
 use std::time::{Duration, Instant};
 
@@ -21,12 +23,13 @@ use lsp_types::notification::{
     Cancel, DidOpenTextDocument, Notification, Progress, SetTrace,
 };
 use lsp_types::request::{
-    Initialize, Request, SemanticTokensFullRequest, WorkDoneProgressCreate,
+    Completion, Initialize, Request, SemanticTokensFullRequest,
+    WorkDoneProgressCreate,
 };
 use lsp_types::*;
 use parking_lot::Mutex;
 use serde_json::json;
-
+use tokio::sync::oneshot;
 pub struct Client {
     pub runtime: tokio::runtime::Runtime,
 
@@ -67,7 +70,14 @@ impl Client {
     pub fn request<X: Request>(
         &self,
         y: &X::Params,
-    ) -> Result<(oneshot::Receiver<Re>, i32), SendError<Message>> {
+    ) -> Result<
+        (
+            impl Future<Output = Result<X::Result, oneshot::error::RecvError>>
+            + use<X>,
+            i32,
+        ),
+        SendError<Message>,
+    > {
         let id = self.id.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
         self.tx.send(Message::Request(Rq {
             id: id.into(),
@@ -79,7 +89,17 @@ impl Client {
             debug!("sent request {id}'s handler");
             self.send_to.send((id, tx)).expect("oughtnt really fail");
         }
-        Ok((rx, id))
+        Ok((
+            async {
+                rx.await.map(|x| {
+                    serde_json::from_value::<X::Result>(
+                        x.result.unwrap_or_default(),
+                    )
+                    .expect("lsp badg")
+                })
+            },
+            id,
+        ))
     }
     pub fn open(
         &self,
@@ -115,6 +135,32 @@ impl Client {
             },
         )
     }
+
+    pub fn request_complete(&self, f: &Path, (x, y): (usize, usize)) {
+        let (rx, i) = self
+            .request::<Completion>(&CompletionParams {
+                text_document_position: TextDocumentPositionParams {
+                    text_document: {
+                        TextDocumentIdentifier {
+                            uri: Url::from_file_path(f).unwrap(),
+                        }
+                    },
+                    position: Position { line: y as _, character: x as _ },
+                },
+                work_done_progress_params: default(),
+                partial_result_params: default(),
+                context: None,
+            })
+            .unwrap();
+        self.runtime.spawn(async move {
+            std::fs::write(
+                "complete_",
+                format!("{:#?}", rx.await.unwrap()),
+            );
+            // dbg!(rx.recv().unwrap());
+        });
+    }
+
     pub fn rq_semantic_tokens(&self, f: &Path) -> anyhow::Result<()> {
         debug!("requested semantic tokens");
         let Some(b"rs") = f.extension().map(|x| x.as_encoded_bytes())
@@ -141,10 +187,9 @@ impl Client {
         let d = self.semantic_tokens.0;
         let ch = self.ch_tx.clone();
         let x = self.runtime.spawn(async move {
-            let x = rx.await?;
+            let y = rx.await?.unwrap();
             debug!("received semantic tokens");
 
-            let y = x.load::<SemanticTokensResult>()?;
             match y {
                 SemanticTokensResult::Partial(_) =>
                     panic!("i told the lsp i dont support this"),
@@ -193,7 +238,7 @@ pub fn run(
         send_to: req_tx,
         not_rx,
     };
-    c.request::<Initialize>(&InitializeParams {
+    _ = c.request::<Initialize>(&InitializeParams {
         process_id: Some(std::process::id()),
 
         capabilities: ClientCapabilities {
@@ -201,6 +246,7 @@ pub fn run(
                 work_done_progress: Some(true),
                 ..default()
             }),
+
             text_document: Some(TextDocumentClientCapabilities {
                 hover: Some(HoverClientCapabilities {
                     dynamic_registration: None,
@@ -208,6 +254,36 @@ pub fn run(
                         MarkupKind::PlainText,
                         MarkupKind::Markdown,
                     ]),
+                }),
+                completion: Some(CompletionClientCapabilities {
+                    dynamic_registration: Some(false),
+                    completion_item: Some(CompletionItemCapability {
+                        snippet_support: None,
+                        commit_characters_support: None,
+                        documentation_format: Some(vec![
+                            MarkupKind::Markdown,
+                            MarkupKind::PlainText,
+                        ]),
+                        deprecated_support: None,
+                        preselect_support: None,
+                        tag_support: Some(TagSupport {
+                            value_set: vec![CompletionItemTag::DEPRECATED],
+                        }),
+
+                        label_details_support: None,
+                        ..default()
+                    }),
+                    completion_item_kind: Some(
+                        CompletionItemKindCapability {
+                            value_set: None,
+                            // value_set: Some(vec![CompletionItemKind::]),
+                        },
+                    ),
+                    context_support: None,
+                    insert_text_mode: Some(InsertTextMode::AS_IS),
+                    completion_list: Some(CompletionListCapability {
+                        item_defaults: None,
+                    }),
                 }),
                 semantic_tokens: Some(SemanticTokensClientCapabilities {
                     dynamic_registration: Some(false),
@@ -249,6 +325,11 @@ pub fn run(
                 ..default()
             }),
             general: Some(GeneralClientCapabilities {
+                markdown: Some(MarkdownClientCapabilities {
+                    version: Some("1.0.0".into()),
+                    parser: "markdown".into(),
+                    allowed_tags: Some(vec![]),
+                }),
                 position_encodings: Some(vec![PositionEncodingKind::UTF8]),
                 ..default()
             }),
@@ -343,8 +424,8 @@ pub fn run(
                                 Ok(()) => {}
                                 Err(e) => {
                                     error!(
-                                        "unable to respond to {:?}",
-                                        e.into_inner()
+                                        "unable to respond to {e:?}",
+
                                     );
                                 }
                             }
@@ -450,25 +531,25 @@ pub fn x() {
     // });
 }
 
-trait RecvEepy<T>: Sized {
-    fn recv_eepy(self) -> Result<T, RecvError> {
-        self.recv_sleepy(100)
-    }
-    fn recv_sleepy(self, x: u64) -> Result<T, RecvError>;
-}
+// trait RecvEepy<T>: Sized {
+//     fn recv_eepy(self) -> Result<T, RecvError> {
+//         self.recv_sleepy(100)
+//     }
+//     fn recv_sleepy(self, x: u64) -> Result<T, RecvError>;
+// }
 
-impl<T> RecvEepy<T> for oneshot::Receiver<T> {
-    fn recv_sleepy(self, x: u64) -> Result<T, RecvError> {
-        loop {
-            return match self.recv_timeout(Duration::from_millis(x)) {
-                Err(oneshot::RecvTimeoutError::Timeout) => continue,
-                Ok(x) => Ok(x),
-                Err(oneshot::RecvTimeoutError::Disconnected) =>
-                    Err(crossbeam::channel::RecvError),
-            };
-        }
-    }
-}
+// impl<T> RecvEepy<T> for oneshot::Receiver<T> {
+//     fn recv_sleepy(self, x: u64) -> Result<T, RecvError> {
+//         loop {
+//             return match self.recv(Duration::from_millis(x)) {
+//                 Err(oneshot::RecvTimeoutError::Timeout) => continue,
+//                 Ok(x) => Ok(x),
+//                 Err(oneshot::RecvTimeoutError::Disconnected) =>
+//                     Err(crossbeam::channel::RecvError),
+//             };
+//         }
+//     }
+// }
 
 trait Void<T> {
     fn void(self) -> Result<T, ()>;
@@ -517,4 +598,32 @@ fn x33() {
     .unwrap();
     println!("{y}");
     let y = serde_json::from_str::<SemanticTokensParams>(&y).unwrap();
+}
+#[pin_project::pin_project]
+struct Map<T, U, F: FnMut(T) -> U, Fu: Future<Output = T>>(#[pin] Fu, F);
+impl<T, F: FnMut(T) -> U, U, Fu: Future<Output = T>> Future
+    for Map<T, U, F, Fu>
+{
+    type Output = U;
+
+    fn poll(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> Poll<Self::Output> {
+        let me = self.as_mut().project();
+        match Future::poll(me.0, cx) {
+            Poll::Ready(x) => Poll::Ready(me.1(x)),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+trait Map_<T, U, F: FnMut(T) -> U>: Future<Output = T> + Sized {
+    fn map(self, f: F) -> Map<T, U, F, Self>;
+}
+
+impl<T, U, F: FnMut(T) -> U, Fu: Future<Output = T>> Map_<T, U, F> for Fu {
+    fn map(self, f: F) -> Map<T, U, F, Self> {
+        Map(self, f)
+    }
 }
