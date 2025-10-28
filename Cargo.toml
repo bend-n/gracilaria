@@ -48,6 +48,8 @@ papaya = "0.2.3"
 markdown = "1.0.0"
 itertools = "0.14.0"
 pin-project = "1.1.10"
+replace_with = "0.1.8"
+nucleo = "0.5.0"
 
 [build-dependencies]
 cc = "*"

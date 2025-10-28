@@ -1,6 +1,7 @@
 // this looks pretty good though
 #![feature(tuple_trait, unboxed_closures, fn_traits)]
 #![feature(
+    result_option_map_or_default,
     iter_intersperse,
     stmt_expr_attributes,
     new_range_api,
@@ -26,6 +27,7 @@ use std::borrow::Cow;
 use std::io::BufReader;
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::process::{Command, Stdio};
 use std::sync::{Arc, LazyLock, OnceLock};
 use std::thread;
@@ -34,22 +36,24 @@ use std::time::Instant;
 use Default::default;
 use NamedKey::*;
 use atools::prelude::AASAdd;
+use crossbeam::channel::RecvError;
 use diff_match_patch_rs::PatchInput;
 use dsb::cell::Style;
 use dsb::{Cell, F};
 use fimg::{Image, OverlayAt};
-use lsp_types::request::HoverRequest;
+use lsp_types::request::{Completion, HoverRequest};
 use lsp_types::{
-    Hover, HoverParams, MarkedString, Position, SemanticTokensOptions,
+    CompletionContext, CompletionResponse, CompletionTriggerKind, Hover,
+    HoverParams, MarkedString, Position, SemanticTokensOptions,
     SemanticTokensServerCapabilities, ServerCapabilities,
     TextDocumentIdentifier, TextDocumentPositionParams, WorkspaceFolder,
 };
 use parking_lot::Mutex;
 use regex::Regex;
 use ropey::Rope;
-use rust_fsm::StateMachineImpl;
+use rust_fsm::StateMachine;
 use swash::{FontRef, Instance};
-use tokio::task::spawn_blocking;
+use tokio::task::{JoinHandle, spawn_blocking};
 use url::Url;
 use winit::event::{
     ElementState, Event, MouseButton, MouseScrollDelta, WindowEvent,
@@ -61,8 +65,9 @@ use winit::window::{Icon, Window};
 
 use crate::bar::Bar;
 use crate::hov::Hovr;
-use crate::text::{ Diff, TextArea};
+use crate::text::{Diff, TextArea};
 mod bar;
+pub mod com;
 pub mod hov;
 mod lsp;
 mod text;
@@ -229,7 +234,17 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
         };
     }
     let hovering = &*Box::leak(Box::new(Mutex::new(None::<hov::Hovr>)));
-
+    let mut complete = CompletionState::None;
+    // let mut complete = None::<(CompletionResponse, (usize, usize))>;
+    // let mut complete_ = None::<(
+    //     JoinHandle<
+    //         Result<
+    //             Option<CompletionResponse>,
+    //             tokio::sync::oneshot::error::RecvError,
+    //         >,
+    //     >,
+    //     (usize, usize),
+    // )>;
     // let mut hl_result = None;
 
     let mut hist = Hist {
@@ -304,6 +319,24 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                 mtime = modify!();
                 state.consume(Action::Changed).unwrap();
                 window.request_redraw();
+            }
+            if let CompletionState::Complete(o, x)= &mut complete &&
+                x.as_ref().is_some_and(|(x, _)|x.is_finished()) &&  let Some((task, c)) = x.take() && let Some(ref l) = lsp{
+                // if text.cursor() ==* c_ {
+                    println!("bl0ck on");
+
+                    *o = l.runtime.block_on(task).ok().and_then(Result::ok).flatten().map(|x| Complete {
+r:x,start:0,selection:0,scroll:0,
+                    } );
+                    if let Some(x) = o {
+                    std::fs::write("complete_", serde_json::to_string_pretty(&x.r).unwrap()).unwrap();
+                    println!("resolved")
+                    }
+                    // println!("{complete:#?}");
+                // } else {
+                //     println!("abort {c_:?}");
+                //     x.abort();
+                // }
             }
             match event {
                 Event::AboutToWait => {}
@@ -436,6 +469,60 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                                 i.as_mut(),(0,0)
                         )
                         };
+                        if let CompletionState::Complete(Some(ref x,),_) = complete {
+                            let c = com::s(x, 40,&if matches!(text.rope.get_char(text.cursor-1), Some('.' | ':')) {
+                                "".to_string()
+                            } else {
+                                text.rope.slice(text.word_left_p()..text.cursor).chars().collect::<String>()
+                            });                            
+                            let ppem = 20.0;
+
+                            let met = FONT.metrics(&[]);
+                            let fac = ppem / met.units_per_em as f32;
+                            let (_x, _y) = text.cursor();
+                            let _x = _x + text.line_number_offset()+1;
+
+                            // let [(_x, _y), (_x2, _)] = text.position(text.cursor);
+                            // let [_x, _x2] = [_x, _x2].add(text.line_number_offset()+1);
+                            let _y = _y.wrapping_sub(text.vo);
+                            // if !(cursor_position.1 == _y && (_x..=_x2).contains(&cursor_position.0)) {
+                            //     return;
+                            // }
+                            let position = (
+                                ((_x) as f32 * fw).round() as usize,
+                                ((_y as f32 as f32) * (fh + ls * fac)).round() as usize,
+                            );
+
+                            
+
+                            let ls = 10.0;
+                            let mut r = c.len()/40;
+                            let (w, h) = dsb::size(&fonts.regular, ppem, ls, (40, r));                           
+                            let top = position.1.checked_sub(h).unwrap_or((((_y + 1) as f32) * (fh + ls * fac)).round() as usize,);
+                            let (_, y) = dsb::fit(&fonts.regular, ppem, ls, (window.inner_size().width as _ /* - left */,( window.inner_size().height as usize - top ) ));
+                            r = r.min(y);
+
+                            let left =
+                            if position.0 + w as usize > window.inner_size().width as usize {
+                                window.inner_size().width as usize- w as usize
+                            } else { position.0 };
+
+                            let (w, h) = dsb::size(&fonts.regular, ppem, ls, (40, r));
+                            // let mut i2 = Image::build(w as _, h as _).fill(BG);
+                            unsafe{ dsb::render(
+                                &c,
+                                (40, 0),
+                                ppem,
+                                &mut fonts,
+                                ls,
+                                true, 
+                                i.as_mut(),
+                                (left as _, top as _)
+                            )};
+                            // dbg!(w, h, i2.width(), i2.height(), window.inner_size(), i.width(),i.height());
+                            // unsafe { i.overlay_at(&i2.as_ref(), left as u32, top as u32) };
+                            i.r#box((left .saturating_sub(1) as _, top.saturating_sub(1) as _), w as _,h as _, [0;3]);
+                        }
                         hovering.lock().as_ref().map(|x| x.span.clone().map(|sp| {
                             let met = FONT.metrics(&[]);
                             let fac = ppem / met.units_per_em as f32;
@@ -636,6 +723,10 @@ RUNNING.remove(&hover,&RUNNING.guard());
                     if button == MouseButton::Left {
                         unsafe { CLICKING = true };
                     }
+                    match complete.consume(CompletionAction::Click).unwrap() {
+                        Some(CDo::Abort(x))=>{ x.abort() },
+                        _ => {},
+                    }
                     match state.consume(Action::M(button)).unwrap() {
                         Some(Do::MoveCursor) => {
                             text.cursor = text.index_at(cursor_position);
@@ -740,12 +831,57 @@ RUNNING.remove(&hover,&RUNNING.guard());
                         }
                         Some(Do::Edit) => {
                             hist.test_push(&text);
-                            handle2(event.logical_key, &mut text);
+                            let cb4 = text.cursor;
+                            let r = handle2(&event.logical_key, &mut text);
                             text.scroll_to_cursor();
+
                             if hist.record(&text) {
                                 change!();
                             }
-lsp!().map(|x|x.0.request_complete(x.1, text.cursor()));;
+if let Some(r) = r {
+    lsp!().map(|(lsp, o)|{
+        let window = window.clone();
+        let ctx = match complete.consume(CompletionAction::TypeCharacter).unwrap() {
+            Some(CDo::Request) => {
+                CompletionContext {
+                trigger_kind: CompletionTriggerKind::TRIGGER_CHARACTER, trigger_character:Some(r.to_string()) }
+
+                // println!("make rq");
+                // let x = lsp.request_complete(o, text.cursor(), );
+                // let h = lsp.runtime.spawn(async move {
+                //     let r = x.await;
+                //     window.request_redraw();
+                //     r
+                // });
+                // complete = CompletionState::Complete(None, Some((h,cb4)));
+                // dbg!(&complete);
+            }
+            Some(CDo::Update) => {
+                // CompletionContext {
+                // trigger_kind: CompletionTriggerKind
+                CompletionContext {
+                trigger_kind: CompletionTriggerKind::TRIGGER_FOR_INCOMPLETE_COMPLETIONS, trigger_character:None }
+                // complete = CompletionState::Complete(None, Some(lsp.runtime.spawn(async move {
+                //     let r = x.await;
+                //     window.request_redraw();
+                //     r
+                // })));
+            }
+            None => {return},
+            _ => panic!(),
+        };
+        println!("make rq");
+        let x = lsp.request_complete(o, text.cursor(), ctx);
+        let h = lsp.runtime.spawn(async move {
+            let r = x.await;
+            window.request_redraw();
+            r
+        });
+        complete = CompletionState::Complete(None, Some((h,text.cursor)));
+        dbg!(&complete);
+
+    }); 
+}
                         }
                         Some(Do::Undo) => {
                             hist.test_push(&text);
@@ -895,11 +1031,12 @@ lsp!().map(|x|x.0.request_complete(x.1, text.cursor()));;
     winit_app::run_app(event_loop, app);
 }
 
-fn handle2(key: Key, text: &mut TextArea) {
+fn handle2<'a>(key: &'a Key, text: &mut TextArea) -> Option<&'a str> {
     use Key::*;
 
     match key {
         Named(Space) => text.insert(" "),
+        Named(Backspace) if ctrl() => text.backspace_word(),
         Named(Backspace) => text.backspace(),
         Named(Home) if ctrl() => {
             text.cursor = 0;
@@ -927,12 +1064,14 @@ fn handle2(key: Key, text: &mut TextArea) {
         Named(Enter) => text.enter(),
         Character(x) => {
             text.insert(&x);
+            return Some(x);
         }
         _ => {}
     };
+    None
 }
 fn handle(key: Key, mut text: TextArea) -> TextArea {
-    handle2(key, &mut text);
+    handle2(&key, &mut text);
     text
 }
 pub static FONT: LazyLock<FontRef<'static>> = LazyLock::new(|| {
@@ -1040,6 +1179,7 @@ Search((x, y, m)) => {
     K(_) => Default [Reinsert],
 }
 }
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 enum InputRequest {
     SaveFile,
@@ -1097,4 +1237,40 @@ impl<T> M<T> for Option<T> {
     fn m(&mut self, f: impl FnOnce(T) -> T) {
         *self = self.take().map(f);
     }
+}
+
+rust_fsm::state_machine! {
+    #[derive(Debug)]
+    pub(crate) CompletionState => CompletionAction => CDo
+    None => Click => None,
+    None => TypeCharacter => Complete(
+        (Option<Complete>, Option<(JoinHandle<
+            Result<
+                Option<CompletionResponse>,
+                tokio::sync::oneshot::error::RecvError,
+            >,
+        >, usize)>) => (None,None)
+    ) [Request],
+    Complete((_x, None)) => Click => None,
+    Complete((_x, Some((y, _)))) => Click => None [Abort(JoinHandle<
+            Result<
+                Option<CompletionResponse>,
+                tokio::sync::oneshot::error::RecvError,
+            >,
+        > => y)],
+    Complete((_x, _y)) => TypeCharacter => _ [Update],
+    Complete((Some(x), task)) => Enter => None [Finish(Complete => {
+        if let Some((task, _)) = task { task.abort() }; x
+    })]
+}
+impl Default for CompletionState {
+    fn default() -> Self {
+        Self::None
+    }
+}
+#[derive(Debug)] struct Complete {
+    r: CompletionResponse,
+    start: usize,
+    selection: usize,
+    scroll: usize,
 }

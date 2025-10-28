@@ -23,9 +23,9 @@ use winit::keyboard::{NamedKey, SmolStr};
 
 use crate::text::semantic::{MCOLORS, MODIFIED, MSTYLE};
 macro_rules! theme {
-    ($n:literal $($x:literal $color:literal $($style:expr)?),+ $(,)?) => {
+    ($($x:literal $color:literal $($style:expr)?),+ $(,)?) => {
         #[rustfmt::skip]
-        pub const NAMES: [&str; $n] = [$($x),+];
+        pub const NAMES: [&str; [$($x),+].len()] = [$($x),+];
         #[rustfmt::skip]
         pub const COLORS: [[u8; 3]; NAMES.len()] = car::map!([$($color),+], |x| color(x.tail()));
         pub const STYLES: [u8; NAMES.len()] = [$(
@@ -33,7 +33,7 @@ macro_rules! theme {
         ),+];
     };
 }
-theme! { 16
+theme! {
     "attribute" b"#ffd173",
     "comment" b"#5c6773" Style::ITALIC,
     "constant" b"#DFBFFF",
@@ -65,7 +65,10 @@ mod semantic {
         };
     }
     use super::color;
-    theme! { 19
+    theme! {
+    "constructor" b"#FFAD66",
+    "field" b"#cccac2",
+
     "comment" b"#5c6773" Style::ITALIC,
     // "decorator" b"#cccac2",
     // "enumMember" b"#cccac2",
@@ -81,12 +84,13 @@ mod semantic {
     "string" b"#D5FF80",
     // "struct" b"#cccac2",
     // "typeParameter" b"#cccac2",
+    "class" b"#73b9ff",
     "enum" b"#73b9ff" Style::ITALIC | Style::BOLD,
     "builtinType" b"#73d0ff" Style::ITALIC,
     // "type" b"#73d0ff" Style::ITALIC | Style::BOLD,
     "typeAlias" b"#69caed" Style::ITALIC | Style::BOLD,
     "struct" b"#73d0ff" Style::ITALIC | Style::BOLD,
-    // "variable" b"#cccac2",
+    "variable" b"#cccac2",
     // "angle" b"#cccac2",
     // "arithmetic" b"#cccac2",
     // "attributeBracket" b"#cccac2",
@@ -143,7 +147,7 @@ const fn of(x: &'static str) -> usize {
     panic!()
 }
 
-pub const fn color(x: &[u8; 6]) -> [u8; 3] {
+pub const fn color(x: [u8; 6]) -> [u8; 3] {
     car::map!(
         car::map!(x, |b| (b & 0xF) + 9 * (b >> 6)).chunked::<2>(),
         |[a, b]| a * 16 + b
@@ -292,6 +296,12 @@ impl TextArea {
     pub fn cursor(&self) -> (usize, usize) {
         self.xy(self.cursor)
     }
+    pub fn x(&self, c: usize) -> usize {
+        self.xy(c).0
+    }
+    pub fn y(&self, c: usize) -> usize {
+        self.xy(c).1
+    }
 
     pub fn xy(&self, c: usize) -> (usize, usize) {
         let y = self.rope.char_to_line(c);
@@ -383,7 +393,7 @@ impl TextArea {
         self.set_ho();
     }
 
-    fn at(&self) -> char {
+    pub fn at(&self) -> char {
         self.rope.get_char(self.cursor).unwrap_or('\n')
     }
     #[implicit_fn]
@@ -418,42 +428,51 @@ impl TextArea {
         self.set_ho();
     }
     // from μ
-    #[lower::apply(saturating)]
     pub fn word_left(&mut self) {
-        self.left();
-        while self.at().is_whitespace() {
-            if self.cursor == 0 {
-                return;
-            }
-            self.left();
-        }
-        if is_word(self.at()).not()
-            && !self.at().is_whitespace()
-            && !is_word(self.rope.char(self.cursor - 1))
-        {
-            while is_word(self.at()).not()
-                && self.at().is_whitespace().not()
-            {
-                if self.cursor == 0 {
-                    return;
-                }
-                self.left();
-            }
-            self.right();
-        } else {
-            self.left();
-            self.right();
-            while is_word(self.at()) {
-                if self.cursor == 0 {
-                    return;
-                }
-                self.left();
-            }
-        }
+        self.cursor = self.word_left_p();
         self.setc();
         self.set_ho();
     }
-
+    #[lower::apply(saturating)]
+    pub fn word_left_p(&self) -> usize {
+        let mut c = self.cursor - 1;
+        if self.x(self.cursor) == 0 {
+            return c;
+        }
+        macro_rules! at {
+            () => {
+                self.rope.get_char(c).unwrap_or('\n')
+            };
+        }
+        while at!().is_whitespace() {
+            if self.x(c) == 0 {
+                return c;
+            }
+            c -= 1
+        }
+        if is_word(at!()).not()
+            && !at!().is_whitespace()
+            && !is_word(self.rope.char(c - 1))
+        {
+            while is_word(at!()).not() && at!().is_whitespace().not() {
+                if self.x(c) == 0 {
+                    return c;
+                }
+                c -= 1;
+            }
+            c += 1;
+        } else {
+            c -= 1;
+            while is_word(at!()) {
+                if self.x(c) == 0 {
+                    return c;
+                }
+                c -= 1;
+            }
+            c += 1;
+        }
+        c
+    }
     pub fn enter(&mut self) {
         use run::Run;
         let n = self.indentation();
@@ -510,6 +529,12 @@ impl TextArea {
         {
             self.vo = self.vo.saturating_sub(1);
         }
+        self.set_ho();
+    }
+    pub fn backspace_word(&mut self) {
+        _ = self.rope.try_remove(self.word_left_p()..self.cursor);
+        self.cursor = self.word_left_p();
+        self.setc();
         self.set_ho();
     }
     #[lower::apply(saturating)]
@@ -1353,12 +1378,12 @@ fn txt() {
     dbg!(o.as_chunks::<4>().0);
 }
 
-// pub trait CoerceOption<T> {
-//     fn coerce(self) -> impl Iterator<Item = T>;
-// }
-// impl<I: Iterator<Item = T>, T> CoerceOption<T> for Option<I> {
-//     #[allow(refining_impl_trait)]
-//     fn coerce(self) -> std::iter::Flatten<std::option::IntoIter<I>> {
-//         self.into_iter().flatten()
-//     }
-// }
+pub trait CoerceOption<T> {
+    fn coerce(self) -> impl Iterator<Item = T>;
+}
+impl<I: Iterator<Item = T>, T> CoerceOption<T> for Option<I> {
+    #[allow(refining_impl_trait)]
+    fn coerce(self) -> std::iter::Flatten<std::option::IntoIter<I>> {
+        self.into_iter().flatten()
+    }
+}

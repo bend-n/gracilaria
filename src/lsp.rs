@@ -1,13 +1,10 @@
 use std::collections::HashMap;
-use std::io::BufReader;
 use std::path::Path;
-use std::pin::Pin;
-use std::process::{Command, Stdio};
 use std::sync::atomic::AtomicI32;
 use std::sync::atomic::Ordering::Relaxed;
 use std::task::Poll;
-use std::thread::{JoinHandle, sleep, spawn};
-use std::time::{Duration, Instant};
+use std::thread::{JoinHandle, spawn};
+use std::time::Instant;
 
 use Default::default;
 use anyhow::Error;
@@ -42,7 +39,7 @@ pub struct Client {
     pub progress:
         &'static papaya::HashMap<ProgressToken, Option<WorkDoneProgress>>,
     pub not_rx: Receiver<N>,
-    pub req_rx: Receiver<Rq>,
+    // pub req_rx: Receiver<Rq>,
     pub semantic_tokens: (
         &'static ArcSwap<Box<[SemanticToken]>>,
         Mutex<Option<(tokio::task::JoinHandle<Result<(), Error>>, i32)>>,
@@ -136,8 +133,18 @@ impl Client {
         )
     }
 
-    pub fn request_complete(&self, f: &Path, (x, y): (usize, usize)) {
-        let (rx, i) = self
+    pub fn request_complete(
+        &self,
+        f: &Path,
+        (x, y): (usize, usize),
+        c: CompletionContext,
+    ) -> impl Future<
+        Output = Result<
+            Option<CompletionResponse>,
+            oneshot::error::RecvError,
+        >,
+    > + use<> {
+        let (rx, _) = self
             .request::<Completion>(&CompletionParams {
                 text_document_position: TextDocumentPositionParams {
                     text_document: {
@@ -149,16 +156,10 @@ impl Client {
                 },
                 work_done_progress_params: default(),
                 partial_result_params: default(),
-                context: None,
+                context: Some(c),
             })
             .unwrap();
-        self.runtime.spawn(async move {
-            std::fs::write(
-                "complete_",
-                format!("{:#?}", rx.await.unwrap()),
-            );
-            // dbg!(rx.recv().unwrap());
-        });
+        rx
     }
 
     pub fn rq_semantic_tokens(&self, f: &Path) -> anyhow::Result<()> {
@@ -217,9 +218,8 @@ pub fn run(
     let (not_tx, not_rx) = unbounded();
     let (_req_tx, _req_rx) = unbounded();
     let (ch_tx, ch_rx) = unbounded();
-    let mut c = Client {
+    let mut c: Client = Client {
         tx,
-        req_rx: _req_rx,
         ch_tx: ch_tx.clone(),
         progress: Box::leak(Box::new(papaya::HashMap::new())),
         runtime: tokio::runtime::Builder::new_multi_thread()
@@ -275,7 +275,34 @@ pub fn run(
                     }),
                     completion_item_kind: Some(
                         CompletionItemKindCapability {
-                            value_set: None,
+                            value_set: Some(
+vec![CompletionItemKind::TEXT,
+CompletionItemKind::METHOD, // ()
+CompletionItemKind::FUNCTION, // ()
+CompletionItemKind::CONSTRUCTOR, // -> 
+CompletionItemKind::FIELD, // x.
+CompletionItemKind::VARIABLE, // x
+CompletionItemKind::CLASS,
+CompletionItemKind::INTERFACE, 
+CompletionItemKind::MODULE, // ::
+CompletionItemKind::PROPERTY, // x.
+CompletionItemKind::UNIT,
+CompletionItemKind::VALUE, // 4 
+CompletionItemKind::ENUM, // un
+CompletionItemKind::KEYWORD, 
+CompletionItemKind::SNIPPET, // ! 
+CompletionItemKind::COLOR,
+CompletionItemKind::FILE,
+CompletionItemKind::REFERENCE, // &
+CompletionItemKind::FOLDER,
+CompletionItemKind::ENUM_MEMBER,
+CompletionItemKind::CONSTANT, // N
+CompletionItemKind::STRUCT, // X
+CompletionItemKind::EVENT,
+CompletionItemKind::OPERATOR, // +
+CompletionItemKind::TYPE_PARAMETER]
+                            ),
+                            
                             // value_set: Some(vec![CompletionItemKind::]),
                         },
                     ),
@@ -341,27 +368,41 @@ pub fn run(
         }),
         initialization_options: Some(json! {{
             "cargo": {
-                "buildScripts": {
-                    "enable": true,
-                }
+                "buildScripts": { "enable": true }
             },
             "procMacro": {
                 "enable": true,
+                "attributes": { "enable": true }
             },
-            "procMacro.attributes.enable": true,
-            "inlayHints.closureReturnTypeHints.enable": "with_block",
-            "inlayHints.closingBraceHints.minLines": 5,
-            "inlayHints.closureStyle": "rust_analyzer",
+            "inlayHints": {
+                "closureReturnTypeHints": { "enable": "with_block" },
+                "closingBraceHints": { "minLines": 5 },
+                "closureStyle": "rust_analyzer",
+                "genericParameterHints": {
+                "type": { "enable": true } },
+                "rangeExclusiveHints": { "enable": true },
+                "closureCaptureHints": { "enable": true },
+                "expressionAdjustmentHints": {
+                    "hideOutsideUnsafe": true,
+                    "enable": "never",
+                    "mode": "prefer_prefix"
+                }
+            },
+            "semanticHighlighting": {
+                "punctuation": {
+                    "separate": {
+                        "macroBang": true
+                    },
+                    "specialization": { "enable": true },
+                    "enable": true
+                }
+            },
             "showUnlinkedFileNotification": false,
-            "inlayHints.genericParameterHints.type.enable": true,
-            "inlayHints.rangeExclusiveHints.enable": true,
-            "inlayHints.closureCaptureHints.enable": true,
-            "inlayHints.expressionAdjustmentHints.hideOutsideUnsafe": true,
-            "inlayHints.expressionAdjustmentHints.enable": "never",
-            "inlayHints.expressionAdjustmentHints.mode": "prefer_prefix",
-            "semanticHighlighting.punctuation.separate.macro.bang": true,
-            "semanticHighlighting.punctuation.enable": true,
-            "semanticHighlighting.punctuation.specialization.enable": true,
+            "completion": {
+                "fullFunctionSignatures": { "enable": true, },
+                "autoIter": { "enable": false, },
+                "privateEditable": { "enable": true },
+            },
         }}),
         trace: None,
         workspace_folders: Some(vec![workspace]),
@@ -450,85 +491,6 @@ pub fn run(
         }
     });
     (c, iot, h, ch_rx)
-}
-
-pub fn x() {
-    let mut c = Command::new("/home/os/.cargo/bin/rust-analyzer")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
-        .spawn()
-        .unwrap();
-
-    log::info!("helol");
-
-    let (c, rx, iot, ch) = run(
-        lsp_server::stdio::stdio_transport(
-            BufReader::new(c.stdout.take().unwrap()),
-            c.stdin.take().unwrap(),
-        ),
-        WorkspaceFolder {
-            uri: "file:///home/os/gracilaria".parse().unwrap(),
-            name: "gracilaria".into(),
-        },
-    );
-    let n = c.not_rx.clone();
-    let r = c.req_rx.clone();
-    let p = c.progress;
-
-    // c.request::<SemanticTokensFullRequest>(&SemanticTokensParams {
-    //     work_done_progress_params: default(),
-    //     partial_result_params: default(),
-    //     text_document: TextDocumentIdentifier::new(
-    //         url::Url::from_file_path(Path::new(
-    //             "/home/os/gracilaria/src/text.rs",
-    //         ))
-    //         .unwrap(),
-    //     ),
-    // })
-    // .unwrap();
-    sleep(Duration::from_secs(40));
-    c.open(
-        Path::new("/home/os/gracilaria/src/user.rs"),
-        "fn main() {}".into(),
-    )
-    .unwrap();
-    c.rq_semantic_tokens(Path::new("/home/os/gracilaria/src/user.rs"))
-        .unwrap();
-
-    dbg!(rx.writer.join().unwrap()).unwrap();
-
-    spawn(|| {
-        for elem in r {
-            match &*elem.method {
-                x if x == WorkDoneProgressCreate::METHOD => {
-                    elem.load::<WorkDoneProgressCreate>().unwrap();
-                }
-                _ => {}
-            }
-        }
-    });
-    loop {}
-    drop(c);
-
-    //     let wait = c
-    //     .request::<SemanticTokensFullRequest>(&SemanticTokensParams {
-    //         work_done_progress_params: default(),
-    //         partial_result_params: default(),
-    //         text_document: TextDocumentIdentifier {
-    //             uri: "file:///home/os/gracilaria/src/main.rs"
-    //                 .parse()
-    //                 .unwrap(),
-    //         },
-    //     })
-    //     .unwrap();
-    // spawn(|| {
-    //     let x = wait.recv_eepy().unwrap();
-    //     println!(
-    //         "found! {:#?}",
-    //         x.extract::<SemanticTokensResult>().unwrap()
-    //     );
-    // });
 }
 
 // trait RecvEepy<T>: Sized {
