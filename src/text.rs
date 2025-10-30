@@ -393,7 +393,11 @@ impl TextArea {
         self.set_ho();
     }
 
-    pub fn at(&self) -> char {
+    pub fn at_(&self) -> char {
+        self.rope.get_char(self.cursor - 1).unwrap_or('\n')
+    }
+    /// ??
+    pub fn at_plus_one(&self) -> char {
         self.rope.get_char(self.cursor).unwrap_or('\n')
     }
     #[implicit_fn]
@@ -405,8 +409,8 @@ impl TextArea {
             .take_while(_.is_whitespace())
             .count();
 
-        self.cursor += if is_word(self.at()).not()
-            && !self.at().is_whitespace()
+        self.cursor += if is_word(self.at_plus_one()).not()
+            && !self.at_plus_one().is_whitespace()
             && !is_word(self.rope.char(self.cursor + 1))
         {
             self.rope
@@ -532,8 +536,9 @@ impl TextArea {
         self.set_ho();
     }
     pub fn backspace_word(&mut self) {
-        _ = self.rope.try_remove(self.word_left_p()..self.cursor);
-        self.cursor = self.word_left_p();
+        let c = self.word_left_p();
+        _ = self.rope.try_remove(c..self.cursor);
+        self.cursor = c;
         self.setc();
         self.set_ho();
     }
@@ -931,7 +936,7 @@ impl TextArea {
     }
 }
 
-fn is_word(r: char) -> bool {
+pub fn is_word(r: char) -> bool {
     matches!(r, 'a'..='z' | 'A'..='Z' | '0'..='9' | '_')
 }
 pub static LOADER: LazyLock<Loader> = LazyLock::new(|| {

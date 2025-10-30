@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::mem::MaybeUninit;
 use std::sync::LazyLock;
 
@@ -8,48 +9,61 @@ use fimg::Image;
 use itertools::Itertools;
 use lsp_types::*;
 
+use crate::text::color;
 use crate::{Complete, FG};
-const BG: [u8; 3] = crate::text::color(*b"1c212b");
-const T_BG: [u8; 3] = crate::text::color(*b"11141a");
 
-pub fn s(x: &Complete, c: usize, filter: &str) -> Vec<Cell> {
+pub fn s(completion: &Complete, c: usize, filter: &str) -> Vec<Cell> {
     let mut out = vec![];
-    let x = &x.r;
+    let x = &completion.r;
     let y = match x {
         CompletionResponse::Array(x) => x,
         CompletionResponse::List(x) => &x.items,
     };
+    #[thread_local]
     static mut MATCHER: LazyLock<nucleo::Matcher> =
         LazyLock::new(|| nucleo::Matcher::new(nucleo::Config::DEFAULT));
+
     let p = nucleo::pattern::Pattern::parse(
         filter,
-        nucleo::pattern::CaseMatching::Ignore,
+        nucleo::pattern::CaseMatching::Smart,
         nucleo::pattern::Normalization::Smart,
     );
-
+    dbg!(filter);
     let mut i = y
         .iter()
         .filter(|y| {
-            y.filter_text
-                .as_deref()
-                .unwrap_or(&y.label)
-                .starts_with(filter)
+            filter.is_empty()
+                || y.filter_text
+                    .as_deref()
+                    .unwrap_or(&y.label)
+                    .chars()
+                    .collect::<HashSet<_>>()
+                    .intersection(&filter.chars().collect())
+                    .count()
+                    > 0
         })
         .map(|y| {
-            let mut to = vec![];
+            let mut utf32 = vec![];
+
+            let hay = y.filter_text.as_deref().unwrap_or(&y.label);
+            let mut indices = vec![];
             let score = p
-                .score(
-                    nucleo::Utf32Str::new(
-                        y.filter_text.as_deref().unwrap_or(&y.label),
-                        &mut to,
-                    ),
+                .indices(
+                    nucleo::Utf32Str::new(hay, &mut utf32),
                     unsafe { &mut *MATCHER },
+                    &mut indices,
                 )
                 .unwrap_or(0);
-            (score, y)
+            indices.sort_unstable();
+            indices.dedup();
+
+            (score, y, indices)
         })
         .sorted_by_key(|x| x.0)
-        .take(13);
+        .rev()
+        .zip(0..)
+        .skip(completion.vo)
+        .take(N);
 
     // let Some((s, x)) = i.next() else {
     //     return vec![];
@@ -93,15 +107,29 @@ pub fn s(x: &Complete, c: usize, filter: &str) -> Vec<Cell> {
     //     //             .starts_with(filter)
     //     //     })
     //     .take(13)
-    i.for_each(|(_, x)| r(x, c, &mut out));
+    i.for_each(|((_, x, indices), i)| {
+        r(x, c, i == completion.selection, &indices, &mut out)
+    });
+
     out
 }
 fn charc(c: &str) -> usize {
     c.chars().count()
 }
 #[implicit_fn::implicit_fn]
-fn r(x: &CompletionItem, c: usize, to: &mut Vec<Cell>) {
-    let mut b = vec![D; c];
+fn r(
+    x: &CompletionItem,
+    c: usize,
+    selected: bool,
+    indices: &[u32],
+    to: &mut Vec<Cell>,
+) {
+    let bg = if selected { color(*b"262d3b") } else { color(*b"1c212b") };
+    const T_BG: [u8; 3] = color(*b"11141a");
+
+    let ds: Style = Style { bg: bg, color: FG, flags: 0 };
+    let d: Cell = Cell { letter: None, style: ds };
+    let mut b = vec![d; c];
     let ty = match x.kind {
         Some(CompletionItemKind::TEXT) => " ",
         Some(
@@ -149,18 +177,22 @@ fn r(x: &CompletionItem, c: usize, to: &mut Vec<Cell>) {
         i.iter_mut()
             .rev()
             .zip(details.map(|x| {
-                Style { bg: BG, color: [154, 155, 154], ..default() }
-                    .basic(x)
+                Style { bg, color: [154, 155, 154], ..default() }.basic(x)
             }))
             .for_each(|(a, b)| *a = b);
     }
     i.iter_mut()
-        .zip(x.label.chars().map(|x| DS.basic(x)))
-        .for_each(|(a, b)| *a = b);
+        .zip(x.label.chars().map(|x| ds.basic(x)))
+        .zip(0..)
+        .for_each(|((a, b), i)| {
+            *a = b;
+            if indices.contains(&i) {
+                a.style |= (Style::BOLD, color(*b"ffcc66"));
+            }
+        });
     to.extend(b);
 }
-const DS: Style = Style { bg: BG, color: FG, flags: 0 };
-const D: Cell = Cell { letter: None, style: DS };
+pub const N: usize = 13;
 #[test]
 fn t() {
     let ppem = 20.0;
@@ -170,7 +202,7 @@ fn t() {
     dbg!(dsb::size(&crate::FONT, ppem, lh, (c, r)));
     let y = serde_json::from_str(include_str!("../complete_")).unwrap();
     let cells =
-        s(&Complete { r: y, start: 0, selection: 0, scroll: 0 }, c, "");
+        s(&Complete { r: y, start: 0, selection: 0, vo: 0 }, c, "");
     dbg!(c, r);
     dbg!(w, h);
 

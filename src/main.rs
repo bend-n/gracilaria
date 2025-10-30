@@ -1,6 +1,7 @@
 // this looks pretty good though
 #![feature(tuple_trait, unboxed_closures, fn_traits)]
 #![feature(
+    thread_local,
     result_option_map_or_default,
     iter_intersperse,
     stmt_expr_attributes,
@@ -35,6 +36,7 @@ use std::time::Instant;
 
 use Default::default;
 use NamedKey::*;
+use array_chunks::ExtensionTrait;
 use atools::prelude::AASAdd;
 use crossbeam::channel::RecvError;
 use diff_match_patch_rs::PatchInput;
@@ -65,7 +67,7 @@ use winit::window::{Icon, Window};
 
 use crate::bar::Bar;
 use crate::hov::Hovr;
-use crate::text::{Diff, TextArea};
+use crate::text::{Diff, TextArea, is_word};
 mod bar;
 pub mod com;
 pub mod hov;
@@ -221,10 +223,10 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
             );
             c.open(&origin, std::fs::read_to_string(&origin).unwrap())
                 .unwrap();
-            (c, (t, t2), changed)
+            (&*Box::leak(Box::new(c)), (t, t2), changed)
         },
     );
-    let (lsp, t, ch) = match c {
+    let (lsp, t, mut w) = match c {
         Some((a, b, c)) => (Some(a), Some(b), Some(c)),
         None => (None, None, None),
     };
@@ -261,15 +263,8 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                 .map(|x| x.metadata().unwrap().modified().unwrap())
         };
     }
-    macro_rules! change {
-        () => {
-            lsp!().map(|(x, origin)| {
-                x.edit(&origin, text.rope.to_string()).unwrap();
-                x.rq_semantic_tokens(origin).unwrap();
-            });
-        };
-    }
-    lsp!().map(|(x, origin)| x.rq_semantic_tokens(origin).unwrap());
+
+    lsp!().map(|(x, origin)| x.rq_semantic_tokens(origin, None).unwrap());
     let mut mtime = modify!();
     macro_rules! save {
         () => {{
@@ -282,7 +277,6 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
             mtime = modify!();
         }};
     }
-    static PUT: OnceLock<Arc<Window>> = OnceLock::new();
     let app = winit_app::WinitAppBuilder::with_init(
         move |elwt| {
             let window = winit_app::make_window(elwt, |x| {
@@ -290,9 +284,12 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                     .with_name("com.bendn.gracilaria", "")
                     .with_window_icon(Some(Icon::from_rgba(include_bytes!("../dist/icon-32").to_vec(), 32, 32).unwrap()))
             }); 
+            if let Some(x) = w.take() {
+                x.send(window.clone()).unwrap();
+            }
+            
             window.set_ime_allowed(true);
             window.set_ime_purpose(winit::window::ImePurpose::Terminal);
-            PUT.set(window.clone()).unwrap();
             let context =
                 softbuffer::Context::new(window.clone()).unwrap();
 
@@ -304,6 +301,14 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
     )
     .with_event_handler(
         move |(window, _context), surface, event, elwt| {
+                macro_rules! change {
+        () => {
+            lsp!().map(|(x, origin)| {
+                x.edit(&origin, text.rope.to_string()).unwrap();
+                x.rq_semantic_tokens(origin, Some(window.clone())).unwrap();
+            });
+        };
+    }
             elwt.set_control_flow(ControlFlow::Wait);
             let (fw, fh) = dsb::dims(&FONT, ppem);
             let (c, r) = dsb::fit(
@@ -321,16 +326,15 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                 window.request_redraw();
             }
             if let CompletionState::Complete(o, x)= &mut complete &&
-                x.as_ref().is_some_and(|(x, _)|x.is_finished()) &&  let Some((task, c)) = x.take() && let Some(ref l) = lsp{
+                x.as_ref().is_some_and(|(x, _)|x.is_finished()) && 
+                let Some((task, c)) = x.take() && let Some(ref l) = lsp{
                 // if text.cursor() ==* c_ {
-                    println!("bl0ck on");
-
                     *o = l.runtime.block_on(task).ok().and_then(Result::ok).flatten().map(|x| Complete {
-r:x,start:0,selection:0,scroll:0,
+r:x,start:c,selection:0,vo:0,
                     } );
                     if let Some(x) = o {
-                    std::fs::write("complete_", serde_json::to_string_pretty(&x.r).unwrap()).unwrap();
-                    println!("resolved")
+                    // std::fs::write("complete_", serde_json::to_string_pretty(&x.r).unwrap()).unwrap();
+                    // println!("resolved")
                     }
                     // println!("{complete:#?}");
                 // } else {
@@ -456,7 +460,7 @@ r:x,start:0,selection:0,scroll:0,
                                 .unwrap_or("new buffer"),
                             &state,
                             &text,
-                            lsp.as_ref()
+                            lsp
                         );
                         unsafe {
                             dsb::render(
@@ -723,10 +727,7 @@ RUNNING.remove(&hover,&RUNNING.guard());
                     if button == MouseButton::Left {
                         unsafe { CLICKING = true };
                     }
-                    match complete.consume(CompletionAction::Click).unwrap() {
-                        Some(CDo::Abort(x))=>{ x.abort() },
-                        _ => {},
-                    }
+                    _ = complete.consume(CompletionAction::Click).unwrap();
                     match state.consume(Action::M(button)).unwrap() {
                         Some(Do::MoveCursor) => {
                             text.cursor = text.index_at(cursor_position);
@@ -832,56 +833,40 @@ RUNNING.remove(&hover,&RUNNING.guard());
                         Some(Do::Edit) => {
                             hist.test_push(&text);
                             let cb4 = text.cursor;
-                            let r = handle2(&event.logical_key, &mut text);
+                            if let Key::Named(Enter | ArrowUp | ArrowDown | Tab) = event.logical_key && let CompletionState::Complete(..) = complete{
+                            } else {
+                                handle2(&event.logical_key, &mut text);
+                            }
+                        
                             text.scroll_to_cursor();
+                            if cb4 != text.cursor && let CompletionState::Complete(Some(c), t)= &mut complete
+                                && ((text.cursor < c.start) || (!is_word(text.at_())&& (text.at_() != '.' || text.at_() != ':')) ) {
+                                if let Some((x, _)) = t.take() {
+                                    x.abort();
+                                }
+                                complete = CompletionState::None;
+                            }
 
                             if hist.record(&text) {
                                 change!();
                             }
-if let Some(r) = r {
     lsp!().map(|(lsp, o)|{
         let window = window.clone();
-        let ctx = match complete.consume(CompletionAction::TypeCharacter).unwrap() {
-            Some(CDo::Request) => {
-                CompletionContext {
-                trigger_kind: CompletionTriggerKind::TRIGGER_CHARACTER, trigger_character:Some(r.to_string()) }
-
-                // println!("make rq");
-                // let x = lsp.request_complete(o, text.cursor(), );
-                // let h = lsp.runtime.spawn(async move {
-                //     let r = x.await;
-                //     window.request_redraw();
-                //     r
-                // });
-                // complete = CompletionState::Complete(None, Some((h,cb4)));
-                // dbg!(&complete);
-            }
-            Some(CDo::Update) => {
-                // CompletionContext {
-                // trigger_kind: CompletionTriggerKind
-                CompletionContext {
-                trigger_kind: CompletionTriggerKind::TRIGGER_FOR_INCOMPLETE_COMPLETIONS, trigger_character:None }
-                // complete = CompletionState::Complete(None, Some(lsp.runtime.spawn(async move {
-                //     let r = x.await;
-                //     window.request_redraw();
-                //     r
-                // })));
+        match complete.consume(CompletionAction::K(event.logical_key.as_ref())).unwrap(){
+            Some(CDo::Request(ctx)) => {
+                let x = lsp.request_complete(o, text.cursor(), ctx);
+                let h = lsp.runtime.spawn(async move {
+                    x.await.inspect(|_| window.request_redraw())
+                });
+                let CompletionState::Complete(c, x) = &mut complete else { panic!()};
+                *x = Some((h,c.as_ref().map(|x|x.start).or(x.as_ref().map(|x|x.1)).unwrap_or(text.cursor)));
             }
             None => {return},
             _ => panic!(),
         };
-        println!("make rq");
-        let x = lsp.request_complete(o, text.cursor(), ctx);
-        let h = lsp.runtime.spawn(async move {
-            let r = x.await;
-            window.request_redraw();
-            r
-        });
-        complete = CompletionState::Complete(None, Some((h,text.cursor)));
-        dbg!(&complete);
-
+        
     }); 
-}
+
                         }
                         Some(Do::Undo) => {
                             hist.test_push(&text);
@@ -1018,16 +1003,6 @@ if let Some(r) = r {
             };
         },
     );
-    ch.map(|ch| {
-        thread::Builder::new().name("redrawer".into()).spawn(move || {
-            for () in ch {
-                PUT.get().map(|x| {
-                    x.request_redraw();
-                    println!("rq redraw");
-                });
-            }
-        })
-    });
     winit_app::run_app(event_loop, app);
 }
 
@@ -1241,26 +1216,33 @@ impl<T> M<T> for Option<T> {
 
 rust_fsm::state_machine! {
     #[derive(Debug)]
-    pub(crate) CompletionState => CompletionAction => CDo
+    pub(crate) CompletionState => CompletionAction<'i> => CDo
     None => Click => None,
-    None => TypeCharacter => Complete(
+    None => K(Key<&'i str> => Key::Character(k @ ("." | ":"))) => Complete(
         (Option<Complete>, Option<(JoinHandle<
             Result<
                 Option<CompletionResponse>,
                 tokio::sync::oneshot::error::RecvError,
             >,
         >, usize)>) => (None,None)
-    ) [Request],
+    ) [Request(CompletionContext => CompletionContext {trigger_kind: CompletionTriggerKind::TRIGGER_CHARACTER, trigger_character:Some(k.to_string()) })],
+    None => K(Key::Named(NamedKey::Space) if ctrl()) => Complete((None, None)) [Request(CompletionContext { trigger_kind: CompletionTriggerKind::INVOKED, trigger_character:None })],
+    None => K(Key::Character(x) if x.chars().next().is_some_and(is_word)) => Complete((None,None)) [Request(CompletionContext { trigger_kind: CompletionTriggerKind::INVOKED, trigger_character:None })],
+    None => K(_) => _,
+
+    // when
+    Complete((_x,_y)) => K(Key::Named(NamedKey::Tab) if shift()) => _ [SelectPrevious],
+    Complete((_x,_y)) => K(Key::Named(NamedKey::Tab)) => _ [SelectNext],
+
+    // exit cases
     Complete((_x, None)) => Click => None,
-    Complete((_x, Some((y, _)))) => Click => None [Abort(JoinHandle<
-            Result<
-                Option<CompletionResponse>,
-                tokio::sync::oneshot::error::RecvError,
-            >,
-        > => y)],
-    Complete((_x, _y)) => TypeCharacter => _ [Update],
-    Complete((Some(x), task)) => Enter => None [Finish(Complete => {
-        if let Some((task, _)) = task { task.abort() }; x
+    Complete((_x, Some((y, _)))) => Click => None [Abort(((),) => y.abort())],
+    Complete((_x, Some((y, _)))) => K(Key::Character(x) if !x.chars().all(is_word)) => None [Abort(y.abort())],
+    Complete((_x, None)) => K(Key::Character(x) if !x.chars().all(is_word)) => None,
+
+    Complete((_x, _y)) => K(_) => _ [Request(CompletionContext { trigger_kind: CompletionTriggerKind::TRIGGER_FOR_INCOMPLETE_COMPLETIONS, trigger_character:None })],
+    Complete((Some(x), task)) => K(Key::Named(NamedKey::Enter)) => None [Finish(Complete => {
+        task.map(|(task, _)| task.abort()); x
     })]
 }
 impl Default for CompletionState {
@@ -1268,9 +1250,10 @@ impl Default for CompletionState {
         Self::None
     }
 }
-#[derive(Debug)] struct Complete {
+#[derive(Debug)]
+struct Complete {
     r: CompletionResponse,
     start: usize,
     selection: usize,
-    scroll: usize,
+    vo: usize,
 }

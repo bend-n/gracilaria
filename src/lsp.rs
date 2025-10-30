@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::Arc;
 use std::sync::atomic::AtomicI32;
 use std::sync::atomic::Ordering::Relaxed;
 use std::task::Poll;
@@ -8,7 +9,7 @@ use std::time::Instant;
 
 use Default::default;
 use anyhow::Error;
-use arc_swap::ArcSwap;
+use arc_swap::{ArcSwap, ArcSwapOption};
 use crossbeam::channel::{
     Receiver, RecvError, SendError, Sender, unbounded,
 };
@@ -27,6 +28,7 @@ use lsp_types::*;
 use parking_lot::Mutex;
 use serde_json::json;
 use tokio::sync::oneshot;
+use winit::window::Window;
 pub struct Client {
     pub runtime: tokio::runtime::Runtime,
 
@@ -35,7 +37,6 @@ pub struct Client {
     pub initialized: Option<InitializeResult>,
     // pub pending: HashMap<i32, oneshot::Sender<Re>>,
     pub send_to: Sender<(i32, oneshot::Sender<Re>)>,
-    pub ch_tx: Sender<()>,
     pub progress:
         &'static papaya::HashMap<ProgressToken, Option<WorkDoneProgress>>,
     pub not_rx: Receiver<N>,
@@ -162,7 +163,11 @@ impl Client {
         rx
     }
 
-    pub fn rq_semantic_tokens(&self, f: &Path) -> anyhow::Result<()> {
+    pub fn rq_semantic_tokens(
+        &self,
+        f: &Path,
+        w: Option<Arc<Window>>,
+    ) -> anyhow::Result<()> {
         debug!("requested semantic tokens");
         let Some(b"rs") = f.extension().map(|x| x.as_encoded_bytes())
         else {
@@ -186,7 +191,6 @@ impl Client {
             },
         )?;
         let d = self.semantic_tokens.0;
-        let ch = self.ch_tx.clone();
         let x = self.runtime.spawn(async move {
             let y = rx.await?.unwrap();
             debug!("received semantic tokens");
@@ -197,7 +201,7 @@ impl Client {
                 SemanticTokensResult::Tokens(x) =>
                     d.store(x.data.into_boxed_slice().into()),
             };
-            ch.send(())?;
+            w.map(|x| x.request_redraw());
             anyhow::Ok(())
         });
         *p = Some((x, id));
@@ -212,15 +216,19 @@ pub fn run(
         lsp_server::IoThreads,
     ),
     workspace: WorkspaceFolder,
-) -> (Client, lsp_server::IoThreads, JoinHandle<()>, Receiver<()>) {
+) -> (
+    Client,
+    lsp_server::IoThreads,
+    JoinHandle<()>,
+    oneshot::Sender<Arc<Window>>,
+) {
     let now = Instant::now();
     let (req_tx, req_rx) = unbounded();
     let (not_tx, not_rx) = unbounded();
     let (_req_tx, _req_rx) = unbounded();
-    let (ch_tx, ch_rx) = unbounded();
+    let (window_tx, window_rx) = oneshot::channel::<Arc<Window>>();
     let mut c: Client = Client {
         tx,
-        ch_tx: ch_tx.clone(),
         progress: Box::leak(Box::new(papaya::HashMap::new())),
         runtime: tokio::runtime::Builder::new_multi_thread()
             .worker_threads(2)
@@ -431,6 +439,7 @@ CompletionItemKind::TYPE_PARAMETER]
     log::info!("lsp took {:?} to initialize", now.elapsed());
     let h = spawn(move || {
         let mut map = HashMap::new();
+        let w = window_rx.blocking_recv().unwrap();
         loop {
             crossbeam::select! {
                 recv(req_rx) -> x => match x {
@@ -477,7 +486,7 @@ CompletionItemKind::TYPE_PARAMETER]
                     Ok(Message::Notification(x @ N { method: "$/progress", .. })) => {
                         let ProgressParams {token,value:ProgressParamsValue::WorkDone(x) } = x.load::<Progress>().unwrap();
                         progress.update(token, move |_| Some(x.clone()), &progress.guard());
-                        _ = ch_tx.send(());
+                        w.request_redraw();
                     }
                     Ok(Message::Notification(notification)) => {
                         debug!("rx {notification:?}");
@@ -490,7 +499,7 @@ CompletionItemKind::TYPE_PARAMETER]
             }
         }
     });
-    (c, iot, h, ch_rx)
+    (c, iot, h, window_tx)
 }
 
 // trait RecvEepy<T>: Sized {
