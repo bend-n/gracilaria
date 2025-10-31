@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use std::mem::MaybeUninit;
 use std::sync::LazyLock;
 
@@ -9,16 +8,46 @@ use fimg::Image;
 use itertools::Itertools;
 use lsp_types::*;
 
-use crate::text::color;
-use crate::{Complete, FG};
+use crate::FG;
+use crate::text::{color, color_, set_a};
 
-pub fn s(completion: &Complete, c: usize, filter: &str) -> Vec<Cell> {
-    let mut out = vec![];
-    let x = &completion.r;
-    let y = match x {
-        CompletionResponse::Array(x) => x,
-        CompletionResponse::List(x) => &x.items,
-    };
+#[derive(Debug)]
+pub struct Complete {
+    pub r: CompletionResponse,
+    pub start: usize,
+    pub selection: usize,
+    pub vo: usize,
+}
+impl Complete {
+    pub fn next(&mut self, f: &str) {
+        let n = filter(self, f).count();
+        self.selection += 1;
+        if self.selection == n {
+            self.vo = 0;
+            self.selection = 0;
+        }
+        if self.selection >= self.vo + N {
+            self.vo += 1;
+        }
+    }
+
+    pub fn back(&mut self, f: &str) {
+        let n = filter(self, f).count();
+        if self.selection == 0 {
+            self.vo = n - N;
+            self.selection = n - 1;
+        } else {
+            self.selection -= 1;
+            if self.selection < self.vo {
+                self.vo -= 1;
+            }
+        }
+    }
+}
+fn score<'a>(
+    x: impl Iterator<Item = &'a CompletionItem>,
+    filter: &'_ str,
+) -> impl Iterator<Item = (u32, &'a CompletionItem, Vec<u32>)> {
     #[thread_local]
     static mut MATCHER: LazyLock<nucleo::Matcher> =
         LazyLock::new(|| nucleo::Matcher::new(nucleo::Config::DEFAULT));
@@ -28,37 +57,50 @@ pub fn s(completion: &Complete, c: usize, filter: &str) -> Vec<Cell> {
         nucleo::pattern::CaseMatching::Smart,
         nucleo::pattern::Normalization::Smart,
     );
-    dbg!(filter);
-    let mut i = y
-        .iter()
-        .filter(|y| {
-            filter.is_empty()
-                || y.filter_text
-                    .as_deref()
-                    .unwrap_or(&y.label)
-                    .chars()
-                    .collect::<HashSet<_>>()
-                    .intersection(&filter.chars().collect())
-                    .count()
-                    > 0
-        })
-        .map(|y| {
-            let mut utf32 = vec![];
+    x.map(move |y| {
+        let mut utf32 = vec![];
 
-            let hay = y.filter_text.as_deref().unwrap_or(&y.label);
-            let mut indices = vec![];
-            let score = p
-                .indices(
-                    nucleo::Utf32Str::new(hay, &mut utf32),
-                    unsafe { &mut *MATCHER },
-                    &mut indices,
-                )
-                .unwrap_or(0);
-            indices.sort_unstable();
-            indices.dedup();
+        let hay = y.filter_text.as_deref().unwrap_or(&y.label);
+        let mut indices = vec![];
+        let score = p
+            .indices(
+                nucleo::Utf32Str::new(hay, &mut utf32),
+                unsafe { &mut *MATCHER },
+                &mut indices,
+            )
+            .unwrap_or(0);
+        indices.sort_unstable();
+        indices.dedup();
 
-            (score, y, indices)
-        })
+        (score, y, indices)
+    })
+}
+fn filter<'a>(
+    completion: &'a Complete,
+    filter: &'_ str,
+) -> impl Iterator<Item = &'a CompletionItem> {
+    let x = &completion.r;
+    let y = match x {
+        CompletionResponse::Array(x) => x,
+        CompletionResponse::List(x) => &x.items,
+    };
+    y.iter().filter(|y| {
+        filter.is_empty()
+            || y.filter_text
+                .as_deref()
+                .unwrap_or(&y.label)
+                .chars()
+                .any(|x| filter.chars().contains(&x))
+        // .collect::<HashSet<_>>()
+        // .intersection(&filter.chars().collect())
+        // .count()
+        // > 0
+    })
+}
+
+pub fn s(completion: &Complete, c: usize, f: &str) -> Vec<Cell> {
+    let mut out = vec![];
+    let i = score(filter(completion, f), f)
         .sorted_by_key(|x| x.0)
         .rev()
         .zip(0..)
@@ -130,32 +172,36 @@ fn r(
     let ds: Style = Style { bg: bg, color: FG, flags: 0 };
     let d: Cell = Cell { letter: None, style: ds };
     let mut b = vec![d; c];
-    let ty = match x.kind {
-        Some(CompletionItemKind::TEXT) => " ",
-        Some(
-            CompletionItemKind::METHOD | CompletionItemKind::FUNCTION,
-        ) => "λ ",
-        Some(CompletionItemKind::CONSTRUCTOR) => "->",
-        Some(CompletionItemKind::FIELD) => "x.",
-        Some(CompletionItemKind::VARIABLE) => "x",
-        Some(CompletionItemKind::MODULE) => "::",
-        Some(CompletionItemKind::PROPERTY) => "x.",
-        Some(CompletionItemKind::VALUE) => "4 ",
-        Some(CompletionItemKind::ENUM) => "u󰓹",
-        Some(CompletionItemKind::SNIPPET) => "! ",
-        Some(CompletionItemKind::INTERFACE) => "t ",
-        Some(CompletionItemKind::REFERENCE) => "& ",
-        Some(CompletionItemKind::CONSTANT) => "N ",
-        Some(CompletionItemKind::STRUCT) => "X{",
-        Some(CompletionItemKind::OPERATOR) => "+ ",
-        Some(CompletionItemKind::TYPE_PARAMETER) => "T ",
-        Some(CompletionItemKind::KEYWORD) => " ",
-
-        _ => " ",
+    const MAP: [([u8; 3], [u8; 3], &str); 26] = {
+        car::map!(
+            amap::amap! {
+            const { CompletionItemKind::TEXT.0 as usize } => ("#9a9b9a", " "),
+            const { CompletionItemKind::METHOD.0 as usize } | const { CompletionItemKind::FUNCTION.0 as usize } => ("#FFD173", "λ "),
+            const { CompletionItemKind::CONSTRUCTOR.0 as usize } => ("#FFAD66", "->"),
+            const { CompletionItemKind::FIELD.0 as usize } => ("#E06C75", "x."),
+            const { CompletionItemKind::VARIABLE.0 as usize } => ("#E06C75", "x "),
+            const { CompletionItemKind::MODULE.0 as usize } => ("#D5FF80", "::"),
+            const { CompletionItemKind::PROPERTY.0 as usize } => ("#e6e1cf", "x."),
+            const { CompletionItemKind::VALUE.0 as usize } => ("#DFBFFF", "4 "),
+            const { CompletionItemKind::ENUM.0 as usize } => ("#73b9ff", "u󰓹"),
+            const { CompletionItemKind::ENUM_MEMBER.0 as usize } => ("#73b9ff", ":󰓹"),
+            const { CompletionItemKind::SNIPPET.0 as usize } => ("#9a9b9a", "! "),
+            const { CompletionItemKind::INTERFACE.0 as usize } => ("#E5C07B", "t "),
+            const { CompletionItemKind::REFERENCE.0 as usize } => ("#9a9b9a", "& "),
+            const { CompletionItemKind::CONSTANT.0 as usize } => ("#DFBFFF", "N "),
+            const { CompletionItemKind::STRUCT.0 as usize } => ("#73D0FF", "X{"),
+            const { CompletionItemKind::OPERATOR.0 as usize } => ("#F29E74", "+ "),
+            const { CompletionItemKind::TYPE_PARAMETER.0 as usize } => ("#9a9b9a", "T "),
+            const { CompletionItemKind::KEYWORD.0 as usize } => ("#FFAD66", "as"),
+            _ => ("#9a9b9a", " ")
+                    },
+            |(x, y)| (set_a(color_(x), 0.5), color_(x), y)
+        )
     };
+    let (bgt, col, ty) =
+        MAP[x.kind.unwrap_or(CompletionItemKind(50)).0 as usize];
     b.iter_mut().zip(ty.chars()).for_each(|(x, c)| {
-        *x = Style { bg: T_BG, color: [154, 155, 154], ..default() }
-            .basic(c)
+        *x = Style { bg: bgt, color: col, flags: Style::BOLD }.basic(c)
     });
     let i = &mut b[2..];
 

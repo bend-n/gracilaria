@@ -12,6 +12,7 @@ use atools::prelude::*;
 use diff_match_patch_rs::{DiffMatchPatch, Patches};
 use dsb::Cell;
 use dsb::cell::Style;
+use fimg::pixels::convert::PFrom;
 use helix_core::Syntax;
 use helix_core::syntax::{HighlightEvent, Loader};
 use implicit_fn::implicit_fn;
@@ -147,6 +148,20 @@ const fn of(x: &'static str) -> usize {
     panic!()
 }
 
+pub const fn color_(x: &str) -> [u8; 3] {
+    let Some([_, x @ ..]): Option<[u8; 7]> = x.as_bytes().try_into().ok()
+    else {
+        panic!()
+    };
+    color(x)
+}
+pub const fn set_a([a, b, c]: [u8; 3], to: f32) -> [u8; 3] {
+    [
+        (((a as f32 / 255.0) * to) * 255.0) as u8,
+        (((b as f32 / 255.0) * to) * 255.0) as u8,
+        (((c as f32 / 255.0) * to) * 255.0) as u8,
+    ]
+}
 pub const fn color(x: [u8; 6]) -> [u8; 3] {
     car::map!(
         car::map!(x, |b| (b & 0xF) + 9 * (b >> 6)).chunked::<2>(),

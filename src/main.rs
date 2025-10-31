@@ -1,6 +1,8 @@
 // this looks pretty good though
 #![feature(tuple_trait, unboxed_closures, fn_traits)]
 #![feature(
+    const_convert,
+    const_result_trait_fn,
     thread_local,
     result_option_map_or_default,
     iter_intersperse,
@@ -474,11 +476,7 @@ r:x,start:c,selection:0,vo:0,
                         )
                         };
                         if let CompletionState::Complete(Some(ref x,),_) = complete {
-                            let c = com::s(x, 40,&if matches!(text.rope.get_char(text.cursor-1), Some('.' | ':')) {
-                                "".to_string()
-                            } else {
-                                text.rope.slice(text.word_left_p()..text.cursor).chars().collect::<String>()
-                            });                            
+                            let c = com::s(x, 40,&filter(&text));
                             let ppem = 20.0;
 
                             let met = FONT.metrics(&[]);
@@ -861,6 +859,16 @@ RUNNING.remove(&hover,&RUNNING.guard());
                 let CompletionState::Complete(c, x) = &mut complete else { panic!()};
                 *x = Some((h,c.as_ref().map(|x|x.start).or(x.as_ref().map(|x|x.1)).unwrap_or(text.cursor)));
             }
+            Some(CDo::SelectNext) => {
+                let CompletionState::Complete(Some(c), x) = &mut complete else { panic!()};
+                c.next(&filter(&text));
+            }
+            Some(CDo::SelectPrevious) => {
+                let CompletionState::Complete(Some(c), x) = &mut complete else { panic!()};
+                c.back(&filter(&text));
+            }
+            Some(CDo::Abort(())) => {}
+
             None => {return},
             _ => panic!(),
         };
@@ -1231,8 +1239,8 @@ rust_fsm::state_machine! {
     None => K(_) => _,
 
     // when
-    Complete((_x,_y)) => K(Key::Named(NamedKey::Tab) if shift()) => _ [SelectPrevious],
-    Complete((_x,_y)) => K(Key::Named(NamedKey::Tab)) => _ [SelectNext],
+    Complete((Some(_x),_y)) => K(Key::Named(NamedKey::Tab) if shift()) => _ [SelectPrevious],
+    Complete((Some(_x),_y)) => K(Key::Named(NamedKey::Tab)) => _ [SelectNext],
 
     // exit cases
     Complete((_x, None)) => Click => None,
@@ -1245,15 +1253,19 @@ rust_fsm::state_machine! {
         task.map(|(task, _)| task.abort()); x
     })]
 }
+use com::Complete;
 impl Default for CompletionState {
     fn default() -> Self {
         Self::None
     }
 }
-#[derive(Debug)]
-struct Complete {
-    r: CompletionResponse,
-    start: usize,
-    selection: usize,
-    vo: usize,
+fn filter(text: &TextArea) -> String {
+    if matches!(text.rope.get_char(text.cursor - 1), Some('.' | ':')) {
+        "".to_string()
+    } else {
+        text.rope
+            .slice(text.word_left_p()..text.cursor)
+            .chars()
+            .collect::<String>()
+    }
 }
