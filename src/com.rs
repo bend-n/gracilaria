@@ -31,6 +31,10 @@ impl Complete {
         }
     }
 
+    pub fn sel(&self, f: &str) -> &CompletionItem {
+        score(filter(self, f), f)[self.selection].1
+    }
+
     pub fn back(&mut self, f: &str) {
         let n = filter(self, f).count();
         if self.selection == 0 {
@@ -47,7 +51,7 @@ impl Complete {
 fn score<'a>(
     x: impl Iterator<Item = &'a CompletionItem>,
     filter: &'_ str,
-) -> impl Iterator<Item = (u32, &'a CompletionItem, Vec<u32>)> {
+) -> Vec<(u32, &'a CompletionItem, Vec<u32>)> {
     #[thread_local]
     static mut MATCHER: LazyLock<nucleo::Matcher> =
         LazyLock::new(|| nucleo::Matcher::new(nucleo::Config::DEFAULT));
@@ -57,23 +61,28 @@ fn score<'a>(
         nucleo::pattern::CaseMatching::Smart,
         nucleo::pattern::Normalization::Smart,
     );
-    x.map(move |y| {
-        let mut utf32 = vec![];
+    let mut v = x
+        .map(move |y| {
+            let mut utf32 = vec![];
 
-        let hay = y.filter_text.as_deref().unwrap_or(&y.label);
-        let mut indices = vec![];
-        let score = p
-            .indices(
-                nucleo::Utf32Str::new(hay, &mut utf32),
-                unsafe { &mut *MATCHER },
-                &mut indices,
-            )
-            .unwrap_or(0);
-        indices.sort_unstable();
-        indices.dedup();
+            let hay = y.filter_text.as_deref().unwrap_or(&y.label);
+            let mut indices = vec![];
+            let score = p
+                .indices(
+                    nucleo::Utf32Str::new(hay, &mut utf32),
+                    unsafe { &mut *MATCHER },
+                    &mut indices,
+                )
+                .unwrap_or(0);
+            indices.sort_unstable();
+            indices.dedup();
 
-        (score, y, indices)
-    })
+            (score, y, indices)
+        })
+        .collect::<Vec<_>>();
+    v.sort_by_key(|x| x.0);
+    v.reverse();
+    v
 }
 fn filter<'a>(
     completion: &'a Complete,
@@ -101,8 +110,7 @@ fn filter<'a>(
 pub fn s(completion: &Complete, c: usize, f: &str) -> Vec<Cell> {
     let mut out = vec![];
     let i = score(filter(completion, f), f)
-        .sorted_by_key(|x| x.0)
-        .rev()
+        .into_iter()
         .zip(0..)
         .skip(completion.vo)
         .take(N);

@@ -45,12 +45,9 @@ use diff_match_patch_rs::PatchInput;
 use dsb::cell::Style;
 use dsb::{Cell, F};
 use fimg::{Image, OverlayAt};
-use lsp_types::request::{Completion, HoverRequest};
+use lsp_types::request::{ HoverRequest};
 use lsp_types::{
-    CompletionContext, CompletionResponse, CompletionTriggerKind, Hover,
-    HoverParams, MarkedString, Position, SemanticTokensOptions,
-    SemanticTokensServerCapabilities, ServerCapabilities,
-    TextDocumentIdentifier, TextDocumentPositionParams, WorkspaceFolder,
+    CompletionContext, CompletionResponse, CompletionTextEdit, CompletionTriggerKind, Hover, HoverParams, MarkedString, Position, SemanticTokensOptions, SemanticTokensServerCapabilities, ServerCapabilities, TextDocumentIdentifier, TextDocumentPositionParams, WorkspaceFolder
 };
 use parking_lot::Mutex;
 use regex::Regex;
@@ -335,7 +332,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
 r:x,start:c,selection:0,vo:0,
                     } );
                     if let Some(x) = o {
-                    // std::fs::write("complete_", serde_json::to_string_pretty(&x.r).unwrap()).unwrap();
+                    std::fs::write("complete_", serde_json::to_string_pretty(&x.r).unwrap()).unwrap();
                     // println!("resolved")
                     }
                     // println!("{complete:#?}");
@@ -867,6 +864,12 @@ RUNNING.remove(&hover,&RUNNING.guard());
                 let CompletionState::Complete(Some(c), x) = &mut complete else { panic!()};
                 c.back(&filter(&text));
             }
+            Some(CDo::Finish(x)) => {
+                let Some(CompletionTextEdit::Edit(ed)) = x.sel(&filter(&text)).clone().text_edit else { panic!() };
+                text.apply(ed.clone()).unwrap();
+                text.cursor = text.l_position(ed.range.start).unwrap() + ed.new_text.chars().count();
+                if hist.record(&text) { change!();}
+            }
             Some(CDo::Abort(())) => {}
 
             None => {return},
@@ -1244,14 +1247,17 @@ rust_fsm::state_machine! {
 
     // exit cases
     Complete((_x, None)) => Click => None,
+    Complete((_x, Some((y, _))))=> K(Key::Named(Escape)) => None [Abort(((),) => y.abort())],
+    Complete((_x, None)) => K(Key::Named(Escape)) => None,
     Complete((_x, Some((y, _)))) => Click => None [Abort(((),) => y.abort())],
     Complete((_x, Some((y, _)))) => K(Key::Character(x) if !x.chars().all(is_word)) => None [Abort(y.abort())],
     Complete((_x, None)) => K(Key::Character(x) if !x.chars().all(is_word)) => None,
 
-    Complete((_x, _y)) => K(_) => _ [Request(CompletionContext { trigger_kind: CompletionTriggerKind::TRIGGER_FOR_INCOMPLETE_COMPLETIONS, trigger_character:None })],
     Complete((Some(x), task)) => K(Key::Named(NamedKey::Enter)) => None [Finish(Complete => {
         task.map(|(task, _)| task.abort()); x
-    })]
+    })],
+
+    Complete((_x, _y)) => K(_) => _ [Request(CompletionContext { trigger_kind: CompletionTriggerKind::TRIGGER_FOR_INCOMPLETE_COMPLETIONS, trigger_character:None })],
 }
 use com::Complete;
 impl Default for CompletionState {

@@ -278,6 +278,11 @@ pub fn run(
                             value_set: vec![CompletionItemTag::DEPRECATED],
                         }),
 
+                        insert_replace_support: Some(false),
+                        insert_text_mode_support:Some(InsertTextModeSupport{ 
+                            value_set: vec![InsertTextMode::AS_IS]
+                        }),
+                        resolve_support: Some(CompletionItemCapabilityResolveSupport { properties: vec!["documentation".into()] } ),
                         label_details_support: None,
                         ..default()
                     }),
@@ -285,29 +290,29 @@ pub fn run(
                         CompletionItemKindCapability {
                             value_set: Some(
 vec![CompletionItemKind::TEXT,
-CompletionItemKind::METHOD, // ()
-CompletionItemKind::FUNCTION, // ()
-CompletionItemKind::CONSTRUCTOR, // -> 
-CompletionItemKind::FIELD, // x.
-CompletionItemKind::VARIABLE, // x
+CompletionItemKind::METHOD,
+CompletionItemKind::FUNCTION,
+CompletionItemKind::CONSTRUCTOR,
+CompletionItemKind::FIELD,
+CompletionItemKind::VARIABLE,
 CompletionItemKind::CLASS,
 CompletionItemKind::INTERFACE, 
-CompletionItemKind::MODULE, // ::
-CompletionItemKind::PROPERTY, // x.
+CompletionItemKind::MODULE,
+CompletionItemKind::PROPERTY,
 CompletionItemKind::UNIT,
-CompletionItemKind::VALUE, // 4 
-CompletionItemKind::ENUM, // un
+CompletionItemKind::VALUE,
+CompletionItemKind::ENUM,
 CompletionItemKind::KEYWORD, 
-CompletionItemKind::SNIPPET, // ! 
+CompletionItemKind::SNIPPET,
 CompletionItemKind::COLOR,
 CompletionItemKind::FILE,
-CompletionItemKind::REFERENCE, // &
+CompletionItemKind::REFERENCE,
 CompletionItemKind::FOLDER,
 CompletionItemKind::ENUM_MEMBER,
-CompletionItemKind::CONSTANT, // N
-CompletionItemKind::STRUCT, // X
+CompletionItemKind::CONSTANT,
+CompletionItemKind::STRUCT,
 CompletionItemKind::EVENT,
-CompletionItemKind::OPERATOR, // +
+CompletionItemKind::OPERATOR,
 CompletionItemKind::TYPE_PARAMETER]
                             ),
                             

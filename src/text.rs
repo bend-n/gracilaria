@@ -17,7 +17,7 @@ use helix_core::Syntax;
 use helix_core::syntax::{HighlightEvent, Loader};
 use implicit_fn::implicit_fn;
 use log::error;
-use lsp_types::{Position, SemanticToken, SemanticTokensLegend};
+use lsp_types::{Position, SemanticToken, SemanticTokensLegend, TextEdit};
 use ropey::{Rope, RopeSlice};
 use tree_house::Language;
 use winit::keyboard::{NamedKey, SmolStr};
@@ -308,6 +308,13 @@ impl TextArea {
         self.set_ho();
     }
 
+    pub fn apply(&mut self, x: TextEdit) -> Result<(), ropey::Error> {
+        let begin = self.l_position(x.range.start)?;
+        let end = self.l_position(x.range.end)?;
+        self.rope.try_remove(begin..end)?;
+        self.rope.try_insert(begin, &x.new_text)?;
+        Ok(())
+    }
     pub fn cursor(&self) -> (usize, usize) {
         self.xy(self.cursor)
     }
