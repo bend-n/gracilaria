@@ -1,3 +1,4 @@
+use std::iter::repeat;
 use std::mem::MaybeUninit;
 use std::sync::LazyLock;
 
@@ -213,7 +214,15 @@ fn r(
     });
     let i = &mut b[2..];
 
-    let left = i.len() as i32 - charc(&x.label) as i32 - 2;
+    let label_details = x
+        .label_details
+        .as_ref()
+        .into_iter()
+        .flat_map(|x| &x.detail)
+        .flat_map(_.chars());
+    let left = i.len() as i32
+        - (charc(&x.label) as i32 + label_details.clone().count() as i32)
+        - 2;
     if let Some(details) = &x.detail {
         let details = if left < charc(details) as i32 {
             details
@@ -231,17 +240,26 @@ fn r(
         i.iter_mut()
             .rev()
             .zip(details.map(|x| {
-                Style { bg, color: [154, 155, 154], ..default() }.basic(x)
+                Style { bg, color: color_("#979794"), ..default() }
+                    .basic(x)
             }))
             .for_each(|(a, b)| *a = b);
     }
     i.iter_mut()
-        .zip(x.label.chars().map(|x| ds.basic(x)))
-        .zip(0..)
-        .for_each(|((a, b), i)| {
+        .zip(
+            x.label.chars().map(|x| ds.basic(x)).zip(0..).chain(
+                label_details
+                    .map(|x| {
+                        Style { bg, color: color_("#858685"), ..default() }
+                            .basic(x)
+                    })
+                    .zip(repeat(u32::MAX)),
+            ),
+        )
+        .for_each(|(a, (b, i))| {
             *a = b;
             if indices.contains(&i) {
-                a.style |= (Style::BOLD, color(*b"ffcc66"));
+                a.style |= (Style::BOLD, color_("#ffcc66"));
             }
         });
     to.extend(b);

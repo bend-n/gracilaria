@@ -38,17 +38,14 @@ use std::time::Instant;
 
 use Default::default;
 use NamedKey::*;
-use array_chunks::ExtensionTrait;
 use atools::prelude::AASAdd;
-use crossbeam::channel::RecvError;
 use diff_match_patch_rs::PatchInput;
+use diff_match_patch_rs::traits::DType;
 use dsb::cell::Style;
 use dsb::{Cell, F};
 use fimg::{Image, OverlayAt};
-use lsp_types::request::{ HoverRequest};
-use lsp_types::{
-    CompletionContext, CompletionResponse, CompletionTextEdit, CompletionTriggerKind, Hover, HoverParams, MarkedString, Position, SemanticTokensOptions, SemanticTokensServerCapabilities, ServerCapabilities, TextDocumentIdentifier, TextDocumentPositionParams, WorkspaceFolder
-};
+use lsp_types::request::HoverRequest;
+use lsp_types::*;
 use parking_lot::Mutex;
 use regex::Regex;
 use ropey::Rope;
@@ -71,6 +68,7 @@ mod bar;
 pub mod com;
 pub mod hov;
 mod lsp;
+mod sni;
 mod text;
 mod winit_app;
 fn main() {
@@ -857,17 +855,37 @@ RUNNING.remove(&hover,&RUNNING.guard());
                 *x = Some((h,c.as_ref().map(|x|x.start).or(x.as_ref().map(|x|x.1)).unwrap_or(text.cursor)));
             }
             Some(CDo::SelectNext) => {
-                let CompletionState::Complete(Some(c), x) = &mut complete else { panic!()};
+                let CompletionState::Complete(Some(c), _) = &mut complete else { panic!()};
                 c.next(&filter(&text));
             }
             Some(CDo::SelectPrevious) => {
-                let CompletionState::Complete(Some(c), x) = &mut complete else { panic!()};
+                let CompletionState::Complete(Some(c), _) = &mut complete else { panic!()};
                 c.back(&filter(&text));
             }
             Some(CDo::Finish(x)) => {
-                let Some(CompletionTextEdit::Edit(ed)) = x.sel(&filter(&text)).clone().text_edit else { panic!() };
-                text.apply(ed.clone()).unwrap();
-                text.cursor = text.l_position(ed.range.start).unwrap() + ed.new_text.chars().count();
+                let sel = x.sel(&filter(&text));
+                let sel = lsp.runtime.block_on(lsp.resolve(sel.clone()).unwrap()).unwrap();
+                let CompletionItem { text_edit: Some(CompletionTextEdit::Edit(ed)), additional_text_edits, insert_text_format, ..  } = sel else { panic!() };
+                match insert_text_format {
+                    Some(InsertTextFormat::SNIPPET) => 
+                        text.apply_snippet(&ed).unwrap(),
+                    _ => {
+                        text.apply(&ed).unwrap();
+                        text.cursor = text.l_position(ed.range.start).unwrap() + ed.new_text.chars().count();
+                    }
+                }
+                for additional in additional_text_edits.into_iter().flatten() {
+                    let p = text.l_position(additional.range.end).unwrap();
+                    if p < text.cursor {
+                        if !text.visible(p) {
+                            // line added behind, not visible
+                            text.vo += additional.new_text.chars().filter(|x|x.is_newline()).count();
+                        }
+                        text.apply(&additional).unwrap();
+                        text.cursor += additional.new_text.chars().count(); // compensate
+                    }
+                }
+
                 if hist.record(&text) { change!();}
             }
             Some(CDo::Abort(())) => {}
@@ -1244,6 +1262,8 @@ rust_fsm::state_machine! {
     // when
     Complete((Some(_x),_y)) => K(Key::Named(NamedKey::Tab) if shift()) => _ [SelectPrevious],
     Complete((Some(_x),_y)) => K(Key::Named(NamedKey::Tab)) => _ [SelectNext],
+    Complete((Some(_x),_y)) => K(Key::Named(NamedKey::ArrowDown)) => _ [SelectNext],
+    Complete((Some(_x),_y)) => K(Key::Named(NamedKey::ArrowUp)) => _ [SelectPrevious],
 
     // exit cases
     Complete((_x, None)) => Click => None,

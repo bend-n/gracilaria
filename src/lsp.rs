@@ -17,13 +17,8 @@ use log::{debug, error};
 use lsp_server::{
     Message, Notification as N, Request as Rq, Response as Re,
 };
-use lsp_types::notification::{
-    Cancel, DidOpenTextDocument, Notification, Progress, SetTrace,
-};
-use lsp_types::request::{
-    Completion, Initialize, Request, SemanticTokensFullRequest,
-    WorkDoneProgressCreate,
-};
+use lsp_types::notification::*;
+use lsp_types::request::*;
 use lsp_types::*;
 use parking_lot::Mutex;
 use serde_json::json;
@@ -132,6 +127,16 @@ impl Client {
                 }],
             },
         )
+    }
+
+    pub fn resolve(
+        &self,
+        x: CompletionItem,
+    ) -> Result<
+        impl Future<Output = Result<CompletionItem, oneshot::error::RecvError>>,
+        SendError<Message>,
+    > {
+        self.request::<ResolveCompletionItem>(&x).map(|x| x.0)
     }
 
     pub fn request_complete(
@@ -266,8 +271,8 @@ pub fn run(
                 completion: Some(CompletionClientCapabilities {
                     dynamic_registration: Some(false),
                     completion_item: Some(CompletionItemCapability {
-                        snippet_support: None,
-                        commit_characters_support: None,
+                        snippet_support: Some(true),
+                        commit_characters_support: Some(true),
                         documentation_format: Some(vec![
                             MarkupKind::Markdown,
                             MarkupKind::PlainText,
@@ -277,13 +282,13 @@ pub fn run(
                         tag_support: Some(TagSupport {
                             value_set: vec![CompletionItemTag::DEPRECATED],
                         }),
-
+                        
+                        resolve_support: Some(CompletionItemCapabilityResolveSupport { properties: vec!["additionalTextEdits".into(), "documentation".into()] }),
                         insert_replace_support: Some(false),
-                        insert_text_mode_support:Some(InsertTextModeSupport{ 
+                        insert_text_mode_support:Some(InsertTextModeSupport{
                             value_set: vec![InsertTextMode::AS_IS]
                         }),
-                        resolve_support: Some(CompletionItemCapabilityResolveSupport { properties: vec!["documentation".into()] } ),
-                        label_details_support: None,
+                        label_details_support: Some(true),
                         ..default()
                     }),
                     completion_item_kind: Some(
@@ -296,7 +301,7 @@ CompletionItemKind::CONSTRUCTOR,
 CompletionItemKind::FIELD,
 CompletionItemKind::VARIABLE,
 CompletionItemKind::CLASS,
-CompletionItemKind::INTERFACE, 
+CompletionItemKind::INTERFACE,
 CompletionItemKind::MODULE,
 CompletionItemKind::PROPERTY,
 CompletionItemKind::UNIT,
@@ -315,7 +320,6 @@ CompletionItemKind::EVENT,
 CompletionItemKind::OPERATOR,
 CompletionItemKind::TYPE_PARAMETER]
                             ),
-                            
                             // value_set: Some(vec![CompletionItemKind::]),
                         },
                     ),
@@ -373,6 +377,10 @@ CompletionItemKind::TYPE_PARAMETER]
                 position_encodings: Some(vec![PositionEncodingKind::UTF8]),
                 ..default()
             }),
+            experimental: Some(json! {{
+                "serverStatusNotification": true,
+                "hoverActions": true,
+            }}),
             ..default()
         },
         client_info: Some(ClientInfo {
@@ -414,6 +422,9 @@ CompletionItemKind::TYPE_PARAMETER]
             "completion": {
                 "fullFunctionSignatures": { "enable": true, },
                 "autoIter": { "enable": false, },
+                "autoImport": { "enable": true, },
+                "termSearch": { "enable": true, },
+                "autoself": { "enable": true, },
                 "privateEditable": { "enable": true },
             },
         }}),

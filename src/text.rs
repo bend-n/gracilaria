@@ -8,6 +8,7 @@ use std::pin::pin;
 use std::sync::{Arc, LazyLock};
 use std::vec::Vec;
 
+use anyhow::anyhow;
 use atools::prelude::*;
 use diff_match_patch_rs::{DiffMatchPatch, Patches};
 use dsb::Cell;
@@ -308,15 +309,29 @@ impl TextArea {
         self.set_ho();
     }
 
-    pub fn apply(&mut self, x: TextEdit) -> Result<(), ropey::Error> {
+    pub fn apply(&mut self, x: &TextEdit) -> Result<(), ropey::Error> {
         let begin = self.l_position(x.range.start)?;
         let end = self.l_position(x.range.end)?;
         self.rope.try_remove(begin..end)?;
         self.rope.try_insert(begin, &x.new_text)?;
         Ok(())
     }
+    pub fn apply_snippet(&mut self, x: &TextEdit) -> anyhow::Result<()> {
+        let begin = self.l_position(x.range.start)?;
+        let end = self.l_position(x.range.end)?;
+        self.rope.try_remove(begin..end)?;
+        let (mut sni, tex) =
+            crate::sni::Snippet::parse(&x.new_text, begin)
+                .ok_or(anyhow!("failed to parse snippet"))?;
+        self.rope.try_insert(begin, &tex)?;
+        self.cursor = sni.next();
+        Ok(())
+    }
     pub fn cursor(&self) -> (usize, usize) {
         self.xy(self.cursor)
+    }
+    pub fn visible(&self, x: usize) -> bool {
+        (self.vo..self.vo + self.r).contains(&self.rope.char_to_line(x))
     }
     pub fn x(&self, c: usize) -> usize {
         self.xy(c).0
