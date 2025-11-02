@@ -324,7 +324,7 @@ impl TextArea {
             crate::sni::Snippet::parse(&x.new_text, begin)
                 .ok_or(anyhow!("failed to parse snippet"))?;
         self.rope.try_insert(begin, &tex)?;
-        self.cursor = sni.next();
+        self.cursor = sni.next().r().end;
         Ok(())
     }
     pub fn cursor(&self) -> (usize, usize) {
