@@ -13,7 +13,6 @@ use atools::prelude::*;
 use diff_match_patch_rs::{DiffMatchPatch, Patches};
 use dsb::Cell;
 use dsb::cell::Style;
-use fimg::pixels::convert::PFrom;
 use helix_core::Syntax;
 use helix_core::syntax::{HighlightEvent, Loader};
 use implicit_fn::implicit_fn;
@@ -23,6 +22,7 @@ use ropey::{Rope, RopeSlice};
 use tree_house::Language;
 use winit::keyboard::{NamedKey, SmolStr};
 
+use crate::sni::{Snippet, StopP};
 use crate::text::semantic::{MCOLORS, MODIFIED, MSTYLE};
 macro_rules! theme {
     ($($x:literal $color:literal $($style:expr)?),+ $(,)?) => {
@@ -221,6 +221,8 @@ pub struct TextArea {
 
     pub r: usize,
     pub c: usize,
+
+    pub tabstops: Option<Snippet>,
 }
 
 pub struct CellBuffer {
@@ -274,6 +276,7 @@ impl TextArea {
     pub fn l(&self) -> usize {
         self.rope.len_lines()
     }
+
     #[implicit_fn]
     #[lower::apply(saturating)]
     pub fn index_at(&self, (x, y): (usize, usize)) -> usize {
@@ -302,8 +305,23 @@ impl TextArea {
     pub fn insert_(&mut self, c: SmolStr) {
         self.insert(&c);
     }
+    pub fn remove(&mut self, r: Range<usize>) -> Result<(), ropey::Error> {
+        self.rope.try_remove(r.clone())?;
+        self.tabstops.as_mut().map(|x| {
+            x.manipulate(|x| {
+                // if your region gets removed, what happens to your tabstop? big question.
+                if x > r.end { x - r.len() } else { x }
+            });
+        });
+        Ok(())
+    }
     pub fn insert(&mut self, c: &str) {
         self.rope.insert(self.cursor, c);
+        self.tabstops.as_mut().map(|x| {
+            x.manipulate(|x| {
+                if x < self.cursor { x } else { x + c.chars().count() }
+            });
+        });
         self.cursor += c.chars().count();
         self.setc();
         self.set_ho();
@@ -324,7 +342,8 @@ impl TextArea {
             crate::sni::Snippet::parse(&x.new_text, begin)
                 .ok_or(anyhow!("failed to parse snippet"))?;
         self.rope.try_insert(begin, &tex)?;
-        self.cursor = sni.next().r().end;
+        self.cursor = sni.next().unwrap().r().end;
+        self.tabstops = Some(sni);
         Ok(())
     }
     pub fn cursor(&self) -> (usize, usize) {
@@ -514,6 +533,20 @@ impl TextArea {
         }
         c
     }
+    pub fn tab(&mut self) {
+        match &mut self.tabstops {
+            None => self.insert("    "),
+            Some(x) => match x.next() {
+                Some(x) => {
+                    self.cursor = x.r().end;
+                }
+                None => {
+                    self.cursor = x.last.clone().r().end;
+                    self.tabstops = None;
+                }
+            },
+        }
+    }
     pub fn enter(&mut self) {
         use run::Run;
         let n = self.indentation();
@@ -574,16 +607,26 @@ impl TextArea {
     }
     pub fn backspace_word(&mut self) {
         let c = self.word_left_p();
-        _ = self.rope.try_remove(c..self.cursor);
+        _ = self.remove(c..self.cursor);
         self.cursor = c;
         self.setc();
         self.set_ho();
     }
-    #[lower::apply(saturating)]
     pub fn backspace(&mut self) {
-        _ = self.rope.try_remove(self.cursor - 1..self.cursor);
-        self.cursor = self.cursor - 1;
-        self.set_ho();
+        if let Some(tabstops) = &mut self.tabstops
+            && let Some((_, StopP::Range(find))) =
+                tabstops.stops.get_mut(tabstops.index - 1)
+            && find.end == self.cursor
+        {
+            self.cursor = find.start;
+            let f = find.clone();
+            *find = find.end..find.end;
+            _ = self.remove(f);
+        } else {
+            _ = self.remove(self.cursor - 1..self.cursor);
+            self.cursor = self.cursor - 1;
+            self.set_ho();
+        }
     }
 
     #[lower::apply(saturating)]
@@ -817,7 +860,16 @@ impl TextArea {
         } else {
             self.tree_sit(path, &mut cells);
         }
-
+        if let Some(tabstops) = &self.tabstops {
+            for (_, tabstop) in
+                tabstops.stops.iter().skip(tabstops.index - 1)
+            {
+                let [a, b] = self.position(tabstop.r());
+                for char in cells.get_range(a, b) {
+                    char.style.bg = [55, 86, 81];
+                }
+            }
+        }
         selection.map(|x| {
             let [a, b] = self.position(x);
             cells
@@ -1241,9 +1293,10 @@ impl Deref for Output<'_> {
 
 impl Mapper {
     /// translate an index into the global text buffer² into an (x, y), of the global text buffer
-    fn to_point(&self, index: usize) -> (usize, usize) {
-        ((index % self.from_c), (index / self.from_c))
-    }
+    // fn to_point(&self, rope: &Rope, index: usize) -> (usize, usize) {
+    //     ((index % self.from_c), (index / self.from_c))
+    // }
+
     // fn from_point(&self, (x, y): (usize, usize)) -> usize {
     //     y * self.from_c + x
     // }
@@ -1294,14 +1347,15 @@ impl<'a> Output<'a> {
     ) -> impl Iterator<Item = &mut Cell> {
         self.get_range_enumerated(a, b).map(|x| x.0)
     }
-    pub fn get_char_range(
-        &mut self,
-        a: usize,
-        b: usize,
-    ) -> impl Iterator<Item = &mut Cell> {
-        self.get_range_enumerated(self.to_point(a), self.to_point(b))
-            .map(|x| x.0)
-    }
+    // needs rope to work properly (see [xy])
+    // pub fn get_char_range(
+    //     &mut self,
+    //     a: usize,
+    //     b: usize,
+    // ) -> impl Iterator<Item = &mut Cell> {
+    //     self.get_range_enumerated(self.to_point(a), self.to_point(b))
+    //         .map(|x| x.0)
+    // }
     //// coords reference global text buffer²
     pub gen fn get_range_enumerated(
         &mut self,

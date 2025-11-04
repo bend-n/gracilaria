@@ -62,7 +62,7 @@ fn score<'a>(
         nucleo::pattern::CaseMatching::Smart,
         nucleo::pattern::Normalization::Smart,
     );
-    let mut v = x.filter
+    let mut v = x
         .map(move |y| {
             let mut utf32 = vec![];
 

@@ -2,21 +2,23 @@ use std::ops::Range;
 
 use helix_core::snippets::parser::SnippetElement;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Snippet {
-    stops: Vec<(Stop, StopP)>,
+    pub stops: Vec<(Stop, StopP)>,
+    pub last: StopP,
+    pub index: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum StopP {
+pub enum StopP {
     Just(usize),
     Range(Range<usize>),
 }
 impl StopP {
-    pub fn r(self) -> Range<usize> {
+    pub fn r(&self) -> Range<usize> {
         match self {
-            Self::Just(x) => x..x,
-            Self::Range(range) => range,
+            Self::Just(x) => *x..*x,
+            Self::Range(range) => range.clone(),
         }
     }
     pub fn manipulate(&mut self, mut f: impl FnMut(usize) -> usize) {
@@ -43,13 +45,27 @@ impl Snippet {
         }
         stops.sort_by_key(|x| x.0);
         stops.iter_mut().for_each(|x| x.1.manipulate(|x| x + at));
-        Some((Snippet { stops }, o))
+        let last = stops.remove(0);
+        assert_eq!(last.0, 0);
+        Some((Snippet { last: last.1, stops, index: 0 }, o))
     }
     pub fn manipulate(&mut self, f: impl FnMut(usize) -> usize + Clone) {
         self.stops.iter_mut().for_each(|x| x.1.manipulate(f.clone()));
+        self.last.manipulate(f);
     }
-    pub fn next(&mut self) -> StopP {
-        self.stops.pop().unwrap().1
+    pub fn next(&mut self) -> Option<StopP> {
+        self.stops.get(self.index).map(|x| {
+            self.index += 1;
+            x.1.clone()
+        })
+    }
+    pub fn list(&self) -> impl Iterator<Item = StopP> {
+        self.stops
+            .iter()
+            .skip(self.index)
+            .map(|x| &x.1)
+            .chain([&self.last])
+            .cloned()
     }
 
     pub fn apply(

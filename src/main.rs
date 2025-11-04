@@ -413,16 +413,17 @@ r:x,start:c,selection:0,vo:0,
                             (t_ox, 0),
                             x,
                             |(c, r), text,  mut x| {
+                            
                                 if let State::Search(re, j, _) = &state {
                                     re.find_iter(&text.rope.to_string())
                                         .enumerate()
                                         .for_each(|(i, m)| {
-                                            for x in x.get_char_range(
-                                            text.rope.byte_to_char(m.start()), text
+                                            for x in x.get_range(
+                                            text.xy(text.rope.byte_to_char(m.start())), text.xy(text
                                                         .rope
                                                         .byte_to_char(
                                                             m.end(),
-                                                        ))
+                                                        )))
                                              {
                                                 x.style.bg = if i == *j {
                                                     [105, 83, 128]
@@ -472,6 +473,9 @@ r:x,start:c,selection:0,vo:0,
                         };
                         if let CompletionState::Complete(Some(ref x,),_) = complete {
                             let c = com::s(x, 40,&filter(&text));
+                            if c.len() == 0 {
+                                complete.consume(CompletionAction::NoResult).unwrap();
+                            } else { 
                             let ppem = 20.0;
 
                             let met = FONT.metrics(&[]);
@@ -520,6 +524,7 @@ r:x,start:c,selection:0,vo:0,
                             // unsafe { i.overlay_at(&i2.as_ref(), left as u32, top as u32) };
                             i.r#box((left .saturating_sub(1) as _, top.saturating_sub(1) as _), w as _,h as _, [0;3]);
                         }
+                        }
                         hovering.lock().as_ref().map(|x| x.span.clone().map(|sp| {
                             let met = FONT.metrics(&[]);
                             let fac = ppem / met.units_per_em as f32;
@@ -565,24 +570,17 @@ r:x,start:c,selection:0,vo:0,
                         }));
                         let met = FONT.metrics(&[]);
                         let fac = ppem / met.units_per_em as f32;
-
                         // if x.view_o == Some(x.cells.row) || x.view_o.is_none() {
                         let (fw, fh) = dsb::dims(&FONT, ppem);
                         let cursor =
                             Image::<_, 4>::build(3, (fh).ceil() as u32)
                                 .fill([0xFF, 0xCC, 0x66, 255]);
-                        unsafe {
-                            let (x, y) = text.cursor();
+                        let mut draw_at = |x: usize, y:usize, w| unsafe {
                             let x = (x + t_ox).saturating_sub(text.ho)%c;
 
-                            if (text.vo..text.vo + r).contains(&y)
-                                && matches!(
-                                    state,
-                                    State::Default | State::Selection(_)
-                                )
-                            {
+                            if (text.vo..text.vo + r).contains(&y) {
                                 i.as_mut().overlay_at(
-                                    &cursor,
+                                    w,
                                     (x as f32 * fw).floor() as u32,
                                     ((y - text.vo) as f32
                                         * (fh + ls * fac))
@@ -593,7 +591,21 @@ r:x,start:c,selection:0,vo:0,
                                 );
                             }
                         };
-
+                        let (x, y) = text.cursor();
+                        let image =
+                            Image::<_, 4>::build(2, (fh).ceil() as u32)
+                                .fill([82,82,82, 255]);
+                        for stop in text.tabstops.as_ref().into_iter().flat_map(|x|x.list()) {
+                            let (x, y) = text.xy(stop.clone().r().end); 
+                            draw_at(x, y, &image);
+                        }
+                        if matches!(
+                            state,
+                            State::Default | State::Selection(_)
+                        )
+                        {
+                            draw_at(x, y, &cursor);
+                        }                        
                         let buffer = surface.buffer_mut().unwrap();
                         let x = unsafe {
                             std::slice::from_raw_parts_mut(
@@ -1052,7 +1064,7 @@ fn handle2<'a>(key: &'a Key, text: &mut TextArea) -> Option<&'a str> {
         }
         Named(Home) => text.home(),
         Named(End) => text.end(),
-        Named(Tab) => text.insert("    "),
+        Named(Tab) => text.tab(),
         Named(Delete) => {
             text.right();
             text.backspace()
@@ -1122,7 +1134,7 @@ impl State {
 use std::ops::{Not, Range};
 
 rust_fsm::state_machine! {
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub(crate) State => Action => Do
 
 Dead => K(Key => _) => Dead,
@@ -1267,6 +1279,7 @@ rust_fsm::state_machine! {
 
     // exit cases
     Complete((_x, None)) => Click => None,
+    Complete((_x, None)) => NoResult => None,
     Complete((_x, Some((y, _))))=> K(Key::Named(Escape)) => None [Abort(((),) => y.abort())],
     Complete((_x, None)) => K(Key::Named(Escape)) => None,
     Complete((_x, Some((y, _)))) => Click => None [Abort(((),) => y.abort())],
@@ -1294,4 +1307,7 @@ fn filter(text: &TextArea) -> String {
             .chars()
             .collect::<String>()
     }
+}
+fn frunctinator(parameter1:usize, parameter2:u8, paramter4:u16) -> usize {
+    0
 }
