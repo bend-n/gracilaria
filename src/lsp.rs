@@ -1,10 +1,11 @@
 use std::collections::HashMap;
+use std::mem::forget;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::AtomicI32;
 use std::sync::atomic::Ordering::Relaxed;
 use std::task::Poll;
-use std::thread::{JoinHandle, spawn};
+use std::thread::spawn;
 use std::time::Instant;
 
 use Default::default;
@@ -15,7 +16,7 @@ use crossbeam::channel::{
 };
 use log::{debug, error};
 use lsp_server::{
-    Message, Notification as N, Request as Rq, Response as Re,
+    ErrorCode, Message, Notification as N, Request as LRq, Response as Re,
 };
 use lsp_types::notification::*;
 use lsp_types::request::*;
@@ -23,6 +24,7 @@ use lsp_types::*;
 use parking_lot::Mutex;
 use serde_json::json;
 use tokio::sync::oneshot;
+use tokio_util::task::AbortOnDropHandle;
 use winit::window::Window;
 pub struct Client {
     pub runtime: tokio::runtime::Runtime,
@@ -32,8 +34,10 @@ pub struct Client {
     pub initialized: Option<InitializeResult>,
     // pub pending: HashMap<i32, oneshot::Sender<Re>>,
     pub send_to: Sender<(i32, oneshot::Sender<Re>)>,
-    pub progress:
-        &'static papaya::HashMap<ProgressToken, Option<WorkDoneProgress>>,
+    pub progress: &'static papaya::HashMap<
+        ProgressToken,
+        Option<(WorkDoneProgress, WorkDoneProgressBegin)>,
+    >,
     pub not_rx: Receiver<N>,
     // pub req_rx: Receiver<Rq>,
     pub semantic_tokens: (
@@ -58,21 +62,23 @@ impl Client {
             params: serde_json::to_value(y).unwrap(),
         }))
     }
-
+    pub fn cancel(&self, rid: i32) {
+        _ = self.notify::<Cancel>(&CancelParams { id: rid.into() });
+    }
     #[must_use]
-    pub fn request<X: Request>(
-        &self,
+    pub fn request<'me, X: Request>(
+        &'me self,
         y: &X::Params,
     ) -> Result<
         (
             impl Future<Output = Result<X::Result, oneshot::error::RecvError>>
-            + use<X>,
+            + use<'me, X>,
             i32,
         ),
         SendError<Message>,
     > {
         let id = self.id.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
-        self.tx.send(Message::Request(Rq {
+        self.tx.send(Message::Request(LRq {
             id: id.into(),
             method: X::METHOD.into(),
             params: serde_json::to_value(y).unwrap(),
@@ -83,8 +89,13 @@ impl Client {
             self.send_to.send((id, tx)).expect("oughtnt really fail");
         }
         Ok((
-            async {
+            async move {
+                let g = scopeguard::guard((), |()| {
+                    self.cancel(id);
+                });
+
                 rx.await.map(|x| {
+                    forget(g);
                     serde_json::from_value::<X::Result>(
                         x.result.unwrap_or_default(),
                     )
@@ -139,8 +150,8 @@ impl Client {
         self.request::<ResolveCompletionItem>(&x).map(|x| x.0)
     }
 
-    pub fn request_complete(
-        &self,
+    pub fn request_complete<'me>(
+        &'me self,
         f: &Path,
         (x, y): (usize, usize),
         c: CompletionContext,
@@ -149,7 +160,7 @@ impl Client {
             Option<CompletionResponse>,
             oneshot::error::RecvError,
         >,
-    > + use<> {
+    > + use<'me> {
         let (rx, _) = self
             .request::<Completion>(&CompletionParams {
                 text_document_position: TextDocumentPositionParams {
@@ -168,12 +179,36 @@ impl Client {
         rx
     }
 
+    pub fn request_sig_help<'me>(
+        &'me self,
+        f: &Path,
+        (x, y): (usize, usize),
+    ) -> impl Future<
+        Output = Result<Option<SignatureHelp>, oneshot::error::RecvError>,
+    > + use<'me> {
+        self.request::<SignatureHelpRequest>(&SignatureHelpParams {
+            context: None,
+            text_document_position_params: TextDocumentPositionParams {
+                text_document: {
+                    TextDocumentIdentifier {
+                        uri: Url::from_file_path(f).unwrap(),
+                    }
+                },
+                position: Position { line: y as _, character: x as _ },
+            },
+            work_done_progress_params: default(),
+        })
+        .unwrap()
+        .0
+    }
+
     pub fn rq_semantic_tokens(
-        &self,
+        &'static self,
         f: &Path,
         w: Option<Arc<Window>>,
     ) -> anyhow::Result<()> {
         debug!("requested semantic tokens");
+
         let Some(b"rs") = f.extension().map(|x| x.as_encoded_bytes())
         else {
             return Ok(());
@@ -181,8 +216,6 @@ impl Client {
         let mut p = self.semantic_tokens.1.lock();
         if let Some((h, task)) = &*p {
             if !h.is_finished() {
-                debug!("cancelled previous semantic tokens request");
-                self.notify::<Cancel>(&CancelParams { id: task.into() })?;
                 h.abort();
             }
         }
@@ -215,18 +248,9 @@ impl Client {
     }
 }
 pub fn run(
-    (tx, rx, iot): (
-        Sender<Message>,
-        Receiver<Message>,
-        lsp_server::IoThreads,
-    ),
+    (tx, rx): (Sender<Message>, Receiver<Message>),
     workspace: WorkspaceFolder,
-) -> (
-    Client,
-    lsp_server::IoThreads,
-    JoinHandle<()>,
-    oneshot::Sender<Arc<Window>>,
-) {
+) -> (Client, std::thread::JoinHandle<()>, oneshot::Sender<Arc<Window>>) {
     let now = Instant::now();
     let (req_tx, req_rx) = unbounded();
     let (not_tx, not_rx) = unbounded();
@@ -251,189 +275,195 @@ pub fn run(
         send_to: req_tx,
         not_rx,
     };
-    _ = c.request::<Initialize>(&InitializeParams {
-        process_id: Some(std::process::id()),
+    _ = c
+        .request::<Initialize>(&InitializeParams {
+            process_id: Some(std::process::id()),
 
-        capabilities: ClientCapabilities {
-            window: Some(WindowClientCapabilities {
-                work_done_progress: Some(true),
-                ..default()
-            }),
-
-            text_document: Some(TextDocumentClientCapabilities {
-                hover: Some(HoverClientCapabilities {
-                    dynamic_registration: None,
-                    content_format: Some(vec![
-                        MarkupKind::PlainText,
-                        MarkupKind::Markdown,
-                    ]),
-                }),
-                completion: Some(CompletionClientCapabilities {
-                    dynamic_registration: Some(false),
-                    completion_item: Some(CompletionItemCapability {
-                        snippet_support: Some(true),
-                        commit_characters_support: Some(true),
-                        documentation_format: Some(vec![
-                            MarkupKind::Markdown,
-                            MarkupKind::PlainText,
-                        ]),
-                        deprecated_support: None,
-                        preselect_support: None,
-                        tag_support: Some(TagSupport {
-                            value_set: vec![CompletionItemTag::DEPRECATED],
-                        }),
-                        
-                        resolve_support: Some(CompletionItemCapabilityResolveSupport { properties: vec!["additionalTextEdits".into(), "documentation".into()] }),
-                        insert_replace_support: Some(false),
-                        insert_text_mode_support:Some(InsertTextModeSupport{
-                            value_set: vec![InsertTextMode::AS_IS]
-                        }),
-                        label_details_support: Some(true),
-                        ..default()
-                    }),
-                    completion_item_kind: Some(
-                        CompletionItemKindCapability {
-                            value_set: Some(
-vec![CompletionItemKind::TEXT,
-CompletionItemKind::METHOD,
-CompletionItemKind::FUNCTION,
-CompletionItemKind::CONSTRUCTOR,
-CompletionItemKind::FIELD,
-CompletionItemKind::VARIABLE,
-CompletionItemKind::CLASS,
-CompletionItemKind::INTERFACE,
-CompletionItemKind::MODULE,
-CompletionItemKind::PROPERTY,
-CompletionItemKind::UNIT,
-CompletionItemKind::VALUE,
-CompletionItemKind::ENUM,
-CompletionItemKind::KEYWORD, 
-CompletionItemKind::SNIPPET,
-CompletionItemKind::COLOR,
-CompletionItemKind::FILE,
-CompletionItemKind::REFERENCE,
-CompletionItemKind::FOLDER,
-CompletionItemKind::ENUM_MEMBER,
-CompletionItemKind::CONSTANT,
-CompletionItemKind::STRUCT,
-CompletionItemKind::EVENT,
-CompletionItemKind::OPERATOR,
-CompletionItemKind::TYPE_PARAMETER]
-                            ),
-                            // value_set: Some(vec![CompletionItemKind::]),
-                        },
-                    ),
-                    context_support: None,
-                    insert_text_mode: Some(InsertTextMode::AS_IS),
-                    completion_list: Some(CompletionListCapability {
-                        item_defaults: None,
-                    }),
-                }),
-                semantic_tokens: Some(SemanticTokensClientCapabilities {
-                    dynamic_registration: Some(false),
-                    requests: SemanticTokensClientCapabilitiesRequests {
-                        range: Some(true),
-                        full: Some(
-                            lsp_types::SemanticTokensFullOptions::Bool(
-                                true,
-                            ),
-                        ),
-                    },
-                    token_modifiers: [
-                        "associated",
-                        "attribute",
-                        "callable",
-                        "constant",
-                        "consuming",
-                        "controlFlow",
-                        "crateRoot",
-                        "injected",
-                        "intraDocLink",
-                        "library",
-                        "macro",
-                        "mutable",
-                        "procMacro",
-                        "public",
-                        "reference",
-                        "trait",
-                        "unsafe",
-                    ]
-                    .map(|x| x.into())
-                    .to_vec(),
-                    overlapping_token_support: Some(true),
-                    multiline_token_support: Some(true),
-                    server_cancel_support: Some(false),
-                    augments_syntax_tokens: Some(false),
+            capabilities: ClientCapabilities {
+                window: Some(WindowClientCapabilities {
+                    work_done_progress: Some(true),
                     ..default()
                 }),
-                ..default()
-            }),
-            general: Some(GeneralClientCapabilities {
-                markdown: Some(MarkdownClientCapabilities {
-                    version: Some("1.0.0".into()),
-                    parser: "markdown".into(),
-                    allowed_tags: Some(vec![]),
-                }),
-                position_encodings: Some(vec![PositionEncodingKind::UTF8]),
-                ..default()
-            }),
-            experimental: Some(json! {{
-                "serverStatusNotification": true,
-                "hoverActions": true,
-            }}),
-            ..default()
-        },
-        client_info: Some(ClientInfo {
-            name: "gracilaria".into(),
-            version: Some(env!("CARGO_PKG_VERSION").into()),
-        }),
-        initialization_options: Some(json! {{
-            "cargo": {
-                "buildScripts": { "enable": true }
-            },
-            "procMacro": {
-                "enable": true,
-                "attributes": { "enable": true }
-            },
-            "inlayHints": {
-                "closureReturnTypeHints": { "enable": "with_block" },
-                "closingBraceHints": { "minLines": 5 },
-                "closureStyle": "rust_analyzer",
-                "genericParameterHints": {
-                "type": { "enable": true } },
-                "rangeExclusiveHints": { "enable": true },
-                "closureCaptureHints": { "enable": true },
-                "expressionAdjustmentHints": {
-                    "hideOutsideUnsafe": true,
-                    "enable": "never",
-                    "mode": "prefer_prefix"
-                }
-            },
-            "semanticHighlighting": {
-                "punctuation": {
-                    "separate": {
-                        "macroBang": true
-                    },
-                    "specialization": { "enable": true },
-                    "enable": true
-                }
-            },
-            "showUnlinkedFileNotification": false,
-            "completion": {
-                "fullFunctionSignatures": { "enable": true, },
-                "autoIter": { "enable": false, },
-                "autoImport": { "enable": true, },
-                "termSearch": { "enable": true, },
-                "autoself": { "enable": true, },
-                "privateEditable": { "enable": true },
-            },
-        }}),
-        trace: None,
-        workspace_folders: Some(vec![workspace]),
 
-        ..default()
-    })
-    .unwrap();
+                text_document: Some(TextDocumentClientCapabilities {
+                    hover: Some(HoverClientCapabilities {
+                        dynamic_registration: None,
+                        content_format: Some(vec![MarkupKind::PlainText, MarkupKind::Markdown]),
+                    }),
+                    diagnostic: Some(DiagnosticClientCapabilities { dynamic_registration: None, related_document_support: Some(true), }),
+                    signature_help: Some(SignatureHelpClientCapabilities {
+                        dynamic_registration: None, signature_information: Some(SignatureInformationSettings {
+                            documentation_format: Some(vec![
+                                MarkupKind::Markdown,
+                                MarkupKind::PlainText,
+                            ]),
+                            parameter_information: Some(ParameterInformationSettings {
+                                label_offset_support: Some(true) }),
+                            active_parameter_support: Some(true),
+                        }), context_support: Some(false) }),
+                    completion: Some(CompletionClientCapabilities {
+                        dynamic_registration: Some(false),
+                        completion_item: Some(CompletionItemCapability {
+                            snippet_support: Some(true),
+                            commit_characters_support: Some(true),
+                            documentation_format: Some(vec![
+                                MarkupKind::Markdown,
+                                MarkupKind::PlainText,
+                            ]),
+                            deprecated_support: None,
+                            preselect_support: None,
+                            tag_support: Some(TagSupport {
+                                value_set: vec![CompletionItemTag::DEPRECATED],
+                            }),
+
+                            resolve_support: Some(CompletionItemCapabilityResolveSupport {
+                                properties: vec![
+                                    "additionalTextEdits".into(),
+                                    "documentation".into(),
+                                ],
+                            }),
+                            insert_replace_support: Some(false),
+                            insert_text_mode_support: Some(InsertTextModeSupport {
+                                value_set: vec![InsertTextMode::AS_IS],
+                            }),
+                            label_details_support: Some(true),
+                            ..default()
+                        }),
+                        completion_item_kind: Some(CompletionItemKindCapability {
+                            value_set: Some(vec![
+                                CompletionItemKind::TEXT,
+                                CompletionItemKind::METHOD,
+                                CompletionItemKind::FUNCTION,
+                                CompletionItemKind::CONSTRUCTOR,
+                                CompletionItemKind::FIELD,
+                                CompletionItemKind::VARIABLE,
+                                CompletionItemKind::CLASS,
+                                CompletionItemKind::INTERFACE,
+                                CompletionItemKind::MODULE,
+                                CompletionItemKind::PROPERTY,
+                                CompletionItemKind::UNIT,
+                                CompletionItemKind::VALUE,
+                                CompletionItemKind::ENUM,
+                                CompletionItemKind::KEYWORD,
+                                CompletionItemKind::SNIPPET,
+                                CompletionItemKind::COLOR,
+                                CompletionItemKind::FILE,
+                                CompletionItemKind::REFERENCE,
+                                CompletionItemKind::FOLDER,
+                                CompletionItemKind::ENUM_MEMBER,
+                                CompletionItemKind::CONSTANT,
+                                CompletionItemKind::STRUCT,
+                                CompletionItemKind::EVENT,
+                                CompletionItemKind::OPERATOR,
+                                CompletionItemKind::TYPE_PARAMETER,
+                            ]),
+                            // value_set: Some(vec![CompletionItemKind::]),
+                        }),
+                        context_support: None,
+                        insert_text_mode: Some(InsertTextMode::AS_IS),
+                        completion_list: Some(CompletionListCapability { item_defaults: None }),
+                    }),
+                    semantic_tokens: Some(SemanticTokensClientCapabilities {
+                        dynamic_registration: Some(false),
+                        requests: SemanticTokensClientCapabilitiesRequests {
+                            range: Some(true),
+                            full: Some(lsp_types::SemanticTokensFullOptions::Bool(true)),
+                        },
+                        token_modifiers: [
+                            "associated",
+                            "attribute",
+                            "callable",
+                            "constant",
+                            "consuming",
+                            "controlFlow",
+                            "crateRoot",
+                            "injected",
+                            "intraDocLink",
+                            "library",
+                            "macro",
+                            "mutable",
+                            "procMacro",
+                            "public",
+                            "reference",
+                            "trait",
+                            "unsafe",
+                        ]
+                        .map(|x| x.into())
+                        .to_vec(),
+                        overlapping_token_support: Some(true),
+                        multiline_token_support: Some(true),
+                        server_cancel_support: Some(false),
+                        augments_syntax_tokens: Some(false),
+                        ..default()
+                    }),
+                    ..default()
+                }),
+                general: Some(GeneralClientCapabilities {
+                    markdown: Some(MarkdownClientCapabilities {
+                        version: Some("1.0.0".into()),
+                        parser: "markdown".into(),
+                        allowed_tags: Some(vec![]),
+                    }),
+                    position_encodings: Some(vec![PositionEncodingKind::UTF8]),
+                    ..default()
+                }),
+                experimental: Some(json! {{
+                    "serverStatusNotification": true,
+                    "hoverActions": true,
+                }}),
+                ..default()
+            },
+            client_info: Some(ClientInfo {
+                name: "gracilaria".into(),
+                version: Some(env!("CARGO_PKG_VERSION").into()),
+            }),
+            initialization_options: Some(json! {{
+                "cargo": {
+                    "buildScripts": { "enable": true }
+                },
+                "procMacro": {
+                    "enable": true,
+                    "attributes": { "enable": true }
+                },
+                "inlayHints": {
+                    "closureReturnTypeHints": { "enable": "with_block" },
+                    "closingBraceHints": { "minLines": 5 },
+                    "closureStyle": "rust_analyzer",
+                    "genericParameterHints": {
+                    "type": { "enable": true } },
+                    "rangeExclusiveHints": { "enable": true },
+                    "closureCaptureHints": { "enable": true },
+                    "expressionAdjustmentHints": {
+                        "hideOutsideUnsafe": true,
+                        "enable": "never",
+                        "mode": "prefer_prefix"
+                    }
+                },
+                "semanticHighlighting": {
+                    "punctuation": {
+                        "separate": {
+                            "macroBang": true
+                        },
+                        "specialization": { "enable": true },
+                        "enable": true
+                    }
+                },
+                "showUnlinkedFileNotification": false,
+                "completion": {
+                    "fullFunctionSignatures": { "enable": true, },
+                    "autoIter": { "enable": false, },
+                    "autoImport": { "enable": true, },
+                    "termSearch": { "enable": true, },
+                    "autoself": { "enable": true, },
+                    "privateEditable": { "enable": true },
+                },
+            }}),
+            trace: None,
+            workspace_folders: Some(vec![workspace]),
+
+            ..default()
+        })
+        .unwrap();
     let x = serde_json::from_value::<InitializeResult>(
         rx.recv().unwrap().response().unwrap().result.unwrap(),
     )
@@ -466,7 +496,7 @@ CompletionItemKind::TYPE_PARAMETER]
                     Err(RecvError) => return,
                 },
                 recv(rx) -> x => match x {
-                    Ok(Message::Request(rq @ Rq { method: "window/workDoneProgress/create", .. })) => {
+                    Ok(Message::Request(rq @ LRq { method: "window/workDoneProgress/create", .. })) => {
                          match rq.load::<WorkDoneProgressCreate>() {
                             Ok((_, x)) => {
                                 let g = progress.guard();
@@ -484,14 +514,20 @@ CompletionItemKind::TYPE_PARAMETER]
                         }
                     }
                     Ok(Message::Response(x)) => {
-                        if let Some((s, took)) = map.remove(&x.id.i32()) {
-                            debug!("request {} took {:?}", x.id, took.elapsed());
+                        if let Some(e) =& x.error {
+                            if e.code == ErrorCode::RequestCanceled as i32 {}
+                            else {
+                                error!("received error from lsp for response {x:?}");
+                            }
+
+                        }
+                        else if let Some((s, took)) = map.remove(&x.id.i32()) {
+                            log::info!("request {} took {:?}", x.id, took.elapsed());
                             match s.send(x) {
                                 Ok(()) => {}
                                 Err(e) => {
                                     error!(
                                         "unable to respond to {e:?}",
-
                                     );
                                 }
                             }
@@ -501,7 +537,14 @@ CompletionItemKind::TYPE_PARAMETER]
                     }
                     Ok(Message::Notification(x @ N { method: "$/progress", .. })) => {
                         let ProgressParams {token,value:ProgressParamsValue::WorkDone(x) } = x.load::<Progress>().unwrap();
-                        progress.update(token, move |_| Some(x.clone()), &progress.guard());
+                        match x.clone() {
+                            WorkDoneProgress::Begin(y) => {
+                                progress.update(token, move |_| Some((x.clone(), y.clone())), &progress.guard());
+                            },
+                            WorkDoneProgress::Report(_) | WorkDoneProgress::End(_) => {
+                                progress.update(token, move |v| Some((x.clone(), v.clone().expect("evil lsp").1)), &progress.guard());
+                            }
+                        }
                         w.request_redraw();
                     }
                     Ok(Message::Notification(notification)) => {
@@ -515,7 +558,7 @@ CompletionItemKind::TYPE_PARAMETER]
             }
         }
     });
-    (c, iot, h, window_tx)
+    (c, h, window_tx)
 }
 
 // trait RecvEepy<T>: Sized {
@@ -612,5 +655,105 @@ trait Map_<T, U, F: FnMut(T) -> U>: Future<Output = T> + Sized {
 impl<T, U, F: FnMut(T) -> U, Fu: Future<Output = T>> Map_<T, U, F> for Fu {
     fn map(self, f: F) -> Map<T, U, F, Self> {
         Map(self, f)
+    }
+}
+use tokio::task;
+#[derive(Debug)]
+pub enum OnceOff<T> {
+    Waiting(task::JoinHandle<Result<T, oneshot::error::RecvError>>),
+    Waited(T),
+}
+impl<T> OnceOff<T> {
+    pub fn poll(
+        &mut self,
+        r: &tokio::runtime::Runtime,
+    ) -> anyhow::Result<()> {
+        match self {
+            OnceOff::Waiting(join_handle) if join_handle.is_finished() => {
+                *self = Self::Waited(r.block_on(join_handle)??);
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub struct Rq<T, R: Request, D = ()> {
+    pub result: Option<T>,
+    pub request: Option<(
+        AbortOnDropHandle<Result<R::Result, oneshot::error::RecvError>>,
+        D,
+    )>,
+}
+impl<T, R: Request, D> Default for Rq<T, R, D> {
+    fn default() -> Self {
+        Self { result: None, request: None }
+    }
+}
+impl<T, R: Request> Rq<T, R, ()> {
+    pub fn new(
+        f: task::JoinHandle<Result<R::Result, oneshot::error::RecvError>>,
+    ) -> Self {
+        Self {
+            request: Some((AbortOnDropHandle::new(f), ())),
+            result: None,
+        }
+    }
+    pub fn request(
+        &mut self,
+        f: task::JoinHandle<Result<R::Result, oneshot::error::RecvError>>,
+    ) {
+        self.request = Some((AbortOnDropHandle::new(f), ()));
+    }
+}
+impl<T, R: Request, D> Rq<T, R, D> {
+    pub fn running(&self) -> bool {
+        matches!(
+            self,
+            Self { result: Some(_), .. } | Self { request: Some(_), .. },
+        )
+    }
+    pub fn poll(
+        &mut self,
+        f: impl FnOnce(
+            Result<R::Result, oneshot::error::RecvError>,
+            D,
+        ) -> Option<T>,
+        runtime: &tokio::runtime::Runtime,
+    ) {
+        if self.request.as_mut().is_some_and(|(x, _)| x.is_finished())
+            && let Some((task, d)) = self.request.take()
+        {
+            let x = match runtime.block_on(task) {
+                Ok(x) => x,
+                Err(e) => {
+                    log::error!(
+                        "unexpected join error from request poll: {e}"
+                    );
+                    return;
+                }
+            };
+            self.result = f(x, d);
+        }
+    }
+}
+
+pub trait RedrawAfter {
+    fn redraw_after<T, F: Future<Output = T>>(
+        &self,
+        f: F,
+    ) -> impl Future<Output = T> + use<Self, T, F>;
+}
+impl RedrawAfter for Arc<Window> {
+    fn redraw_after<T, F: Future<Output = T>>(
+        &self,
+        f: F,
+    ) -> impl Future<Output = T> + use<T, F> {
+        let w: Arc<Window> = self.clone();
+        f.map(move |x| {
+            w.request_redraw();
+            x
+        })
     }
 }

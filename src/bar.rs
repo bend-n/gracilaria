@@ -60,8 +60,13 @@ impl Bar {
                         .progress
                         .iter(&x.progress.guard())
                         .find_map(|x| match x.1 {
-                            Some(WorkDoneProgress::Report(x)) =>
-                                x.message.clone(),
+                            Some((WorkDoneProgress::Report(x), b)) =>
+                                format!(
+                                    "{}: {}",
+                                    b.title,
+                                    x.message.clone().unwrap_or_default()
+                                )
+                                .into(),
                             _ => None,
                         })
                 {

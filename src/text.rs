@@ -1,7 +1,5 @@
-use std::cmp::{Ordering, min};
+use std::cmp::min;
 use std::fmt::{Debug, Display};
-use std::iter::empty;
-use std::marker::Tuple;
 use std::ops::{Deref, Index, IndexMut, Not as _, Range, RangeBounds};
 use std::path::Path;
 use std::pin::pin;
@@ -342,8 +340,16 @@ impl TextArea {
             crate::sni::Snippet::parse(&x.new_text, begin)
                 .ok_or(anyhow!("failed to parse snippet"))?;
         self.rope.try_insert(begin, &tex)?;
-        self.cursor = sni.next().unwrap().r().end;
-        self.tabstops = Some(sni);
+        self.cursor = match sni.next() {
+            Some(x) => {
+                self.tabstops = Some(sni);
+                x.r().end
+            }
+            None => {
+                self.tabstops = None;
+                end
+            }
+        };
         Ok(())
     }
     pub fn cursor(&self) -> (usize, usize) {
@@ -805,9 +811,9 @@ impl TextArea {
                 };
 
                 if ln as usize * c + x1 < self.vo * c {
-                    // continue;
+                    continue;
                 } else if ln as usize * c + x1 > self.vo * c + r * c {
-                    // break;
+                    break;
                 }
                 let Some(tty) = leg.token_types.get(t.token_type as usize)
                 else {

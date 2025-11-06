@@ -36,6 +36,7 @@ serde_derive = "1.0.228"
 log = "0.4.28"
 crossbeam = { version = "0.8.4", features = ["nightly", "crossbeam-channel"] }
 lsp-server = { version = "0.7.9", path = "../rust-analyzer/lib/lsp-server" }
+rust-analyzer = { version = "*", path = "../rust-analyzer/crates/rust-analyzer" }
 test-log = "0.2.18"
 lsp-types = { path = "../helix/helix-lsp-types", package = "helix-lsp-types" }
 env_logger = "0.11.8"
@@ -50,13 +51,24 @@ itertools = "0.14.0"
 pin-project = "1.1.10"
 replace_with = "0.1.8"
 nucleo = "0.5.0"
+tokio-util = { version = "0.7.17", features = ["rt"] }
+scopeguard = "1.2.0"
 
-[build-dependencies]
-cc = "*"
+[profile.dev.package.rust-analyzer]
+opt-level = 3
+debug-assertions = false
+
+[profile.dev.package.fimg]
+opt-level = 3
+debug-assertions = false
+
+[profile.dev.package.nucleo]
+opt-level = 3
+debug-assertions = false
 
 [profile.release]
 debug = 2
-# overflow-checks = true
+overflow-checks = true
 # debug-assertions = true
 
 [profile.dev]

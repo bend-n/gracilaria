@@ -27,13 +27,10 @@
 )]
 #![allow(incomplete_features, redundant_semicolons)]
 use std::borrow::Cow;
-use std::io::BufReader;
+use std::fs::read_dir;
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
-use std::pin::Pin;
-use std::process::{Command, Stdio};
-use std::sync::{Arc, LazyLock, OnceLock};
-use std::thread;
+use std::sync::{Arc, LazyLock};
 use std::time::Instant;
 
 use Default::default;
@@ -42,16 +39,20 @@ use atools::prelude::AASAdd;
 use diff_match_patch_rs::PatchInput;
 use diff_match_patch_rs::traits::DType;
 use dsb::cell::Style;
-use dsb::{Cell, F};
+use dsb::{Cell, F, Fonts};
 use fimg::{Image, OverlayAt};
-use lsp_types::request::HoverRequest;
+use lsp::{OnceOff, Rq};
+use lsp_server::Connection;
+use lsp_types::request::{HoverRequest, Request, SignatureHelpRequest};
 use lsp_types::*;
 use parking_lot::Mutex;
 use regex::Regex;
 use ropey::Rope;
 use rust_fsm::StateMachine;
 use swash::{FontRef, Instance};
-use tokio::task::{JoinHandle, spawn_blocking};
+use tokio::runtime::Runtime;
+use tokio::task::{JoinError, JoinHandle, spawn_blocking};
+use tokio_util::task::AbortOnDropHandle;
 use url::Url;
 use winit::event::{
     ElementState, Event, MouseButton, MouseScrollDelta, WindowEvent,
@@ -59,15 +60,17 @@ use winit::event::{
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::keyboard::{Key, ModifiersState, NamedKey, SmolStr};
 use winit::platform::wayland::WindowAttributesExtWayland;
-use winit::window::{Icon, Window};
+use winit::window::Icon;
 
 use crate::bar::Bar;
 use crate::hov::Hovr;
+use crate::lsp::RedrawAfter;
 use crate::text::{Diff, TextArea, is_word};
 mod bar;
 pub mod com;
 pub mod hov;
 mod lsp;
+mod sig;
 mod sni;
 mod text;
 mod winit_app;
@@ -197,18 +200,24 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
         .and_then(|x| x.canonicalize().ok());
     let c = workspace.as_ref().zip(origin.clone()).map(
         |(workspace, origin)| {
-            let mut c = Command::new("rust-analyzer")
-                .stdin(Stdio::piped())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::inherit())
-                .spawn()
+            // let mut c = Command::new("rust-analyzer")
+            //     .stdin(Stdio::piped())
+            //     .stdout(Stdio::piped())
+            //     .stderr(Stdio::inherit())
+            //     .spawn()
+            //     .unwrap();
+            let (a, b) = Connection::memory();
+            std::thread::Builder::new()
+                .name("Rust Analyzer".into())
+                .stack_size(1024 * 1024 * 8)
+                .spawn(|| rust_analyzer::bin::run_server(b))
                 .unwrap();
-
-            let (c, t, t2, changed) = lsp::run(
-                lsp_server::stdio::stdio_transport(
-                    BufReader::new(c.stdout.take().unwrap()),
-                    c.stdin.take().unwrap(),
-                ),
+            let (c, t2, changed) = lsp::run(
+                (a.sender, a.receiver),
+                //    lsp_server::stdio::stdio_transport(
+                //         BufReader::new(c.stdout.take().unwrap()),
+                //         c.stdin.take().unwrap(),
+                //     ),
                 WorkspaceFolder {
                     uri: Url::from_file_path(&workspace).unwrap(),
                     name: workspace
@@ -220,7 +229,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
             );
             c.open(&origin, std::fs::read_to_string(&origin).unwrap())
                 .unwrap();
-            (&*Box::leak(Box::new(c)), (t, t2), changed)
+            (&*Box::leak(Box::new(c)), (t2), changed)
         },
     );
     let (lsp, t, mut w) = match c {
@@ -229,11 +238,13 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
     };
     macro_rules! lsp {
         () => {
-            lsp.as_ref().zip(origin.as_deref())
+            lsp.zip(origin.as_deref())
         };
     }
     let hovering = &*Box::leak(Box::new(Mutex::new(None::<hov::Hovr>)));
     let mut complete = CompletionState::None;
+    let mut sig_help =
+        Rq::<SignatureHelp, SignatureHelpRequest, ()>::default();
     // let mut complete = None::<(CompletionResponse, (usize, usize))>;
     // let mut complete_ = None::<(
     //     JoinHandle<
@@ -322,23 +333,12 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                 state.consume(Action::Changed).unwrap();
                 window.request_redraw();
             }
-            if let CompletionState::Complete(o, x)= &mut complete &&
-                x.as_ref().is_some_and(|(x, _)|x.is_finished()) && 
-                let Some((task, c)) = x.take() && let Some(ref l) = lsp{
-                // if text.cursor() ==* c_ {
-                    *o = l.runtime.block_on(task).ok().and_then(Result::ok).flatten().map(|x| Complete {
-r:x,start:c,selection:0,vo:0,
-                    } );
-                    if let Some(x) = o {
-                    std::fs::write("complete_", serde_json::to_string_pretty(&x.r).unwrap()).unwrap();
-                    // println!("resolved")
-                    }
-                    // println!("{complete:#?}");
-                // } else {
-                //     println!("abort {c_:?}");
-                //     x.abort();
-                // }
+            if let CompletionState::Complete(rq)= &mut complete && let Some(ref l) = lsp{
+                rq.poll(|f, c| {
+                    f.ok().flatten().map(|x| {Complete {r:x,start:c,selection:0,vo:0,}})
+                }, &l.runtime);
             }
+            lsp.map(|c| sig_help.poll(|x, ()| x.ok().flatten(), &c.runtime));
             match event {
                 Event::AboutToWait => {}
                 Event::WindowEvent {
@@ -471,36 +471,22 @@ r:x,start:c,selection:0,vo:0,
                                 i.as_mut(),(0,0)
                         )
                         };
-                        if let CompletionState::Complete(Some(ref x,),_) = complete {
-                            let c = com::s(x, 40,&filter(&text));
-                            if c.len() == 0 {
-                                complete.consume(CompletionAction::NoResult).unwrap();
-                            } else { 
-                            let ppem = 20.0;
 
+                        let place_around_cursor = |(_x, _y): (usize, usize), fonts: &mut Fonts,mut i:Image<&mut [u8], 3> ,c: &[Cell],columns:usize, ppem_:f32,ls_:f32, ox:f32, oy: f32, toy: f32| {
                             let met = FONT.metrics(&[]);
                             let fac = ppem / met.units_per_em as f32;
-                            let (_x, _y) = text.cursor();
-                            let _x = _x + text.line_number_offset()+1;
-
-                            // let [(_x, _y), (_x2, _)] = text.position(text.cursor);
-                            // let [_x, _x2] = [_x, _x2].add(text.line_number_offset()+1);
-                            let _y = _y.wrapping_sub(text.vo);
-                            // if !(cursor_position.1 == _y && (_x..=_x2).contains(&cursor_position.0)) {
-                            //     return;
-                            // }
                             let position = (
-                                ((_x) as f32 * fw).round() as usize,
-                                ((_y as f32 as f32) * (fh + ls * fac)).round() as usize,
+                                (((_x) as f32 * fw).round() + ox) as usize,
+                                (((_y) as f32 * (fh + ls * fac)).round() + oy) as usize,
                             );
-
-                            
-
-                            let ls = 10.0;
-                            let mut r = c.len()/40;
-                            let (w, h) = dsb::size(&fonts.regular, ppem, ls, (40, r));                           
-                            let top = position.1.checked_sub(h).unwrap_or((((_y + 1) as f32) * (fh + ls * fac)).round() as usize,);
-                            let (_, y) = dsb::fit(&fonts.regular, ppem, ls, (window.inner_size().width as _ /* - left */,( window.inner_size().height as usize - top ) ));
+                            assert!(position.0 < 8000 && position.1 < 8000);
+                            let ppem = ppem_;
+                            let ls = ls_;
+                            let mut r = c.len()/columns;
+                            let (w, h) = dsb::size(&fonts.regular, ppem, ls, (columns, r));                           
+                            let is_above = position.1.checked_sub(h).is_some();
+                            let top = position.1.checked_sub(h).unwrap_or(((((_y + 1) as f32) * (fh + ls * fac)).round() + toy) as usize);
+                            let (_, y) = dsb::fit(&fonts.regular, ppem, ls, (window.inner_size().width as _ /* - left */,(window.inner_size().height as usize - top) ));
                             r = r.min(y);
 
                             let left =
@@ -508,66 +494,97 @@ r:x,start:c,selection:0,vo:0,
                                 window.inner_size().width as usize- w as usize
                             } else { position.0 };
 
-                            let (w, h) = dsb::size(&fonts.regular, ppem, ls, (40, r));
-                            // let mut i2 = Image::build(w as _, h as _).fill(BG);
+                            let (w, h) = dsb::size(&fonts.regular, ppem, ls, (columns, r));
                             unsafe{ dsb::render(
                                 &c,
-                                (40, 0),
+                                (columns, 0),
                                 ppem,
-                                &mut fonts,
+                                fonts,
                                 ls,
-                                true, 
-                                i.as_mut(),
+                                true,
+                                i.copy(),
                                 (left as _, top as _)
                             )};
-                            // dbg!(w, h, i2.width(), i2.height(), window.inner_size(), i.width(),i.height());
-                            // unsafe { i.overlay_at(&i2.as_ref(), left as u32, top as u32) };
-                            i.r#box((left .saturating_sub(1) as _, top.saturating_sub(1) as _), w as _,h as _, [0;3]);
-                        }
-                        }
+                            (is_above, left, top, w, h)
+                        };
                         hovering.lock().as_ref().map(|x| x.span.clone().map(|sp| {
-                            let met = FONT.metrics(&[]);
-                            let fac = ppem / met.units_per_em as f32;
                             let [(_x, _y), (_x2, _)] = text.position(sp);
                             let [_x, _x2] = [_x, _x2].add(text.line_number_offset()+1);
                             let _y = _y.wrapping_sub(text.vo);
                             if !(cursor_position.1 == _y && (_x..=_x2).contains(&cursor_position.0)) {
                                 return;
                             }
-                            let position = (
-                                ((_x) as f32 * fw).round() as usize,
-                                ((_y as f32 as f32) * (fh + ls * fac)).round() as usize,
-                            );
 
-                            let ppem = 18.0;
-                            let ls = 10.0;
-                            let mut r = x.item.l().min(15);
-                            let (w, h) = dsb::size(&fonts.regular, ppem, ls, (x.item.c, r));                           
-                            let top = position.1.checked_sub(h).unwrap_or((((_y + 1) as f32) * (fh + ls * fac)).round() as usize,);
-                            let (_, y) = dsb::fit(&fonts.regular, ppem, ls, (window.inner_size().width as _ /* - left */,( window.inner_size().height as usize - top ) ));
-                            r = r.min(y);
+                            let r = x.item.l().min(15);
                             let c = x.item.displayable(r);
-                            let left =
-                            if position.0 + w as usize > window.inner_size().width as usize {
-                                window.inner_size().width as usize- w as usize
-                            } else { position.0 };
-
-                            let (w, h) = dsb::size(&fonts.regular, ppem, ls, (x.item.c, r));
-                            // let mut i2 = Image::build(w as _, h as _).fill(BG);
-                            unsafe{ dsb::render(
-                                &c,
-                                (x.item.c, 0),
-                                ppem,
+                            let (_,left, top, w, h) = place_around_cursor(
+                                (_x, _y),
                                 &mut fonts,
-                                ls,
-                                true, 
                                 i.as_mut(),
-                                (left as _, top as _)
-                            )};
-                            // dbg!(w, h, i2.width(), i2.height(), window.inner_size(), i.width(),i.height());
-                            // unsafe { i.overlay_at(&i2.as_ref(), left as u32, top as u32) };
+                                c, x.item.c,
+                                18.0, 10.0, 0., 0., 0.
+                            );
                             i.r#box((left .saturating_sub(1) as _, top.saturating_sub(1) as _), w as _,h as _, [0;3]);
                         }));
+                        let com = match complete {
+                            CompletionState::Complete(Rq{ result: Some(ref x,),..}) => {
+                                let c = com::s(x, 40,&filter(&text));
+                            if c.len() == 0 {
+                                complete.consume(CompletionAction::NoResult).unwrap(); None
+                            } else { Some(c) }},
+                            _ => None,
+                        };
+                        'out: {if let Rq{result: Some(ref x), .. } = sig_help {
+                            let (sig, p) = sig::active(x);
+                            let c = sig::sig((sig, p), 40);
+                            let (_x, _y) = text.cursor();
+                            let _x = _x + text.line_number_offset()+1;
+                            let Some(_y) = _y.checked_sub(text.vo) else { break 'out };
+                            let (is_above,left, top, w, mut h) = place_around_cursor((_x, _y), &mut fonts, i.as_mut(), &c, 40, ppem, ls, 0., 0., 0.);
+                                i.r#box((left .saturating_sub(1) as _, top.saturating_sub(1) as _), w as _,h as _, [0;3]);
+                            
+                            let com = com.map(|c| {
+                                let (is_above_,left, top, w_, h_) = place_around_cursor(
+                                    (_x, _y),
+                                    &mut fonts,
+                                    i.as_mut(),
+                                    &c, 40, ppem, ls, 0., -(h as f32), if is_above { 0.0 } else { h as f32 }
+                                );
+                                i.r#box((left .saturating_sub(1) as _, top.saturating_sub(1) as _), w_ as _,h_ as _, [0;3]);
+                                if is_above { // completion below, we need to push the docs, if any, below only below us, if the sig help is still above.
+                                    h = h_;
+                                } else {
+                                    h+=h_;
+                                }
+                                (is_above_, left, top, w_, h_)
+                            });
+                            {
+                            let ppem = 15.0;
+                            let ls = 10.0;
+                            let (fw, _) = dsb::dims(&FONT, ppem);
+                            let cols = (w as f32 / fw).floor() as usize;
+                            sig::doc(sig, cols) .map(|cells| {
+                                let cells = cells.displayable(cells.l().min(15));
+                                let (_,left_, top_, w_, h_) = place_around_cursor((_x, _y),
+                                    &mut fonts, i.as_mut(), cells, cols, ppem, ls,
+                                    0., -(h as f32), if is_above { com.filter(|x| !x.0).map(|(is, l, t, w, h)| h).unwrap_or_default() as f32 } else { h as f32 });
+                                i.r#box((left_.saturating_sub(1) as _, top_.saturating_sub(1) as _), w as _,h_ as _, [0;3]);
+                            });
+                            }
+                        } else if let Some(c) = com {
+                            let ppem = 20.0;
+                            let (_x, _y) = text.cursor();
+                            let _x = _x + text.line_number_offset()+1;
+                            let _y = _y.wrapping_sub(text.vo);
+                            let (_,left, top, w, h) = place_around_cursor(
+                                (_x, _y),
+                                &mut fonts,
+                                i.as_mut(),
+                                &c, 40, ppem, ls, 0., 0., 0.
+                            );
+                            i.r#box((left .saturating_sub(1) as _, top.saturating_sub(1) as _), w as _,h as _, [0;3]);
+                        }
+                        }
                         let met = FONT.metrics(&[]);
                         let fac = ppem / met.units_per_em as f32;
                         // if x.view_o == Some(x.cells.row) || x.view_o.is_none() {
@@ -658,12 +675,12 @@ r:x,start:c,selection:0,vo:0,
                             // assert_eq!(hover, text.index_at(cursor_position));
                             let (x, y) =text.xy(hover);
                             let text = text.clone();
-                        {
+                        'out: {
                             let mut l = hovering.lock();
                             if let  Some(Hovr{ span: Some(span),..}) = &*l {
                             let [(_x, _y), (_x2, _)] = text.position(span.clone());
                             let [_x, _x2] = [_x, _x2].add(text.line_number_offset()+1);
-                            let _y = _y - text.vo;
+                            let Some(_y) = _y.checked_sub(text.vo) else { break 'out };
                             if cursor_position.1 == _y && (_x.._x2).contains(&cursor_position.0) {
                                 return
                             } else {
@@ -844,34 +861,41 @@ RUNNING.remove(&hover,&RUNNING.guard());
                             }
                         
                             text.scroll_to_cursor();
-                            if cb4 != text.cursor && let CompletionState::Complete(Some(c), t)= &mut complete
-                                && ((text.cursor < c.start) || (!is_word(text.at_())&& (text.at_() != '.' || text.at_() != ':')) ) {
-                                if let Some((x, _)) = t.take() {
-                                    x.abort();
-                                }
+                            if cb4 != text.cursor && let CompletionState::Complete(Rq{ result: Some(c),.. })= &mut complete
+                                && ((text.cursor < c.start) || (!is_word(text.at_())&& (text.at_() != '.' || text.at_() != ':')) ) {                                
                                 complete = CompletionState::None;
                             }
-
+                            if sig_help.running() && cb4 != text.cursor && let Some((lsp, path)) = lsp!() {
+                                sig_help.request(lsp.runtime.spawn(window.redraw_after(lsp.request_sig_help(path, text.cursor()))));
+                            }
                             if hist.record(&text) {
                                 change!();
                             }
     lsp!().map(|(lsp, o)|{
         let window = window.clone();
+        match event.logical_key.as_ref() {
+            Key::Character(y)
+                if let Some(x) = &lsp.initialized
+                    && let Some(x) = &x.capabilities.signature_help_provider
+                    && let Some(x) = &x.trigger_characters && x.contains(&y.to_string()) => {
+                        sig_help.request(lsp.runtime.spawn(window.redraw_after(lsp.request_sig_help(o, text.cursor()))));
+                    },
+            _ => {}
+        }
         match complete.consume(CompletionAction::K(event.logical_key.as_ref())).unwrap(){
             Some(CDo::Request(ctx)) => {
-                let x = lsp.request_complete(o, text.cursor(), ctx);
-                let h = lsp.runtime.spawn(async move {
-                    x.await.inspect(|_| window.request_redraw())
-                });
-                let CompletionState::Complete(c, x) = &mut complete else { panic!()};
+                let h = AbortOnDropHandle::new(lsp.runtime.spawn(
+                    window.redraw_after(lsp.request_complete(o, text.cursor(), ctx))
+                ));
+                let CompletionState::Complete(Rq{ request : x, result: c, }) = &mut complete else { panic!()};
                 *x = Some((h,c.as_ref().map(|x|x.start).or(x.as_ref().map(|x|x.1)).unwrap_or(text.cursor)));
             }
             Some(CDo::SelectNext) => {
-                let CompletionState::Complete(Some(c), _) = &mut complete else { panic!()};
+                let CompletionState::Complete(Rq{ result: Some(c), ..  }) = &mut complete else { panic!()};
                 c.next(&filter(&text));
             }
             Some(CDo::SelectPrevious) => {
-                let CompletionState::Complete(Some(c), _) = &mut complete else { panic!()};
+                let CompletionState::Complete(Rq{ result: Some(c), .. }) = &mut complete else { panic!()};
                 c.back(&filter(&text));
             }
             Some(CDo::Finish(x)) => {
@@ -899,11 +923,9 @@ RUNNING.remove(&hover,&RUNNING.guard());
                 }
 
                 if hist.record(&text) { change!();}
+                sig_help = Rq::new(lsp.runtime.spawn(window.redraw_after(lsp.request_sig_help(o, text.cursor()))));
             }
-            Some(CDo::Abort(())) => {}
-
             None => {return},
-            _ => panic!(),
         };
         
     }); 
@@ -970,12 +992,11 @@ RUNNING.remove(&hover,&RUNNING.guard());
                             text.insert(&clipp::paste());
                             hist.push_if_changed(&text);
                         }
-                        Some(Do::OpenFile(x)) => {
-                            origin = Some(PathBuf::from(&x));
+                        Some(Do::OpenFile(x)) => { let _: anyhow::Result<()> = try {
+                            origin = Some(PathBuf::from(&x).canonicalize()?);
                             text = TextArea::default();
-                            text.insert(
-                                &std::fs::read_to_string(x).unwrap(),
-                            );
+                            let new = std::fs::read_to_string(x)?;
+                            text.insert(&new);
                             text.cursor = 0;
                             hist = Hist {
                                 history: vec![],
@@ -984,6 +1005,16 @@ RUNNING.remove(&hover,&RUNNING.guard());
                                 last_edit: Instant::now(),
                                 changed: false,
                             };
+                            complete = CompletionState::None;
+                            mtime = modify!();
+
+                            lsp!().map(|(x, origin)| {
+                                x.semantic_tokens.0.store(Arc::new(vec![].into()));
+                                x.open(&origin,new).unwrap();
+                                x.rq_semantic_tokens(origin, Some(window.clone())).unwrap();
+                            });
+                            bar.last_action = "open".to_string();
+                        };
                         }
                         Some(
                             Do::MoveCursor | Do::ExtendSelectionToMouse | Do::Hover,
@@ -1186,6 +1217,7 @@ RequestBoolean(t) => {
     K(_) => RequestBoolean(t),
     C(_) => _,
     Changed => _,
+    M(_) => _,
 },
 Search((x, y, m)) => {
     M(MouseButton => MouseButton::Left) => Default [MoveCursor],
@@ -1260,37 +1292,27 @@ rust_fsm::state_machine! {
     pub(crate) CompletionState => CompletionAction<'i> => CDo
     None => Click => None,
     None => K(Key<&'i str> => Key::Character(k @ ("." | ":"))) => Complete(
-        (Option<Complete>, Option<(JoinHandle<
-            Result<
-                Option<CompletionResponse>,
-                tokio::sync::oneshot::error::RecvError,
-            >,
-        >, usize)>) => (None,None)
+        Rq<Complete, lsp_types::request::Completion, usize> => default()
     ) [Request(CompletionContext => CompletionContext {trigger_kind: CompletionTriggerKind::TRIGGER_CHARACTER, trigger_character:Some(k.to_string()) })],
-    None => K(Key::Named(NamedKey::Space) if ctrl()) => Complete((None, None)) [Request(CompletionContext { trigger_kind: CompletionTriggerKind::INVOKED, trigger_character:None })],
-    None => K(Key::Character(x) if x.chars().next().is_some_and(is_word)) => Complete((None,None)) [Request(CompletionContext { trigger_kind: CompletionTriggerKind::INVOKED, trigger_character:None })],
+    None => K(Key::Named(NamedKey::Space) if ctrl()) => Complete(default()) [Request(CompletionContext { trigger_kind: CompletionTriggerKind::INVOKED, trigger_character:None })],
+    None => K(Key::Character(x) if x.chars().all(char::is_alphabetic)) => Complete(default()) [Request(CompletionContext { trigger_kind: CompletionTriggerKind::INVOKED, trigger_character:None })],
     None => K(_) => _,
 
     // when
-    Complete((Some(_x),_y)) => K(Key::Named(NamedKey::Tab) if shift()) => _ [SelectPrevious],
-    Complete((Some(_x),_y)) => K(Key::Named(NamedKey::Tab)) => _ [SelectNext],
-    Complete((Some(_x),_y)) => K(Key::Named(NamedKey::ArrowDown)) => _ [SelectNext],
-    Complete((Some(_x),_y)) => K(Key::Named(NamedKey::ArrowUp)) => _ [SelectPrevious],
+    Complete(Rq{ result: Some(_x),request: _y }) => K(Key::Named(NamedKey::Tab) if shift()) => _ [SelectPrevious],
+    Complete(Rq { result: Some(_x),request: _y }) => K(Key::Named(NamedKey::Tab)) => _ [SelectNext],
+    Complete(Rq { result: Some(_x),request: _y }) => K(Key::Named(NamedKey::ArrowDown)) => _ [SelectNext],
+    Complete(Rq { result: Some(_x),request: _y }) => K(Key::Named(NamedKey::ArrowUp)) => _ [SelectPrevious],
 
     // exit cases
-    Complete((_x, None)) => Click => None,
-    Complete((_x, None)) => NoResult => None,
-    Complete((_x, Some((y, _))))=> K(Key::Named(Escape)) => None [Abort(((),) => y.abort())],
-    Complete((_x, None)) => K(Key::Named(Escape)) => None,
-    Complete((_x, Some((y, _)))) => Click => None [Abort(((),) => y.abort())],
-    Complete((_x, Some((y, _)))) => K(Key::Character(x) if !x.chars().all(is_word)) => None [Abort(y.abort())],
-    Complete((_x, None)) => K(Key::Character(x) if !x.chars().all(is_word)) => None,
+    Complete(_) => Click => None,
+    Complete(_) => NoResult => None,
+    Complete(_)=> K(Key::Named(Escape)) => None,
+    Complete(_) => K(Key::Character(x) if !x.chars().all(is_word)) => None,
 
-    Complete((Some(x), task)) => K(Key::Named(NamedKey::Enter)) => None [Finish(Complete => {
-        task.map(|(task, _)| task.abort()); x
-    })],
+    Complete(Rq { result: Some(x), .. }) => K(Key::Named(NamedKey::Enter)) => None [Finish(Complete => x)],
 
-    Complete((_x, _y)) => K(_) => _ [Request(CompletionContext { trigger_kind: CompletionTriggerKind::TRIGGER_FOR_INCOMPLETE_COMPLETIONS, trigger_character:None })],
+    Complete(_x) => K(_) => _ [Request(CompletionContext { trigger_kind: CompletionTriggerKind::TRIGGER_FOR_INCOMPLETE_COMPLETIONS, trigger_character:None })],
 }
 use com::Complete;
 impl Default for CompletionState {
@@ -1308,6 +1330,10 @@ fn filter(text: &TextArea) -> String {
             .collect::<String>()
     }
 }
-fn frunctinator(parameter1:usize, parameter2:u8, paramter4:u16) -> usize {
+fn frunctinator(
+    parameter1: usize,
+    parameter2: u8,
+    paramter4: u16,
+) -> usize {
     0
 }
