@@ -1,14 +1,14 @@
-use std::iter::{repeat, repeat_n};
+use std::iter::repeat_n;
 
 use dsb::Cell;
 use dsb::cell::Style;
 use lsp_types::{
-    MarkupContent, MarkupKind, ParameterInformation, SignatureHelp,
+    MarkupContent, ParameterInformation, SignatureHelp,
     SignatureInformation,
 };
 
 use crate::FG;
-use crate::text::{CellBuffer, color, color_};
+use crate::text::{CellBuffer, color_};
 pub fn active(
     sig: &SignatureHelp,
 ) -> (&SignatureInformation, Option<&ParameterInformation>) {

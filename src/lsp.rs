@@ -718,7 +718,7 @@ impl<T, R: Request, D> Rq<T, R, D> {
         &mut self,
         f: impl FnOnce(
             Result<R::Result, oneshot::error::RecvError>,
-            D,
+            (D, Option<T>),
         ) -> Option<T>,
         runtime: &tokio::runtime::Runtime,
     ) {
@@ -734,7 +734,7 @@ impl<T, R: Request, D> Rq<T, R, D> {
                     return;
                 }
             };
-            self.result = f(x, d);
+            self.result = f(x, (d, self.result.take()));
         }
     }
 }

@@ -243,8 +243,8 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
     }
     let hovering = &*Box::leak(Box::new(Mutex::new(None::<hov::Hovr>)));
     let mut complete = CompletionState::None;
-    let mut sig_help =
-        Rq::<SignatureHelp, SignatureHelpRequest, ()>::default();
+    let mut sig_help = // vo, lines
+        Rq::<(SignatureHelp, usize, Option<usize>), SignatureHelpRequest, ()>::default();
     // let mut complete = None::<(CompletionResponse, (usize, usize))>;
     // let mut complete_ = None::<(
     //     JoinHandle<
@@ -334,11 +334,17 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                 window.request_redraw();
             }
             if let CompletionState::Complete(rq)= &mut complete && let Some(ref l) = lsp{
-                rq.poll(|f, c| {
+                rq.poll(|f, (c,_)| {
                     f.ok().flatten().map(|x| {Complete {r:x,start:c,selection:0,vo:0,}})
                 }, &l.runtime);
             }
-            lsp.map(|c| sig_help.poll(|x, ()| x.ok().flatten(), &c.runtime));
+            lsp.map(|c| sig_help.poll(|x, ((), y)| x.ok().flatten().map(|x| {                
+                if let Some((old_sig, vo, max)) = y && &sig::active(&old_sig) == &sig::active(&x){
+                    (x, vo, max)
+                } else {
+                    (x, 0, None)
+                }
+            }), &c.runtime));
             match event {
                 Event::AboutToWait => {}
                 Event::WindowEvent {
@@ -534,7 +540,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             } else { Some(c) }},
                             _ => None,
                         };
-                        'out: {if let Rq{result: Some(ref x), .. } = sig_help {
+                        'out: {if let Rq{result: Some((ref x, vo, ref mut max)), .. } = sig_help {
                             let (sig, p) = sig::active(x);
                             let c = sig::sig((sig, p), 40);
                             let (_x, _y) = text.cursor();
@@ -563,7 +569,9 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             let ls = 10.0;
                             let (fw, _) = dsb::dims(&FONT, ppem);
                             let cols = (w as f32 / fw).floor() as usize;
-                            sig::doc(sig, cols) .map(|cells| {
+                            sig::doc(sig, cols) .map(|mut cells| {
+                                *max = Some(cells.l());
+                                cells.vo = vo;
                                 let cells = cells.displayable(cells.l().min(15));
                                 let (_,left_, top_, w_, h_) = place_around_cursor((_x, _y),
                                     &mut fonts, i.as_mut(), cells, cols, ppem, ls,
@@ -792,6 +800,29 @@ RUNNING.remove(&hover,&RUNNING.guard());
                         },
                 } => {
                     let rows = if alt() { rows * 8. } else { rows * 3. };
+                    if shift() {
+                        let mut lck = hovering.lock();
+
+                        let vo = if let Some(x)= &mut*lck{
+                            let n = x.item.l();
+                            Some((&mut x.item.vo, n))
+                        } else if let Some((_, ref mut vo, Some(max))) = sig_help.result{
+                            Some((vo, max))
+                        } else{ 
+                            None
+                        };
+                        if let Some((vo, max)) = vo {
+                            if rows < 0.0 {
+                                let rows = rows.ceil().abs() as usize;
+                                // height of most
+                                *vo = (*vo + rows).min(max.saturating_sub(15));
+                            } else {
+                                let rows = rows.floor() as usize;
+                                *vo = vo.saturating_sub(rows);
+                            }
+                            window.request_redraw();
+                        };
+                    } else {
                     if rows < 0.0 {
                         let rows = rows.ceil().abs() as usize;
                         text.vo = (text.vo + rows).min(text.l() - 1);
@@ -800,6 +831,7 @@ RUNNING.remove(&hover,&RUNNING.guard());
                         text.vo = text.vo.saturating_sub(rows);
                     }
                     window.request_redraw();
+                    }
                 }
                 Event::WindowEvent {
                     event: WindowEvent::ModifiersChanged(modifiers),
