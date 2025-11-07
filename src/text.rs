@@ -739,10 +739,7 @@ impl TextArea {
         selection: Option<Range<usize>>,
         apply: impl FnOnce((usize, usize), &mut Self, Output),
         path: Option<&Path>,
-        tokens: Option<(
-            arc_swap::Guard<Arc<Box<[SemanticToken]>>>,
-            &SemanticTokensLegend,
-        )>,
+        tokens: Option<(&[SemanticToken], &SemanticTokensLegend)>,
     ) {
         let (c, r) = (self.c, self.r);
         let mut cells = Output {
@@ -789,7 +786,7 @@ impl TextArea {
         {
             let mut ln = 0;
             let mut ch = 0;
-            for t in &**t {
+            for t in t {
                 ln += t.delta_line;
                 ch = match t.delta_line {
                     1.. => t.delta_start,

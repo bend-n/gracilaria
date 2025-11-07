@@ -9,8 +9,6 @@ use std::thread::spawn;
 use std::time::Instant;
 
 use Default::default;
-use anyhow::Error;
-use arc_swap::ArcSwap;
 use crossbeam::channel::{
     Receiver, RecvError, SendError, Sender, unbounded,
 };
@@ -21,7 +19,6 @@ use lsp_server::{
 use lsp_types::notification::*;
 use lsp_types::request::*;
 use lsp_types::*;
-use parking_lot::Mutex;
 use serde_json::json;
 use tokio::sync::oneshot;
 use tokio_util::task::AbortOnDropHandle;
@@ -40,10 +37,6 @@ pub struct Client {
     >,
     pub not_rx: Receiver<N>,
     // pub req_rx: Receiver<Rq>,
-    pub semantic_tokens: (
-        &'static ArcSwap<Box<[SemanticToken]>>,
-        Mutex<Option<(tokio::task::JoinHandle<Result<(), Error>>, i32)>>,
-    ),
 }
 
 impl Drop for Client {
@@ -204,6 +197,7 @@ impl Client {
 
     pub fn rq_semantic_tokens(
         &'static self,
+        to: &mut Rq<Box<[SemanticToken]>, Box<[SemanticToken]>>,
         f: &Path,
         w: Option<Arc<Window>>,
     ) -> anyhow::Result<()> {
@@ -213,13 +207,7 @@ impl Client {
         else {
             return Ok(());
         };
-        let mut p = self.semantic_tokens.1.lock();
-        if let Some((h, _task)) = &*p {
-            if !h.is_finished() {
-                h.abort();
-            }
-        }
-        let (rx, id) = self.request::<SemanticTokensFullRequest>(
+        let (rx, _) = self.request::<SemanticTokensFullRequest>(
             &SemanticTokensParams {
                 work_done_progress_params: default(),
                 partial_result_params: default(),
@@ -228,21 +216,19 @@ impl Client {
                 ),
             },
         )?;
-        let d = self.semantic_tokens.0;
         let x = self.runtime.spawn(async move {
             let y = rx.await?.unwrap();
             debug!("received semantic tokens");
-
-            match y {
+            let r = match y {
                 SemanticTokensResult::Partial(_) =>
                     panic!("i told the lsp i dont support this"),
                 SemanticTokensResult::Tokens(x) =>
-                    d.store(x.data.into_boxed_slice().into()),
+                    x.data.into_boxed_slice(),
             };
             w.map(|x| x.request_redraw());
-            anyhow::Ok(())
+            Ok(r)
         });
-        *p = Some((x, id));
+        to.request(x);
 
         Ok(())
     }
@@ -266,12 +252,6 @@ pub fn run(
             .unwrap(),
         id: AtomicI32::new(0),
         initialized: None,
-        semantic_tokens: (
-            Box::leak(Box::new(ArcSwap::new(
-                vec![].into_boxed_slice().into(),
-            ))),
-            Mutex::new(None),
-        ),
         send_to: req_tx,
         not_rx,
     };

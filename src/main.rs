@@ -30,7 +30,7 @@
 use std::borrow::Cow;
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, LazyLock};
+use std::sync::LazyLock;
 use std::time::Instant;
 
 use Default::default;
@@ -242,6 +242,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
     let mut complete = CompletionState::None;
     let mut sig_help = // vo, lines
         RqS::<(SignatureHelp, usize, Option<usize>), SignatureHelpRequest, ()>::default();
+    let mut semantic_tokens = default();
     // let mut complete = None::<(CompletionResponse, (usize, usize))>;
     // let mut complete_ = None::<(
     //     JoinHandle<
@@ -269,7 +270,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
         };
     }
 
-    lsp!().map(|(x, origin)| x.rq_semantic_tokens(origin, None).unwrap());
+    lsp!().map(|(x, origin)| x.rq_semantic_tokens(&mut semantic_tokens, origin, None).unwrap());
     let mut mtime: Option<std::time::SystemTime> = modify!();
     macro_rules! save {
         () => {{
@@ -310,7 +311,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
         () => {
             lsp!().map(|(x, origin)| {
                 x.edit(&origin, text.rope.to_string()).unwrap();
-                x.rq_semantic_tokens(origin, Some(window.clone())).unwrap();
+                x.rq_semantic_tokens(&mut semantic_tokens, origin, Some(window.clone())).unwrap();
             });
         };
     }
@@ -336,6 +337,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                         f.ok().flatten().map(|x| {Complete {r:x,start:c,selection:0,vo:0,}})
                     }, &l.runtime);
                 };
+                semantic_tokens.poll(|x, _| x.ok(), &l.runtime);
                 sig_help.poll(|x, ((), y)| x.ok().flatten().map(|x| {                
                 if let Some((old_sig, vo, max)) = y && &sig::active(&old_sig) == &sig::active(&x){
                     (x, vo, max)
@@ -440,16 +442,19 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                                 }
                             },
                             origin.as_deref(),
-                                 lsp!().and_then(|(x, _)| { match &x.initialized {
-                                    Some(lsp_types::InitializeResult {
+                            semantic_tokens.result.as_deref().zip(
+                                match lsp {
+                                    Some(lsp::Client { initialized: Some(lsp_types::InitializeResult {
                                         capabilities: ServerCapabilities {
-                                        semantic_tokens_provider:
-                                        Some(SemanticTokensServerCapabilities::SemanticTokensOptions(SemanticTokensOptions{
-                                        legend,..
-                                        })),..
-                                    },..
-                                    }) => Some(legend), _ => None, }}.map(|leg|(x.semantic_tokens.0.load(), leg))
-                                ),
+                                            semantic_tokens_provider:
+                                            Some(SemanticTokensServerCapabilities::SemanticTokensOptions(SemanticTokensOptions{
+                                                legend,..
+                                            })),..
+                                        }, ..
+                                    }), ..
+                                }) => Some(legend),
+                                _ => None,
+                            }),
                         );
 
                         bar.write_to(
@@ -1028,9 +1033,9 @@ hovering.request = (DropH::new(handle), hover).into();
                             mtime = modify!();
 
                             lsp!().map(|(x, origin)| {
-                                x.semantic_tokens.0.store(Arc::new(vec![].into()));
+                                semantic_tokens = default();
                                 x.open(&origin,new).unwrap();
-                                x.rq_semantic_tokens(origin, Some(window.clone())).unwrap();
+                                x.rq_semantic_tokens(&mut semantic_tokens, origin, Some(window.clone())).unwrap();
                             });
                             bar.last_action = "open".to_string();
                         };
