@@ -1,9 +1,8 @@
-use std::iter::{once, repeat};
+use std::iter::repeat;
 
 use dsb::Cell;
 use dsb::cell::Style;
 use lsp_types::WorkDoneProgress;
-use winit::keyboard::{Key, ModifiersState, NamedKey};
 
 use crate::lsp::Client;
 use crate::text::TextArea;

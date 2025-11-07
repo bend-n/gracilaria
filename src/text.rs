@@ -717,7 +717,7 @@ impl TextArea {
 
     pub fn slice<'c>(
         &self,
-        (c, r): (usize, usize),
+        (c, _r): (usize, usize),
         cell: &'c mut [Cell],
         range: Range<usize>,
     ) -> &'c mut [Cell] {
@@ -1059,7 +1059,7 @@ pub static LOADER: LazyLock<Loader> = LazyLock::new(|| {
 });
 // #[test]
 pub fn man() {
-    let query_str = r#"
+    let _query_str = r#"
         (line_comment)+ @quantified_nodes
         ((line_comment)+) @quantified_nodes_grouped
         ((line_comment) (line_comment)) @multiple_nodes_grouped
@@ -1067,7 +1067,7 @@ pub fn man() {
     let source = Rope::from_str(r#"assert_eq!(0, Some(0));"#);
     // dbg!(source.slice(70..));
     // let mut set = std::collections::HashMap::new();
-    let mut n = 0;
+    let _n = 0;
     let loader = &*LOADER;
     // loader.set_scopes(nam.map(|x| x.to_string()).to_vec());
     let language = loader.language_for_name("rust").unwrap();
@@ -1149,9 +1149,9 @@ pub fn man() {
             ..,
         )
     );
-    for n in 0..40 {
+    for _n in 0..40 {
         dbg!(h.next_event_offset());
-        let (e, hl) = h.advance();
+        let (e, _hl) = h.advance();
         dbg!(e);
         // dbg!(hl.map(|x| NAMES[x.idx()]).collect::<Vec<_>>(), e);
         dbg!(
@@ -1450,33 +1450,6 @@ impl<'a> IndexMut<(usize, usize)> for Output<'a> {
         let x = self.from_point_global(self.translate(p).unwrap());
         &mut self.into[x]
     }
-}
-
-fn txt() {
-    let mut o = vec![Cell::default(); 4 * 2];
-    let mut o_ = Output {
-        into: &mut o,
-        output: Mapper {
-            into_s: (4, 2),
-            ox: 0,
-            oy: 0,
-            from_c: 4,
-            from_r: 4,
-            vo: 0,
-            ho: 1,
-        },
-    };
-
-    o_.into[0].letter = Some('_');
-    o_.into[4].letter = Some('_');
-    // dbg!(o_.translate(dbg!(o_.to_point(4))).unwrap());
-
-    o_.get_range_enumerated((1, 0), (5, 0)).for_each(|x| {
-        x.0.letter = Some('.');
-        // dbg!(x.1);
-    });
-
-    dbg!(o.as_chunks::<4>().0);
 }
 
 pub trait CoerceOption<T> {

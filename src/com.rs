@@ -3,9 +3,8 @@ use std::mem::MaybeUninit;
 use std::sync::LazyLock;
 
 use Default::default;
+use dsb::Cell;
 use dsb::cell::Style;
-use dsb::{Cell, F};
-use fimg::Image;
 use itertools::Itertools;
 use lsp_types::*;
 
@@ -176,7 +175,6 @@ fn r(
     to: &mut Vec<Cell>,
 ) {
     let bg = if selected { color(*b"262d3b") } else { color(*b"1c212b") };
-    const T_BG: [u8; 3] = color(*b"11141a");
 
     let ds: Style = Style { bg: bg, color: FG, flags: 0 };
     let d: Cell = Cell { letter: None, style: ds };
@@ -267,6 +265,8 @@ fn r(
 pub const N: usize = 13;
 #[test]
 fn t() {
+    use dsb::F;
+    use fimg::Image;
     let ppem = 20.0;
     let lh = 10.0;
     let (w, h) = (611, 8000);

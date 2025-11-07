@@ -28,7 +28,6 @@
 )]
 #![allow(incomplete_features, redundant_semicolons)]
 use std::borrow::Cow;
-use std::collections::HashSet;
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
@@ -42,16 +41,15 @@ use diff_match_patch_rs::traits::DType;
 use dsb::cell::Style;
 use dsb::{Cell, F, Fonts};
 use fimg::{Image, OverlayAt};
-use lsp::{OnceOff, Rq};
+use lsp::Rq;
 use lsp_server::Connection;
-use lsp_types::request::{HoverRequest, Request, SignatureHelpRequest};
+use lsp_types::request::{HoverRequest, SignatureHelpRequest};
 use lsp_types::*;
 use regex::Regex;
 use ropey::Rope;
 use rust_fsm::StateMachine;
 use swash::{FontRef, Instance};
-use tokio::runtime::Runtime;
-use tokio::task::{JoinError, JoinHandle, spawn_blocking};
+use tokio::task::spawn_blocking;
 use tokio_util::task::AbortOnDropHandle as DropH;
 use url::Url;
 use winit::event::{
@@ -231,7 +229,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
             (&*Box::leak(Box::new(c)), (t2), changed)
         },
     );
-    let (lsp, t, mut w) = match c {
+    let (lsp, _t, mut w) = match c {
         Some((a, b, c)) => (Some(a), Some(b), Some(c)),
         None => (None, None, None),
     };
@@ -419,7 +417,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             (&mut cells, (c, r)),
                             (t_ox, 0),
                             x,
-                            |(c, r), text,  mut x| {
+                            |(_c, _r), text,  mut x| {
                             
                                 if let State::Search(re, j, _) = &state {
                                     re.find_iter(&text.rope.to_string())
@@ -574,9 +572,9 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                                 *max = Some(cells.l());
                                 cells.vo = vo;
                                 let cells = cells.displayable(cells.l().min(15));
-                                let (_,left_, top_, w_, h_) = place_around_cursor((_x, _y),
+                                let (_,left_, top_, _w_, h_) = place_around_cursor((_x, _y),
                                     &mut fonts, i.as_mut(), cells, cols, ppem, ls,
-                                    0., -(h as f32), if is_above { com.filter(|x| !x.0).map(|(is, l, t, w, h)| h).unwrap_or_default() as f32 } else { h as f32 });
+                                    0., -(h as f32), if is_above { com.filter(|x| !x.0).map(|(_is, _l, _t, _w, h)| h).unwrap_or_default() as f32 } else { h as f32 });
                                 i.r#box((left_.saturating_sub(1) as _, top_.saturating_sub(1) as _), w as _,h_ as _, [0;3]);
                             });
                             }
@@ -1183,7 +1181,7 @@ impl State {
     }
 }
 
-use std::ops::{Not, Range};
+use std::ops::{Range};
 
 rust_fsm::state_machine! {
 #[derive(Debug)]
@@ -1353,8 +1351,8 @@ fn filter(text: &TextArea) -> String {
 }
 fn frunctinator(
     parameter1: usize,
-    parameter2: u8,
-    paramter4: u16,
+    _parameter2: u8,
+    _paramter4: u16,
 ) -> usize {
     lower::saturating::math! { parameter1  }; 
     0

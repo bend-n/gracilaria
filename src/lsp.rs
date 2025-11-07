@@ -10,7 +10,7 @@ use std::time::Instant;
 
 use Default::default;
 use anyhow::Error;
-use arc_swap::{ArcSwap, ArcSwapOption};
+use arc_swap::ArcSwap;
 use crossbeam::channel::{
     Receiver, RecvError, SendError, Sender, unbounded,
 };
@@ -214,7 +214,7 @@ impl Client {
             return Ok(());
         };
         let mut p = self.semantic_tokens.1.lock();
-        if let Some((h, task)) = &*p {
+        if let Some((h, _task)) = &*p {
             if !h.is_finished() {
                 h.abort();
             }

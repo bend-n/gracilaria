@@ -1,12 +1,10 @@
 use std::iter::{empty, once, repeat_n};
 use std::ops::Range;
 use std::pin::pin;
-use std::time::Instant;
 use std::vec::Vec;
 
+use dsb::Cell;
 use dsb::cell::Style;
-use dsb::{Cell, F};
-use fimg::Image;
 use itertools::Itertools;
 use markdown::mdast::{self, Node};
 use ropey::Rope;
@@ -266,6 +264,10 @@ pub fn markdown2(c: usize, x: &Node) -> Vec<Cell> {
 pub const BG: [u8; 3] = text::color(*b"191E27");
 #[test]
 fn t() {
+    use std::time::Instant;
+
+    use dsb::F;
+    use fimg::Image;
     let ppem = 18.0;
     let lh = 10.0;
     let (w, h) = (400, 8000);
