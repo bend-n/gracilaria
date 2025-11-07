@@ -1,6 +1,7 @@
 // this looks pretty good though
 #![feature(tuple_trait, unboxed_closures, fn_traits)]
 #![feature(
+    lazy_type_alias,
     const_convert,
     const_result_trait_fn,
     thread_local,
@@ -10,7 +11,7 @@
     new_range_api,
     iter_collect_into,
     mpmc_channel,
-    const_cmp,
+    const_cmp,super_let,
     gen_blocks,
     const_default,
     coroutines,
@@ -27,7 +28,7 @@
 )]
 #![allow(incomplete_features, redundant_semicolons)]
 use std::borrow::Cow;
-use std::fs::read_dir;
+use std::collections::HashSet;
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
@@ -45,14 +46,13 @@ use lsp::{OnceOff, Rq};
 use lsp_server::Connection;
 use lsp_types::request::{HoverRequest, Request, SignatureHelpRequest};
 use lsp_types::*;
-use parking_lot::Mutex;
 use regex::Regex;
 use ropey::Rope;
 use rust_fsm::StateMachine;
 use swash::{FontRef, Instance};
 use tokio::runtime::Runtime;
 use tokio::task::{JoinError, JoinHandle, spawn_blocking};
-use tokio_util::task::AbortOnDropHandle;
+use tokio_util::task::AbortOnDropHandle as DropH;
 use url::Url;
 use winit::event::{
     ElementState, Event, MouseButton, MouseScrollDelta, WindowEvent,
@@ -64,7 +64,7 @@ use winit::window::Icon;
 
 use crate::bar::Bar;
 use crate::hov::Hovr;
-use crate::lsp::RedrawAfter;
+use crate::lsp::{RedrawAfter, RqS};
 use crate::text::{Diff, TextArea, is_word};
 mod bar;
 pub mod com;
@@ -163,7 +163,6 @@ const FG: [u8; 3] = [204, 202, 194];
 pub(crate) fn entry(event_loop: EventLoop<()>) {
     let ppem = 20.0;
     let ls = 20.0;
-
     let mut text = TextArea::default();
     let mut origin = std::env::args()
         .nth(1)
@@ -241,10 +240,10 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
             lsp.zip(origin.as_deref())
         };
     }
-    let hovering = &*Box::leak(Box::new(Mutex::new(None::<hov::Hovr>)));
+    let mut hovering = Rq::<Hovr, Option<Hovr>, usize, anyhow::Error>::default();
     let mut complete = CompletionState::None;
     let mut sig_help = // vo, lines
-        Rq::<(SignatureHelp, usize, Option<usize>), SignatureHelpRequest, ()>::default();
+        RqS::<(SignatureHelp, usize, Option<usize>), SignatureHelpRequest, ()>::default();
     // let mut complete = None::<(CompletionResponse, (usize, usize))>;
     // let mut complete_ = None::<(
     //     JoinHandle<
@@ -273,7 +272,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
     }
 
     lsp!().map(|(x, origin)| x.rq_semantic_tokens(origin, None).unwrap());
-    let mut mtime = modify!();
+    let mut mtime: Option<std::time::SystemTime> = modify!();
     macro_rules! save {
         () => {{
             std::fs::write(
@@ -333,19 +332,21 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                 state.consume(Action::Changed).unwrap();
                 window.request_redraw();
             }
-            if let CompletionState::Complete(rq)= &mut complete && let Some(ref l) = lsp{
-                rq.poll(|f, (c,_)| {
-                    f.ok().flatten().map(|x| {Complete {r:x,start:c,selection:0,vo:0,}})
-                }, &l.runtime);
-            }
-            lsp.map(|c| sig_help.poll(|x, ((), y)| x.ok().flatten().map(|x| {                
+            if let Some(l) = lsp {
+                if let CompletionState::Complete(rq)= &mut complete {
+                    rq.poll(|f, (c,_)| {
+                        f.ok().flatten().map(|x| {Complete {r:x,start:c,selection:0,vo:0,}})
+                    }, &l.runtime);
+                };
+                sig_help.poll(|x, ((), y)| x.ok().flatten().map(|x| {                
                 if let Some((old_sig, vo, max)) = y && &sig::active(&old_sig) == &sig::active(&x){
                     (x, vo, max)
                 } else {
                     (x, 0, None)
                 }
-            }), &c.runtime));
-            match event {
+            }), &l.runtime);
+            hovering.poll(|x, (_, p)|x.ok().flatten().or(p), &l.runtime);
+            }            match event {
                 Event::AboutToWait => {}
                 Event::WindowEvent {
                     window_id,
@@ -513,7 +514,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             )};
                             (is_above, left, top, w, h)
                         };
-                        hovering.lock().as_ref().map(|x| x.span.clone().map(|sp| {
+                        hovering.result.as_ref().map(|x| x.span.clone().map(|sp| {
                             let [(_x, _y), (_x2, _)] = text.position(sp);
                             let [_x, _x2] = [_x, _x2].add(text.line_number_offset()+1);
                             let _y = _y.wrapping_sub(text.vo);
@@ -684,31 +685,30 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             let (x, y) =text.xy(hover);
                             let text = text.clone();
                         'out: {
-                            let mut l = hovering.lock();
+                            let l = &mut hovering.result;
                             if let  Some(Hovr{ span: Some(span),..}) = &*l {
                             let [(_x, _y), (_x2, _)] = text.position(span.clone());
                             let [_x, _x2] = [_x, _x2].add(text.line_number_offset()+1);
                             let Some(_y) = _y.checked_sub(text.vo) else { break 'out };
                             if cursor_position.1 == _y && (_x.._x2).contains(&cursor_position.0) {
-                                return
+                                break 'out;
                             } else {
                                 *l = None;
                                 window.request_redraw();
                             }
-                        }
+                            if let Some((_, c)) = hovering.request && c == hover {
+                                break 'out;
                             }
-                            let hovering = hovering;
-                            lsp!().map(|(cl, o)| {
-let window = window.clone();
-static RUNNING: LazyLock< papaya::HashSet<usize,  >>= LazyLock::new(||papaya::HashSet::new());
-if !RUNNING.insert(hover, &RUNNING.guard()) {return}
-let (rx, _) = cl.request::<HoverRequest>(&HoverParams {
+                        }
+                        if let Some((cl, o)) = lsp!() {
+                        // if !running.insert(hover) {return}
+                        let (rx, _) = cl.request::<HoverRequest>(&HoverParams {
 text_document_position_params: TextDocumentPositionParams { text_document: TextDocumentIdentifier::new(Url::from_file_path(o).unwrap()), position: Position {
     line: y as _, character: x as _,
 }},
 work_done_progress_params:default() }).unwrap();
-cl.runtime.spawn(async move {
-    let Some(x) = rx.await? else {return Ok(())};
+let handle = cl.runtime.spawn(window.redraw_after(async move {
+    let Some(x) = rx.await? else {return Ok(None::<Hovr>)};
     let (w, cells) = spawn_blocking(move || {
         let x = match &x.contents {
             lsp_types::HoverContents::Scalar(marked_string) => {
@@ -731,18 +731,22 @@ cl.runtime.spawn(async move {
         let m = hov::l(&x).into_iter().max().map(_+2).unwrap_or(usize::MAX).min(c-10);
         (m, hov::markdown2(m, &x))
     }).await.unwrap();
-RUNNING.remove(&hover,&RUNNING.guard());
     let span = x.range.and_then(|x| {
         Some(text.l_position(x.start).ok()?..text.l_position(x.end).ok()?)
     });
-    *hovering.lock()= Some( hov::Hovr { span, item: text::CellBuffer { c: w, vo: 0, cells: cells.into() }}.into());
-    window.request_redraw();
-    anyhow::Ok(())
-});
-                                });
+    anyhow::Ok(Some( hov::Hovr { span, item: text::CellBuffer { c: w, vo: 0, cells: cells.into() }}.into()))
+}));
+hovering.request = (DropH::new(handle), hover).into();
+}
+                    }
+                            
+//                             lsp!().map(|(cl, o)| {
+// let window = window.clone();
+// });
+//                                 });
                         }
                         Some(Do::Hover) => {
-                            *hovering.lock() = None;
+                            hovering.result = None;
                             window.request_redraw();
                         }
                         None => {}
@@ -800,38 +804,23 @@ RUNNING.remove(&hover,&RUNNING.guard());
                         },
                 } => {
                     let rows = if alt() { rows * 8. } else { rows * 3. };
-                    if shift() {
-                        let mut lck = hovering.lock();
-
-                        let vo = if let Some(x)= &mut*lck{
-                            let n = x.item.l();
-                            Some((&mut x.item.vo, n))
-                        } else if let Some((_, ref mut vo, Some(max))) = sig_help.result{
-                            Some((vo, max))
-                        } else{ 
-                            None
-                        };
-                        if let Some((vo, max)) = vo {
-                            if rows < 0.0 {
-                                let rows = rows.ceil().abs() as usize;
-                                // height of most
-                                *vo = (*vo + rows).min(max.saturating_sub(15));
-                            } else {
-                                let rows = rows.floor() as usize;
-                                *vo = vo.saturating_sub(rows);
-                            }
-                            window.request_redraw();
-                        };
-                    } else {
-                    if rows < 0.0 {
+                    
+                    let (vo, max) = lower::saturating::math! { if let Some(x)= &mut hovering.result && shift() {
+                        let n = x.item.l();
+                        (&mut x.item.vo, n - 15)
+                    } else if let Some((_, ref mut vo, Some(max))) = sig_help.result && shift(){
+                        (vo, max - 15)
+                    } else { 
+                        let n = text.l() - 1; (&mut text.vo, n)
+                    }};
+                    if rows < 0.0 { 
                         let rows = rows.ceil().abs() as usize;
-                        text.vo = (text.vo + rows).min(text.l() - 1);
+                        *vo = (*vo + rows).min(max);
                     } else {
                         let rows = rows.floor() as usize;
-                        text.vo = text.vo.saturating_sub(rows);
+                        *vo = vo.saturating_sub(rows);
                     }
                     window.request_redraw();
-                    }
                 }
                 Event::WindowEvent {
                     event: WindowEvent::ModifiersChanged(modifiers),
@@ -916,7 +905,7 @@ RUNNING.remove(&hover,&RUNNING.guard());
         }
         match complete.consume(CompletionAction::K(event.logical_key.as_ref())).unwrap(){
             Some(CDo::Request(ctx)) => {
-                let h = AbortOnDropHandle::new(lsp.runtime.spawn(
+                let h = DropH::new(lsp.runtime.spawn(
                     window.redraw_after(lsp.request_complete(o, text.cursor(), ctx))
                 ));
                 let CompletionState::Complete(Rq{ request : x, result: c, }) = &mut complete else { panic!()};
@@ -1324,7 +1313,7 @@ rust_fsm::state_machine! {
     pub(crate) CompletionState => CompletionAction<'i> => CDo
     None => Click => None,
     None => K(Key<&'i str> => Key::Character(k @ ("." | ":"))) => Complete(
-        Rq<Complete, lsp_types::request::Completion, usize> => default()
+        RqS<Complete, lsp_types::request::Completion, usize> => default()
     ) [Request(CompletionContext => CompletionContext {trigger_kind: CompletionTriggerKind::TRIGGER_CHARACTER, trigger_character:Some(k.to_string()) })],
     None => K(Key::Named(NamedKey::Space) if ctrl()) => Complete(default()) [Request(CompletionContext { trigger_kind: CompletionTriggerKind::INVOKED, trigger_character:None })],
     None => K(Key::Character(x) if x.chars().all(char::is_alphabetic)) => Complete(default()) [Request(CompletionContext { trigger_kind: CompletionTriggerKind::INVOKED, trigger_character:None })],
@@ -1367,5 +1356,6 @@ fn frunctinator(
     parameter2: u8,
     paramter4: u16,
 ) -> usize {
+    lower::saturating::math! { parameter1  }; 
     0
 }

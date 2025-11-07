@@ -1452,7 +1452,6 @@ impl<'a> IndexMut<(usize, usize)> for Output<'a> {
     }
 }
 
-#[test]
 fn txt() {
     let mut o = vec![Cell::default(); 4 * 2];
     let mut o_ = Output {

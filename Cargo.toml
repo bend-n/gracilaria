@@ -53,7 +53,6 @@ replace_with = "0.1.8"
 nucleo = "0.5.0"
 tokio-util = { version = "0.7.17", features = ["rt"] }
 scopeguard = "1.2.0"
-rustc-hash = { version = "2.1.1", features = ["nightly"] }
 
 [profile.dev.package.rust-analyzer]
 opt-level = 3

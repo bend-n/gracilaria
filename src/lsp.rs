@@ -679,35 +679,28 @@ impl<T> OnceOff<T> {
 }
 
 #[derive(Debug)]
-pub struct Rq<T, R: Request, D = ()> {
+pub struct Rq<T, R, D = (), E = oneshot::error::RecvError> {
     pub result: Option<T>,
-    pub request: Option<(
-        AbortOnDropHandle<Result<R::Result, oneshot::error::RecvError>>,
-        D,
-    )>,
+    pub request: Option<(AbortOnDropHandle<Result<R, E>>, D)>,
 }
-impl<T, R: Request, D> Default for Rq<T, R, D> {
+pub type RqS<T, R: Request, D = ()> = Rq<T, R::Result, D>;
+impl<T, R, D, E> Default for Rq<T, R, D, E> {
     fn default() -> Self {
         Self { result: None, request: None }
     }
 }
-impl<T, R: Request> Rq<T, R, ()> {
-    pub fn new(
-        f: task::JoinHandle<Result<R::Result, oneshot::error::RecvError>>,
-    ) -> Self {
+impl<T, R, E> Rq<T, R, (), E> {
+    pub fn new(f: task::JoinHandle<Result<R, E>>) -> Self {
         Self {
             request: Some((AbortOnDropHandle::new(f), ())),
             result: None,
         }
     }
-    pub fn request(
-        &mut self,
-        f: task::JoinHandle<Result<R::Result, oneshot::error::RecvError>>,
-    ) {
+    pub fn request(&mut self, f: task::JoinHandle<Result<R, E>>) {
         self.request = Some((AbortOnDropHandle::new(f), ()));
     }
 }
-impl<T, R: Request, D> Rq<T, R, D> {
+impl<T, R, D, E> Rq<T, R, D, E> {
     pub fn running(&self) -> bool {
         matches!(
             self,
@@ -716,10 +709,7 @@ impl<T, R: Request, D> Rq<T, R, D> {
     }
     pub fn poll(
         &mut self,
-        f: impl FnOnce(
-            Result<R::Result, oneshot::error::RecvError>,
-            (D, Option<T>),
-        ) -> Option<T>,
+        f: impl FnOnce(Result<R, E>, (D, Option<T>)) -> Option<T>,
         runtime: &tokio::runtime::Runtime,
     ) {
         if self.request.as_mut().is_some_and(|(x, _)| x.is_finished())
