@@ -1,6 +1,7 @@
 // this looks pretty good though
 #![feature(tuple_trait, unboxed_closures, fn_traits)]
 #![feature(
+    str_as_str,
     lazy_type_alias,
     const_convert,
     const_result_trait_fn,
@@ -11,7 +12,8 @@
     new_range_api,
     iter_collect_into,
     mpmc_channel,
-    const_cmp,super_let,
+    const_cmp,
+    super_let,
     gen_blocks,
     const_default,
     coroutines,
@@ -40,9 +42,10 @@ use diff_match_patch_rs::PatchInput;
 use diff_match_patch_rs::traits::DType;
 use dsb::cell::Style;
 use dsb::{Cell, F, Fonts};
+use fimg::pixels::Blend;
 use fimg::{Image, OverlayAt};
-use lsp::Rq;
-use lsp_server::Connection;
+use lsp::{PathURI, Rq};
+use lsp_server::{Connection, Request as LRq};
 use lsp_types::request::{HoverRequest, SignatureHelpRequest};
 use lsp_types::*;
 use regex::Regex;
@@ -63,7 +66,7 @@ use winit::window::Icon;
 use crate::bar::Bar;
 use crate::hov::Hovr;
 use crate::lsp::{RedrawAfter, RqS};
-use crate::text::{Diff, TextArea, is_word};
+use crate::text::{Diff, TextArea, color, is_word};
 mod bar;
 pub mod com;
 pub mod hov;
@@ -238,11 +241,14 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
             lsp.zip(origin.as_deref())
         };
     }
-    let mut hovering = Rq::<Hovr, Option<Hovr>, usize, anyhow::Error>::default();
+    let mut hovering =
+        Rq::<Hovr, Option<Hovr>, usize, anyhow::Error>::default();
     let mut complete = CompletionState::None;
     let mut sig_help = // vo, lines
         RqS::<(SignatureHelp, usize, Option<usize>), SignatureHelpRequest, ()>::default();
     let mut semantic_tokens = default();
+    let mut diag =
+        Rq::<String, Option<String>, (), anyhow::Error>::default();
     // let mut complete = None::<(CompletionResponse, (usize, usize))>;
     // let mut complete_ = None::<(
     //     JoinHandle<
@@ -270,16 +276,24 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
         };
     }
 
-    lsp!().map(|(x, origin)| x.rq_semantic_tokens(&mut semantic_tokens, origin, None).unwrap());
+    lsp!().map(|(x, origin)| {
+        x.rq_semantic_tokens(&mut semantic_tokens, origin, None).unwrap()
+    });
     let mut mtime: Option<std::time::SystemTime> = modify!();
     macro_rules! save {
         () => {{
-            std::fs::write(
-                origin.as_ref().unwrap(),
-                &text.rope.to_string(),
-            )
-            .unwrap();
+            let t = text.rope.to_string();
+            std::fs::write(origin.as_ref().unwrap(), &t).unwrap();
             bar.last_action = "saved".into();
+            lsp!().map(|(l, o)| {
+                l.notify::<lsp_notification!("textDocument/didSave")>(
+                    &DidSaveTextDocumentParams {
+                        text_document: o.tid(),
+                        text: Some(t),
+                    },
+                )
+                .unwrap();
+            });
             mtime = modify!();
         }};
     }
@@ -287,8 +301,10 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
         move |elwt| {
             let window = winit_app::make_window(elwt, |x| {
                 x.with_title("gracilaria")
+                    .with_decorations(false)
                     .with_name("com.bendn.gracilaria", "")
                     .with_window_icon(Some(Icon::from_rgba(include_bytes!("../dist/icon-32").to_vec(), 32, 32).unwrap()))
+                    
             }); 
             if let Some(x) = w.take() {
                 x.send(window.clone()).unwrap();
@@ -331,7 +347,18 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                 state.consume(Action::Changed).unwrap();
                 window.request_redraw();
             }
-            if let Some(l) = lsp {
+            if let Some((l, o)) = lsp!() {
+                for rq in l.req_rx.try_iter() {
+                    match rq {                    
+                        LRq { method: "workspace/diagnostic/refresh", .. } => {
+                            let x = l.pull_diag(o.into(), diag.result.clone());
+                            diag.request(l.runtime.spawn(x));
+                        },
+                        rq => 
+                            log::debug!("discarding request {rq:?}"),
+                    }
+                }
+                diag.poll(|x, _|x.ok().flatten(), &l.runtime);
                 if let CompletionState::Complete(rq)= &mut complete {
                     rq.poll(|f, (c,_)| {
                         f.ok().flatten().map(|x| {Complete {r:x,start:c,selection:0,vo:0,}})
@@ -420,7 +447,24 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             (t_ox, 0),
                             x,
                             |(_c, _r), text,  mut x| {
-                            
+                                if let Some((lsp, p)) = lsp!() && let Some(diag) = lsp.diagnostics.get(&Url::from_file_path(p).unwrap(), &lsp.diagnostics.guard()) {
+                                    for diag in diag {                                        
+                                        let f = |cell:&mut Cell| {
+                                                let sev =  diag.severity.unwrap_or(DiagnosticSeverity::ERROR);
+                                                cell.style.bg.blend(match sev {
+                                                    DiagnosticSeverity::ERROR => color(b"#ff66662c"),
+                                                    DiagnosticSeverity::WARNING => color(b"#9469242c"),
+                                                    _ => return
+                                                });
+                                            };
+                                        if diag.range.start == diag.range.end {
+                                            x.get((diag.range.start.character as _, diag.range.start.line as _)).map(f);
+                                        } else {
+                                        x.get_range((diag.range.start.character as _, diag.range.start.line as _), (diag.range.end.character as usize, diag.range.end.line as _))
+                                            .for_each(f)
+                                        }
+                                    }
+                                }
                                 if let State::Search(re, j, _) = &state {
                                     re.find_iter(&text.rope.to_string())
                                         .enumerate()
@@ -1186,7 +1230,7 @@ impl State {
     }
 }
 
-use std::ops::{Range};
+use std::ops::Range;
 
 rust_fsm::state_machine! {
 #[derive(Debug)]
@@ -1359,6 +1403,6 @@ fn frunctinator(
     _parameter2: u8,
     _paramter4: u16,
 ) -> usize {
-    lower::saturating::math! { parameter1  }; 
+    lower::saturating::math! { parameter1  };
     0
 }

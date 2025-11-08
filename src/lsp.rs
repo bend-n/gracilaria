@@ -1,6 +1,7 @@
 use std::collections::HashMap;
+use std::fmt::Display;
 use std::mem::forget;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicI32;
 use std::sync::atomic::Ordering::Relaxed;
@@ -9,12 +10,14 @@ use std::thread::spawn;
 use std::time::Instant;
 
 use Default::default;
+use anyhow::bail;
 use crossbeam::channel::{
     Receiver, RecvError, SendError, Sender, unbounded,
 };
 use log::{debug, error};
 use lsp_server::{
     ErrorCode, Message, Notification as N, Request as LRq, Response as Re,
+    ResponseError,
 };
 use lsp_types::notification::*;
 use lsp_types::request::*;
@@ -35,8 +38,9 @@ pub struct Client {
         ProgressToken,
         Option<(WorkDoneProgress, WorkDoneProgressBegin)>,
     >,
+    pub diagnostics: &'static papaya::HashMap<Url, Vec<Diagnostic>>,
     pub not_rx: Receiver<N>,
-    // pub req_rx: Receiver<Rq>,
+    pub req_rx: Receiver<LRq>,
 }
 
 impl Drop for Client {
@@ -44,7 +48,30 @@ impl Drop for Client {
         panic!("please dont")
     }
 }
-
+#[derive(Debug)]
+pub enum RequestError {
+    Rx,
+    Cancelled(Re, DiagnosticServerCancellationData),
+}
+impl From<oneshot::error::RecvError> for RequestError {
+    fn from(_: oneshot::error::RecvError) -> Self {
+        Self::Rx
+    }
+}
+impl std::error::Error for RequestError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        None
+    }
+}
+impl Display for RequestError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Rx => write!(f, "couldnt get from thingy"),
+            Self::Cancelled(x, y) =>
+                write!(f, "server cancelled us. {x:?} {y:?}"),
+        }
+    }
+}
 impl Client {
     pub fn notify<X: Notification>(
         &self,
@@ -64,8 +91,7 @@ impl Client {
         y: &X::Params,
     ) -> Result<
         (
-            impl Future<Output = Result<X::Result, oneshot::error::RecvError>>
-            + use<'me, X>,
+            impl Future<Output = Result<X::Result, RequestError>> + use<'me, X>,
             i32,
         ),
         SendError<Message>,
@@ -87,13 +113,22 @@ impl Client {
                     self.cancel(id);
                 });
 
-                rx.await.map(|x| {
-                    forget(g);
-                    serde_json::from_value::<X::Result>(
+                let mut x = rx.await?;
+                forget(g);
+                if let Some(ResponseError { code, ref mut data, .. }) =
+                    x.error
+                    && code == ErrorCode::ServerCancelled as i32
+                {
+                    let e = serde_json::from_value(
+                        data.take().unwrap_or_default(),
+                    );
+                    Err(RequestError::Cancelled(x, e.expect("lsp??")))
+                } else {
+                    Ok(serde_json::from_value::<X::Result>(
                         x.result.unwrap_or_default(),
                     )
-                    .expect("lsp badg")
-                })
+                    .expect("lsp badg"))
+                }
             },
             id,
         ))
@@ -137,7 +172,7 @@ impl Client {
         &self,
         x: CompletionItem,
     ) -> Result<
-        impl Future<Output = Result<CompletionItem, oneshot::error::RecvError>>,
+        impl Future<Output = Result<CompletionItem, RequestError>>,
         SendError<Message>,
     > {
         self.request::<ResolveCompletionItem>(&x).map(|x| x.0)
@@ -149,19 +184,12 @@ impl Client {
         (x, y): (usize, usize),
         c: CompletionContext,
     ) -> impl Future<
-        Output = Result<
-            Option<CompletionResponse>,
-            oneshot::error::RecvError,
-        >,
+        Output = Result<Option<CompletionResponse>, RequestError>,
     > + use<'me> {
         let (rx, _) = self
             .request::<Completion>(&CompletionParams {
                 text_document_position: TextDocumentPositionParams {
-                    text_document: {
-                        TextDocumentIdentifier {
-                            uri: Url::from_file_path(f).unwrap(),
-                        }
-                    },
+                    text_document: f.tid(),
                     position: Position { line: y as _, character: x as _ },
                 },
                 work_done_progress_params: default(),
@@ -176,23 +204,129 @@ impl Client {
         &'me self,
         f: &Path,
         (x, y): (usize, usize),
-    ) -> impl Future<
-        Output = Result<Option<SignatureHelp>, oneshot::error::RecvError>,
-    > + use<'me> {
+    ) -> impl Future<Output = Result<Option<SignatureHelp>, RequestError>>
+    + use<'me> {
         self.request::<SignatureHelpRequest>(&SignatureHelpParams {
             context: None,
             text_document_position_params: TextDocumentPositionParams {
-                text_document: {
-                    TextDocumentIdentifier {
-                        uri: Url::from_file_path(f).unwrap(),
-                    }
-                },
+                text_document: f.tid(),
                 position: Position { line: y as _, character: x as _ },
             },
             work_done_progress_params: default(),
         })
         .unwrap()
         .0
+    }
+
+    pub fn pull_all_diag(
+        &self,
+        f: PathBuf,
+    ) -> impl Future<Output = anyhow::Result<()>> {
+        let r = self
+            .request::<lsp_request!("workspace/diagnostic")>(&default())
+            .unwrap()
+            .0;
+        log::info!("pulling diagnostics");
+        async move {
+            let x = r.await?;
+            log::info!("{x:?}");
+            // match x {
+            //     DocumentDiagnosticReportResult::Report(DocumentDiagnosticReport::Full(RelatedFullDocumentDiagnosticReport {
+            //         related_documents,
+            //         full_document_diagnostic_report:FullDocumentDiagnosticReport {  items,.. },
+            //     })) => {
+            //         let l = self.diagnostics.guard();
+            //         self.diagnostics.insert(f.tid().uri, items, &l);
+            //         for (uri, rel) in related_documents.into_iter().flatten() {
+            //             match rel {
+            //                 DocumentDiagnosticReportKind::Full(FullDocumentDiagnosticReport { items, .. }) => {
+            //                     self.diagnostics.insert(uri, items, &l);
+            //                 },
+            //                 DocumentDiagnosticReportKind::Unchanged(_) => {},
+            //             }
+            //         }
+            //         log::info!("pulled diagnostics");
+            //     },
+            //     _ => bail!("fuck that"),
+            // };
+            Ok(())
+        }
+    }
+    pub fn pull_diag(
+        &self,
+        f: PathBuf,
+        previous: Option<String>,
+    ) -> impl Future<Output = anyhow::Result<Option<String>>> {
+        let p = DocumentDiagnosticParams {
+            text_document: f.tid(),
+            identifier: try {
+                match self
+                    .initialized
+                    .as_ref()?
+                    .capabilities
+                    .diagnostic_provider
+                    .as_ref()?
+                {
+                    DiagnosticServerCapabilities::RegistrationOptions(
+                        x,
+                    ) => x.diagnostic_options.identifier.clone()?,
+                    _ => None?,
+                }
+            },
+            previous_result_id: previous,
+            work_done_progress_params: default(),
+            partial_result_params: default(),
+        };
+        let (r, _) = self
+            .request::<lsp_request!("textDocument/diagnostic")>(&p)
+            .unwrap();
+        log::info!("pulling diagnostics");
+
+        async move {
+            let x = match r.await {
+                    Ok(x) => x,
+                    Err(RequestError::Cancelled(x, y)) if y.retrigger_request => {
+                        self.request::<lsp_request!("textDocument/diagnostic")>(&p,).unwrap().0.await?
+                    },
+                    Err(e) => return Err(e.into()),
+                };
+            log::info!("{x:?}");
+            match x {
+                DocumentDiagnosticReportResult::Report(
+                    DocumentDiagnosticReport::Full(
+                        RelatedFullDocumentDiagnosticReport {
+                            related_documents,
+                            full_document_diagnostic_report:
+                                FullDocumentDiagnosticReport {
+                                    items,
+                                    result_id,
+                                },
+                        },
+                    ),
+                ) => {
+                    let l = self.diagnostics.guard();
+                    self.diagnostics.insert(f.tid().uri, items, &l);
+                    for (uri, rel) in
+                        related_documents.into_iter().flatten()
+                    {
+                        match rel {
+                            DocumentDiagnosticReportKind::Full(
+                                FullDocumentDiagnosticReport {
+                                    items, ..
+                                },
+                            ) => {
+                                self.diagnostics.insert(uri, items, &l);
+                            }
+                            DocumentDiagnosticReportKind::Unchanged(_) => {
+                            }
+                        }
+                    }
+                    log::info!("pulled diagnostics");
+                    Ok(result_id)
+                }
+                _ => bail!("fuck that"),
+            }
+        }
     }
 
     pub fn rq_semantic_tokens(
@@ -211,9 +345,7 @@ impl Client {
             &SemanticTokensParams {
                 work_done_progress_params: default(),
                 partial_result_params: default(),
-                text_document: TextDocumentIdentifier::new(
-                    url::Url::from_file_path(f).unwrap(),
-                ),
+                text_document: f.tid(),
             },
         )?;
         let x = self.runtime.spawn(async move {
@@ -252,7 +384,9 @@ pub fn run(
             .unwrap(),
         id: AtomicI32::new(0),
         initialized: None,
+        diagnostics: Box::leak(Box::new(papaya::HashMap::default())),
         send_to: req_tx,
+        req_rx: _req_rx,
         not_rx,
     };
     _ = c
@@ -264,13 +398,23 @@ pub fn run(
                     work_done_progress: Some(true),
                     ..default()
                 }),
-
+                workspace: Some(WorkspaceClientCapabilities {
+                    diagnostic: Some(DiagnosticWorkspaceClientCapabilities { refresh_support: Some(true) }),
+                    ..default()
+                }),
+                
                 text_document: Some(TextDocumentClientCapabilities {
                     hover: Some(HoverClientCapabilities {
                         dynamic_registration: None,
                         content_format: Some(vec![MarkupKind::PlainText, MarkupKind::Markdown]),
                     }),
-                    diagnostic: Some(DiagnosticClientCapabilities { dynamic_registration: None, related_document_support: Some(true), }),
+                    diagnostic: Some(DiagnosticClientCapabilities { dynamic_registration: None, related_document_support: Some(true) }),
+                    publish_diagnostics: Some(PublishDiagnosticsClientCapabilities {
+                        related_information: Some(true),
+                        code_description_support: Some(true),
+                        data_support: Some(true),
+                        ..default()
+                    }),
                     signature_help: Some(SignatureHelpClientCapabilities {
                         dynamic_registration: None, signature_information: Some(SignatureInformationSettings {
                             documentation_format: Some(vec![
@@ -388,6 +532,8 @@ pub fn run(
                     ..default()
                 }),
                 experimental: Some(json! {{
+                    "colorDiagnosticOutput": true,
+                    "codeActionGroup": true,
                     "serverStatusNotification": true,
                     "hoverActions": true,
                 }}),
@@ -419,6 +565,8 @@ pub fn run(
                         "mode": "prefer_prefix"
                     }
                 },
+                "checkOnSave": true,
+                "diagnostics": { "enable": true },
                 "semanticHighlighting": {
                     "punctuation": {
                         "separate": {
@@ -462,6 +610,7 @@ pub fn run(
     })
     .unwrap();
     let progress = c.progress;
+    let d = c.diagnostics;
     log::info!("lsp took {:?} to initialize", now.elapsed());
     let h = spawn(move || {
         let mut map = HashMap::new();
@@ -490,16 +639,22 @@ pub fn run(
                     }
                     Ok(Message::Request(x)) => {
                         if let Err(e) = _req_tx.send(x) {
-                            error!("couldnt receive request {e:?}");
+                            let m = e.to_string();
+                            error!("couldnt receive request {m}: {:?}", e.into_inner());
                         }
                     }
                     Ok(Message::Response(x)) => {
                         if let Some(e) =& x.error {
                             if e.code == ErrorCode::RequestCanceled as i32 {}
+                            else if e.code == ErrorCode::ServerCancelled as i32 {
+                                if let Some((s, _)) = map.remove(&x.id.i32()) {
+                                    log::info!("request {} cancelled", x.id);
+                                    _ = s.send(x);
+                                }
+                            }
                             else {
                                 error!("received error from lsp for response {x:?}");
                             }
-
                         }
                         else if let Some((s, took)) = map.remove(&x.id.i32()) {
                             log::info!("request {} took {:?}", x.id, took.elapsed());
@@ -515,6 +670,16 @@ pub fn run(
                             error!("request {x:?} was dropped.")
                         }
                     }
+                    Ok(Message::Notification(rq @ N { method: "textDocument/publishDiagnostics", .. })) => {
+                        debug!("got diagnostics");
+                        match rq.load::<PublishDiagnostics>() {
+                            Ok(x) => {
+                                d.insert(x.uri, x.diagnostics, &d.guard());
+                                w.request_redraw();
+                            },
+                            e => error!("{e:?}"),
+                        }
+                    },
                     Ok(Message::Notification(x @ N { method: "$/progress", .. })) => {
                         let ProgressParams {token,value:ProgressParamsValue::WorkDone(x) } = x.load::<Progress>().unwrap();
                         match x.clone() {
@@ -659,7 +824,7 @@ impl<T> OnceOff<T> {
 }
 
 #[derive(Debug)]
-pub struct Rq<T, R, D = (), E = oneshot::error::RecvError> {
+pub struct Rq<T, R, D = (), E = RequestError> {
     pub result: Option<T>,
     pub request: Option<(AbortOnDropHandle<Result<R, E>>, D)>,
 }
@@ -725,5 +890,16 @@ impl RedrawAfter for Arc<Window> {
             w.request_redraw();
             x
         })
+    }
+}
+
+pub trait PathURI {
+    fn tid(&self) -> TextDocumentIdentifier;
+}
+impl PathURI for Path {
+    fn tid(&self) -> TextDocumentIdentifier {
+        TextDocumentIdentifier {
+            uri: Url::from_file_path(self).expect("ok"),
+        }
     }
 }

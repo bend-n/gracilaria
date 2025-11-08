@@ -1,9 +1,9 @@
 use std::cmp::min;
 use std::fmt::{Debug, Display};
-use std::ops::{Deref, Index, IndexMut, Not as _, Range, RangeBounds};
+use std::ops::{Deref, Not as _, Range, RangeBounds};
 use std::path::Path;
 use std::pin::pin;
-use std::sync::{Arc, LazyLock};
+use std::sync::LazyLock;
 use std::vec::Vec;
 
 use anyhow::anyhow;
@@ -27,7 +27,7 @@ macro_rules! theme {
         #[rustfmt::skip]
         pub const NAMES: [&str; [$($x),+].len()] = [$($x),+];
         #[rustfmt::skip]
-        pub const COLORS: [[u8; 3]; NAMES.len()] = car::map!([$($color),+], |x| color(x.tail()));
+        pub const COLORS: [[u8; 3]; NAMES.len()] = car::map!([$($color),+], |x| color(x));
         pub const STYLES: [u8; NAMES.len()] = [$(
             ($($style, )? 0, ).0
         ),+];
@@ -53,14 +53,13 @@ theme! {
 }
 
 mod semantic {
-    use atools::prelude::*;
     use dsb::cell::Style;
     macro_rules! modified {
         ($count:literal $($x:literal . $mod:literal $color:literal $($style:expr)?,)+ $(,)?) => {
             pub const MODIFIED: [(&str, &str); $count] = [
                 $(($x, $mod),)+
             ];
-            pub const MCOLORS: [[u8;3]; MODIFIED.len()] = car::map!([$($color),+], |x| color(x.tail()));
+            pub const MCOLORS: [[u8;3]; MODIFIED.len()] = car::map!([$($color),+], |x| color(x));
             pub const MSTYLE: [u8; MODIFIED.len()] = [$(($($style, )? 0, ).0 ,)+];
         };
     }
@@ -148,11 +147,10 @@ const fn of(x: &'static str) -> usize {
 }
 
 pub const fn color_(x: &str) -> [u8; 3] {
-    let Some([_, x @ ..]): Option<[u8; 7]> = x.as_bytes().try_into().ok()
-    else {
+    let Some(x): Option<[u8; 7]> = x.as_bytes().try_into().ok() else {
         panic!()
     };
-    color(x)
+    color(&x)
 }
 pub const fn set_a([a, b, c]: [u8; 3], to: f32) -> [u8; 3] {
     [
@@ -161,12 +159,16 @@ pub const fn set_a([a, b, c]: [u8; 3], to: f32) -> [u8; 3] {
         (((c as f32 / 255.0) * to) * 255.0) as u8,
     ]
 }
-pub const fn color(x: [u8; 6]) -> [u8; 3] {
-    car::map!(
-        car::map!(x, |b| (b & 0xF) + 9 * (b >> 6)).chunked::<2>(),
-        |[a, b]| a * 16 + b
-    )
+pub const fn color<const N: usize>(x: &[u8; N]) -> [u8; (N - 1) / 2]
+where
+    [(); N - 1]:,
+    [(); (N - 1) % 2 + usize::MAX]:,
+{
+    let x = x.tail();
+    let parse = car::map!(x, |b| (b & 0xF) + 9 * (b >> 6)).chunked::<2>();
+    car::map!(parse, |[a, b]| a * 16 + b)
 }
+
 #[derive(Clone, Debug)]
 pub struct Diff {
     pub changes: (Patches<u8>, Patches<u8>),
@@ -362,7 +364,7 @@ impl TextArea {
         self.xy(c).0
     }
     pub fn y(&self, c: usize) -> usize {
-        self.xy(c).1
+        self.rope.char_to_line(c)
     }
 
     pub fn xy(&self, c: usize) -> (usize, usize) {
@@ -618,6 +620,7 @@ impl TextArea {
         self.setc();
         self.set_ho();
     }
+    #[lower::apply(saturating)]
     pub fn backspace(&mut self) {
         if let Some(tabstops) = &mut self.tabstops
             && let Some((_, StopP::Range(find))) =
@@ -770,12 +773,22 @@ impl TextArea {
                 .zip(0..)
             {
                 if e != '\n' {
-                    cells[(x + self.ho, y)].letter = Some(e);
-                    cells[(x + self.ho, y)].style.color = crate::FG;
-                    cells[(x + self.ho, y)].style.bg = crate::BG;
+                    cells.get((x + self.ho, y)).unwrap().letter = Some(e);
+                    cells.get((x + self.ho, y)).unwrap().style.color =
+                        crate::FG;
+                    cells.get((x + self.ho, y)).unwrap().style.bg =
+                        crate::BG;
                 }
             }
         }
+        cells
+            .get_range(
+                (self.ho, self.y(self.cursor)),
+                (self.ho + c, self.y(self.cursor)),
+            )
+            .for_each(|x| {
+                x.style.bg = color(b"#1a1f29");
+            });
 
         // let tokens = None::<(
         //     arc_swap::Guard<Arc<Box<[SemanticToken]>>>,
@@ -1208,7 +1221,9 @@ pub fn hl(
     // );
     #[coroutine]
     static move || {
-        let syntax = Syntax::new(text.slice(..), lang, &LOADER).unwrap();
+        let Ok(syntax) = Syntax::new(text.slice(..), lang, &LOADER) else {
+            return;
+        };
         let mut h = syntax.highlighter(text.slice(..), &LOADER, r);
         let mut at = 0;
 
@@ -1418,6 +1433,16 @@ impl<'a> Output<'a> {
         //     self.output.from_point(b),
         // )
     }
+    // impl<'a> IndexMut<(usize, usize)> for Output<'a> {
+    //     fn index_mut(&mut self, p: (usize, usize)) -> &mut Self::Output {
+    //         let x = self.from_point_global(self.translate(p).unwrap());
+    //         &mut self.into[x]
+    //     }
+    // }
+    pub fn get(&mut self, p: (usize, usize)) -> Option<&mut Cell> {
+        let n = self.from_point_global(self.translate(p)?);
+        self.into.get_mut(n)
+    }
 }
 
 // impl<'a> Index<usize> for Output<'a> {
@@ -1435,19 +1460,19 @@ impl<'a> Output<'a> {
 //     }
 // }
 
-impl<'a> Index<(usize, usize)> for Output<'a> {
-    type Output = Cell;
+// impl<'a> Index<(usize, usize)> for Output<'a> {
+//     type Output = Cell;
 
-    fn index(&self, p: (usize, usize)) -> &Self::Output {
-        &self.into[self.from_point_global(self.translate(p).unwrap())]
-    }
-}
-impl<'a> IndexMut<(usize, usize)> for Output<'a> {
-    fn index_mut(&mut self, p: (usize, usize)) -> &mut Self::Output {
-        let x = self.from_point_global(self.translate(p).unwrap());
-        &mut self.into[x]
-    }
-}
+//     fn index(&self, p: (usize, usize)) -> &Self::Output {
+//         &self.into[self.from_point_global(self.translate(p).unwrap())]
+//     }
+// }
+// impl<'a> IndexMut<(usize, usize)> for Output<'a> {
+//     fn index_mut(&mut self, p: (usize, usize)) -> &mut Self::Output {
+//         let x = self.from_point_global(self.translate(p).unwrap());
+//         &mut self.into[x]
+//     }
+// }
 
 pub trait CoerceOption<T> {
     fn coerce(self) -> impl Iterator<Item = T>;

@@ -174,7 +174,7 @@ fn r(
     indices: &[u32],
     to: &mut Vec<Cell>,
 ) {
-    let bg = if selected { color(*b"262d3b") } else { color(*b"1c212b") };
+    let bg = if selected { color(b"#262d3b") } else { color(b"#1c212b") };
 
     let ds: Style = Style { bg: bg, color: FG, flags: 0 };
     let d: Cell = Cell { letter: None, style: ds };

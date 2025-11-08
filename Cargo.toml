@@ -4,7 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-atools = "0.1.7"
 dsb = { version = "0.1.0", path = "../dsb" }
 fimg = { git = "https://github.com/bend-n/fimg" }
 implicit-fn = "0.1.0"
@@ -51,6 +50,8 @@ replace_with = "0.1.8"
 nucleo = "0.5.0"
 tokio-util = { version = "0.7.17", features = ["rt"] }
 scopeguard = "1.2.0"
+arc-swap = "1.7.1"
+atools = "0.1.10"
 
 [profile.dev.package.rust-analyzer]
 opt-level = 3
