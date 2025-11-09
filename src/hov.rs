@@ -261,7 +261,7 @@ pub fn markdown2(c: usize, x: &Node) -> Vec<Cell> {
     }
     r.to
 }
-pub const BG: [u8; 3] = text::color(b"#191E27");
+pub const BG: [u8; 3] = text::col!("#191E27");
 #[test]
 fn t() {
     use std::time::Instant;

@@ -1,6 +1,7 @@
 // this looks pretty good though
 #![feature(tuple_trait, unboxed_closures, fn_traits)]
 #![feature(
+    slice_as_array,
     str_as_str,
     lazy_type_alias,
     const_convert,
@@ -66,7 +67,7 @@ use winit::window::Icon;
 use crate::bar::Bar;
 use crate::hov::Hovr;
 use crate::lsp::{RedrawAfter, RqS};
-use crate::text::{Diff, TextArea, color, is_word};
+use crate::text::{Diff, TextArea, col, color, is_word};
 mod bar;
 pub mod com;
 pub mod hov;
@@ -449,19 +450,38 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             |(_c, _r), text,  mut x| {
                                 if let Some((lsp, p)) = lsp!() && let Some(diag) = lsp.diagnostics.get(&Url::from_file_path(p).unwrap(), &lsp.diagnostics.guard()) {
                                     for diag in diag {                                        
+                                        let sev =  diag.severity.unwrap_or(DiagnosticSeverity::ERROR);
                                         let f = |cell:&mut Cell| {
-                                                let sev =  diag.severity.unwrap_or(DiagnosticSeverity::ERROR);
                                                 cell.style.bg.blend(match sev {
-                                                    DiagnosticSeverity::ERROR => color(b"#ff66662c"),
-                                                    DiagnosticSeverity::WARNING => color(b"#9469242c"),
+                                                    DiagnosticSeverity::ERROR => col!("#ff66662c"),
+                                                    DiagnosticSeverity::WARNING => col!("#9469242c"),
                                                     _ => return
                                                 });
                                             };
                                         if diag.range.start == diag.range.end {
                                             x.get((diag.range.start.character as _, diag.range.start.line as _)).map(f);
                                         } else {
-                                        x.get_range((diag.range.start.character as _, diag.range.start.line as _), (diag.range.end.character as usize, diag.range.end.line as _))
-                                            .for_each(f)
+                                            x.get_range((diag.range.start.character as _, diag.range.start.line as _), (diag.range.end.character as usize, diag.range.end.line as _))
+                                                .for_each(f)
+                                        }
+                                        {
+                                        let l = diag.range.start.line as usize;
+                                        let x_ = text.rope.line(l).len_chars() + 2;
+                                        x.get_range(
+                                            (x_, l),
+                                            (x_ + diag.message.chars().count(), l),
+                                        ).zip(diag.message.chars()).for_each(|(x, c)| {
+                                            *x=match sev {
+                                                DiagnosticSeverity::WARNING => { Style{ bg :col!("#362f2f"),
+                                                                                 color: col!("#fa973a"), flags: 0 }},
+                                                DiagnosticSeverity::ERROR => {
+                                                    Style { bg : col!("#342833"),
+                                                    color : col!("#f26462"), flags: 0 }
+                                                },
+                                                _ => return
+                                            }.basic(c)
+
+                                        });
                                         }
                                     }
                                 }
@@ -1031,16 +1051,16 @@ hovering.request = (DropH::new(handle), hover).into();
                         }
                         Some(Do::Insert(x, c)) => {
                             hist.push_if_changed(&text);
-                            text.rope.remove(x.clone());
+                            _ = text.remove(x.clone());
                             text.cursor = x.start;
                             text.setc();
-                            text.insert_(c);
+                            text.insert(&c);
                             hist.push_if_changed(&text);
                         }
                         Some(Do::Delete(x)) => {
                             hist.push_if_changed(&text);
                             text.cursor = x.start;
-                            text.rope.remove(x);
+                            _ = text.remove(x);
                             hist.push_if_changed(&text);
                         }
                         Some(Do::Copy(x)) => {
@@ -1382,6 +1402,7 @@ rust_fsm::state_machine! {
 
     Complete(_x) => K(_) => _ [Request(CompletionContext { trigger_kind: CompletionTriggerKind::TRIGGER_FOR_INCOMPLETE_COMPLETIONS, trigger_character:None })],
 }
+
 use com::Complete;
 impl Default for CompletionState {
     fn default() -> Self {

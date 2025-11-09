@@ -290,8 +290,7 @@ impl Client {
                     },
                     Err(e) => return Err(e.into()),
                 };
-            log::info!("{x:?}");
-            match x {
+            match x.clone() {
                 DocumentDiagnosticReportResult::Report(
                     DocumentDiagnosticReport::Full(
                         RelatedFullDocumentDiagnosticReport {

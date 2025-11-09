@@ -169,6 +169,12 @@ where
     car::map!(parse, |[a, b]| a * 16 + b)
 }
 
+macro_rules! col {
+    ($x:literal) => {{
+        const __N: usize = $x.len();
+        const { crate::text::color($x.as_bytes().as_array::<__N>().unwrap()) }
+    }};
+}
 #[derive(Clone, Debug)]
 pub struct Diff {
     pub changes: (Patches<u8>, Patches<u8>),
@@ -302,9 +308,6 @@ impl TextArea {
             .and_then(|l| Some(self.rope.try_line_to_char(l).ok()? + x))
     }
 
-    pub fn insert_(&mut self, c: SmolStr) {
-        self.insert(&c);
-    }
     pub fn remove(&mut self, r: Range<usize>) -> Result<(), ropey::Error> {
         self.rope.try_remove(r.clone())?;
         self.tabstops.as_mut().map(|x| {
@@ -445,7 +448,7 @@ impl TextArea {
         if x < self.ho + 4 {
             self.ho = x.saturating_sub(4);
         } else if x + 4 > (self.ho + self.c) {
-            self.ho = (x - self.c) + 4;
+            self.ho = (x.saturating_sub(self.c)) + 4;
         }
     }
 
@@ -787,7 +790,7 @@ impl TextArea {
                 (self.ho + c, self.y(self.cursor)),
             )
             .for_each(|x| {
-                x.style.bg = color(b"#1a1f29");
+                x.style.bg = const { color(b"#1a1f29") };
             });
 
         // let tokens = None::<(
@@ -1483,3 +1486,5 @@ impl<I: Iterator<Item = T>, T> CoerceOption<T> for Option<I> {
         self.into_iter().flatten()
     }
 }
+// #[test]
+pub(crate) use col;
