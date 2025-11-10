@@ -174,6 +174,9 @@ macro_rules! col {
         const __N: usize = $x.len();
         const { crate::text::color($x.as_bytes().as_array::<__N>().unwrap()) }
     }};
+    ($($x:literal),+)=> {{
+        ($(crate::text::col!($x),)+)
+    }};
 }
 #[derive(Clone, Debug)]
 pub struct Diff {
@@ -735,6 +738,12 @@ impl TextArea {
         Ok(self.rope.try_line_to_char(p.line as _)?
             + (p.character as usize)
                 .min(self.rope.line(p.line as _).len_chars()))
+    }
+    pub fn l_range(
+        &self,
+        r: lsp_types::Range,
+    ) -> Result<Range<usize>, ropey::Error> {
+        Ok(self.l_position(r.start)?..self.l_position(r.end)?)
     }
 
     #[implicit_fn]

@@ -2,51 +2,91 @@
   {
     "range": {
       "start": {
-        "line": 69,
+        "line": 70,
         "character": 39
       },
       "end": {
-        "line": 69,
+        "line": 70,
         "character": 44
       }
     },
     "severity": 2,
     "code": "unused_imports",
     "source": "rustc",
-    "message": "unused import: `color`\n`#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default",
+    "message": "unused imports: `color` and `set_a`\n`#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default",
     "relatedInformation": [
       {
         "location": {
           "uri": "file:///home/os/gracilaria/src/main.rs",
           "range": {
             "start": {
-              "line": 69,
+              "line": 70,
               "character": 37
             },
             "end": {
-              "line": 69,
+              "line": 70,
               "character": 44
             }
           }
         },
-        "message": "remove the unused import"
+        "message": "remove the unused imports"
       }
     ],
     "tags": [
       1
     ],
     "data": {
-      "rendered": "\u001b[1m\u001b[33mwarning\u001b[0m\u001b[1m: unused import: `color`\u001b[0m\n  \u001b[1m\u001b[94m--> \u001b[0msrc/main.rs:70:40\n   \u001b[1m\u001b[94m|\u001b[0m\n\u001b[1m\u001b[94m70\u001b[0m \u001b[1m\u001b[94m|\u001b[0m use crate::text::{Diff, TextArea, col, color, is_word};\n   \u001b[1m\u001b[94m|\u001b[0m                                        \u001b[1m\u001b[33m^^^^^\u001b[0m\n   \u001b[1m\u001b[94m|\u001b[0m\n   \u001b[1m\u001b[94m= \u001b[0m\u001b[1mnote\u001b[0m: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default\n\n"
+      "rendered": "\u001b[1m\u001b[33mwarning\u001b[0m\u001b[1m: unused imports: `color` and `set_a`\u001b[0m\n  \u001b[1m\u001b[94m--> \u001b[0msrc/main.rs:71:40\n   \u001b[1m\u001b[94m|\u001b[0m\n\u001b[1m\u001b[94m71\u001b[0m \u001b[1m\u001b[94m|\u001b[0m use crate::text::{Diff, TextArea, col, color, is_word, set_a};\n   \u001b[1m\u001b[94m|\u001b[0m                                        \u001b[1m\u001b[33m^^^^^\u001b[0m           \u001b[1m\u001b[33m^^^^^\u001b[0m\n   \u001b[1m\u001b[94m|\u001b[0m\n   \u001b[1m\u001b[94m= \u001b[0m\u001b[1mnote\u001b[0m: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default\n\n"
     }
   },
   {
     "range": {
       "start": {
-        "line": 1272,
+        "line": 70,
+        "character": 55
+      },
+      "end": {
+        "line": 70,
+        "character": 60
+      }
+    },
+    "severity": 2,
+    "code": "unused_imports",
+    "source": "rustc",
+    "message": "unused imports: `color` and `set_a`\n`#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default",
+    "relatedInformation": [
+      {
+        "location": {
+          "uri": "file:///home/os/gracilaria/src/main.rs",
+          "range": {
+            "start": {
+              "line": 70,
+              "character": 37
+            },
+            "end": {
+              "line": 70,
+              "character": 44
+            }
+          }
+        },
+        "message": "remove the unused imports"
+      }
+    ],
+    "tags": [
+      1
+    ],
+    "data": {
+      "rendered": "\u001b[1m\u001b[33mwarning\u001b[0m\u001b[1m: unused imports: `color` and `set_a`\u001b[0m\n  \u001b[1m\u001b[94m--> \u001b[0msrc/main.rs:71:40\n   \u001b[1m\u001b[94m|\u001b[0m\n\u001b[1m\u001b[94m71\u001b[0m \u001b[1m\u001b[94m|\u001b[0m use crate::text::{Diff, TextArea, col, color, is_word, set_a};\n   \u001b[1m\u001b[94m|\u001b[0m                                        \u001b[1m\u001b[33m^^^^^\u001b[0m           \u001b[1m\u001b[33m^^^^^\u001b[0m\n   \u001b[1m\u001b[94m|\u001b[0m\n   \u001b[1m\u001b[94m= \u001b[0m\u001b[1mnote\u001b[0m: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default\n\n"
+    }
+  },
+  {
+    "range": {
+      "start": {
+        "line": 1296,
         "character": 6
       },
       "end": {
-        "line": 1272,
+        "line": 1296,
         "character": 7
       }
     },
@@ -60,11 +100,11 @@
           "uri": "file:///home/os/gracilaria/src/main.rs",
           "range": {
             "start": {
-              "line": 1272,
+              "line": 1296,
               "character": 6
             },
             "end": {
-              "line": 1272,
+              "line": 1296,
               "character": 7
             }
           }
@@ -73,17 +113,17 @@
       }
     ],
     "data": {
-      "rendered": "\u001b[1m\u001b[33mwarning\u001b[0m\u001b[1m: unnecessary parentheses around type\u001b[0m\n    \u001b[1m\u001b[94m--> \u001b[0msrc/main.rs:1273:7\n     \u001b[1m\u001b[94m|\u001b[0m\n\u001b[1m\u001b[94m1273\u001b[0m \u001b[1m\u001b[94m|\u001b[0m     C(((usize, usize)) => .. if unsafe { CLICKING }) => Selection(0..0) [StartSelection],\n     \u001b[1m\u001b[94m|\u001b[0m       \u001b[1m\u001b[33m^\u001b[0m              \u001b[1m\u001b[33m^\u001b[0m\n     \u001b[1m\u001b[94m|\u001b[0m\n     \u001b[1m\u001b[94m= \u001b[0m\u001b[1mnote\u001b[0m: `#[warn(unused_parens)]` (part of `#[warn(unused)]`) on by default\n\u001b[1m\u001b[96mhelp\u001b[0m: remove these parentheses\n     \u001b[1m\u001b[94m|\u001b[0m\n\u001b[1m\u001b[94m1273\u001b[0m \u001b[91m- \u001b[0m    C(\u001b[91m(\u001b[0m(usize, usize)\u001b[91m)\u001b[0m => .. if unsafe { CLICKING }) => Selection(0..0) [StartSelection],\n\u001b[1m\u001b[94m1273\u001b[0m \u001b[92m+ \u001b[0m    C((usize, usize) => .. if unsafe { CLICKING }) => Selection(0..0) [StartSelection],\n     \u001b[1m\u001b[94m|\u001b[0m\n\n"
+      "rendered": "\u001b[1m\u001b[33mwarning\u001b[0m\u001b[1m: unnecessary parentheses around type\u001b[0m\n    \u001b[1m\u001b[94m--> \u001b[0msrc/main.rs:1297:7\n     \u001b[1m\u001b[94m|\u001b[0m\n\u001b[1m\u001b[94m1297\u001b[0m \u001b[1m\u001b[94m|\u001b[0m     C(((usize, usize)) => .. if unsafe { CLICKING }) => Selection(0..0) [StartSelection],\n     \u001b[1m\u001b[94m|\u001b[0m       \u001b[1m\u001b[33m^\u001b[0m              \u001b[1m\u001b[33m^\u001b[0m\n     \u001b[1m\u001b[94m|\u001b[0m\n     \u001b[1m\u001b[94m= \u001b[0m\u001b[1mnote\u001b[0m: `#[warn(unused_parens)]` (part of `#[warn(unused)]`) on by default\n\u001b[1m\u001b[96mhelp\u001b[0m: remove these parentheses\n     \u001b[1m\u001b[94m|\u001b[0m\n\u001b[1m\u001b[94m1297\u001b[0m \u001b[91m- \u001b[0m    C(\u001b[91m(\u001b[0m(usize, usize)\u001b[91m)\u001b[0m => .. if unsafe { CLICKING }) => Selection(0..0) [StartSelection],\n\u001b[1m\u001b[94m1297\u001b[0m \u001b[92m+ \u001b[0m    C((usize, usize) => .. if unsafe { CLICKING }) => Selection(0..0) [StartSelection],\n     \u001b[1m\u001b[94m|\u001b[0m\n\n"
     }
   },
   {
     "range": {
       "start": {
-        "line": 1272,
+        "line": 1296,
         "character": 21
       },
       "end": {
-        "line": 1272,
+        "line": 1296,
         "character": 22
       }
     },
@@ -97,11 +137,11 @@
           "uri": "file:///home/os/gracilaria/src/main.rs",
           "range": {
             "start": {
-              "line": 1272,
+              "line": 1296,
               "character": 6
             },
             "end": {
-              "line": 1272,
+              "line": 1296,
               "character": 7
             }
           }
@@ -110,17 +150,57 @@
       }
     ],
     "data": {
-      "rendered": "\u001b[1m\u001b[33mwarning\u001b[0m\u001b[1m: unnecessary parentheses around type\u001b[0m\n    \u001b[1m\u001b[94m--> \u001b[0msrc/main.rs:1273:7\n     \u001b[1m\u001b[94m|\u001b[0m\n\u001b[1m\u001b[94m1273\u001b[0m \u001b[1m\u001b[94m|\u001b[0m     C(((usize, usize)) => .. if unsafe { CLICKING }) => Selection(0..0) [StartSelection],\n     \u001b[1m\u001b[94m|\u001b[0m       \u001b[1m\u001b[33m^\u001b[0m              \u001b[1m\u001b[33m^\u001b[0m\n     \u001b[1m\u001b[94m|\u001b[0m\n     \u001b[1m\u001b[94m= \u001b[0m\u001b[1mnote\u001b[0m: `#[warn(unused_parens)]` (part of `#[warn(unused)]`) on by default\n\u001b[1m\u001b[96mhelp\u001b[0m: remove these parentheses\n     \u001b[1m\u001b[94m|\u001b[0m\n\u001b[1m\u001b[94m1273\u001b[0m \u001b[91m- \u001b[0m    C(\u001b[91m(\u001b[0m(usize, usize)\u001b[91m)\u001b[0m => .. if unsafe { CLICKING }) => Selection(0..0) [StartSelection],\n\u001b[1m\u001b[94m1273\u001b[0m \u001b[92m+ \u001b[0m    C((usize, usize) => .. if unsafe { CLICKING }) => Selection(0..0) [StartSelection],\n     \u001b[1m\u001b[94m|\u001b[0m\n\n"
+      "rendered": "\u001b[1m\u001b[33mwarning\u001b[0m\u001b[1m: unnecessary parentheses around type\u001b[0m\n    \u001b[1m\u001b[94m--> \u001b[0msrc/main.rs:1297:7\n     \u001b[1m\u001b[94m|\u001b[0m\n\u001b[1m\u001b[94m1297\u001b[0m \u001b[1m\u001b[94m|\u001b[0m     C(((usize, usize)) => .. if unsafe { CLICKING }) => Selection(0..0) [StartSelection],\n     \u001b[1m\u001b[94m|\u001b[0m       \u001b[1m\u001b[33m^\u001b[0m              \u001b[1m\u001b[33m^\u001b[0m\n     \u001b[1m\u001b[94m|\u001b[0m\n     \u001b[1m\u001b[94m= \u001b[0m\u001b[1mnote\u001b[0m: `#[warn(unused_parens)]` (part of `#[warn(unused)]`) on by default\n\u001b[1m\u001b[96mhelp\u001b[0m: remove these parentheses\n     \u001b[1m\u001b[94m|\u001b[0m\n\u001b[1m\u001b[94m1297\u001b[0m \u001b[91m- \u001b[0m    C(\u001b[91m(\u001b[0m(usize, usize)\u001b[91m)\u001b[0m => .. if unsafe { CLICKING }) => Selection(0..0) [StartSelection],\n\u001b[1m\u001b[94m1297\u001b[0m \u001b[92m+ \u001b[0m    C((usize, usize) => .. if unsafe { CLICKING }) => Selection(0..0) [StartSelection],\n     \u001b[1m\u001b[94m|\u001b[0m\n\n"
     }
   },
   {
     "range": {
       "start": {
-        "line": 1282,
+        "line": 606,
+        "character": 32
+      },
+      "end": {
+        "line": 606,
+        "character": 36
+      }
+    },
+    "severity": 2,
+    "code": "unused_variables",
+    "source": "rustc",
+    "message": "unused variable: `diag`",
+    "relatedInformation": [
+      {
+        "location": {
+          "uri": "file:///home/os/gracilaria/src/main.rs",
+          "range": {
+            "start": {
+              "line": 606,
+              "character": 32
+            },
+            "end": {
+              "line": 606,
+              "character": 36
+            }
+          }
+        },
+        "message": "if this is intentional, prefix it with an underscore: `_diag`"
+      }
+    ],
+    "tags": [
+      1
+    ],
+    "data": {
+      "rendered": "\u001b[1m\u001b[33mwarning\u001b[0m\u001b[1m: unused variable: `diag`\u001b[0m\n   \u001b[1m\u001b[94m--> \u001b[0msrc/main.rs:607:33\n    \u001b[1m\u001b[94m|\u001b[0m\n\u001b[1m\u001b[94m607\u001b[0m \u001b[1m\u001b[94m|\u001b[0m \u001b[1m\u001b[94m...\u001b[0m                   for diag in dawg {\n    \u001b[1m\u001b[94m|\u001b[0m                           \u001b[1m\u001b[33m^^^^\u001b[0m \u001b[1m\u001b[33mhelp: if this is intentional, prefix it with an underscore: `_diag`\u001b[0m\n\n"
+    }
+  },
+  {
+    "range": {
+      "start": {
+        "line": 1306,
         "character": 10
       },
       "end": {
-        "line": 1282,
+        "line": 1306,
         "character": 11
       }
     },
@@ -134,11 +214,11 @@
           "uri": "file:///home/os/gracilaria/src/main.rs",
           "range": {
             "start": {
-              "line": 1282,
+              "line": 1306,
               "character": 10
             },
             "end": {
-              "line": 1282,
+              "line": 1306,
               "character": 11
             }
           }
@@ -150,17 +230,17 @@
       1
     ],
     "data": {
-      "rendered": "\u001b[1m\u001b[33mwarning\u001b[0m\u001b[1m: unused variable: `x`\u001b[0m\n    \u001b[1m\u001b[94m--> \u001b[0msrc/main.rs:1283:11\n     \u001b[1m\u001b[94m|\u001b[0m\n\u001b[1m\u001b[94m1283\u001b[0m \u001b[1m\u001b[94m|\u001b[0m Selection(x) => {\n     \u001b[1m\u001b[94m|\u001b[0m           \u001b[1m\u001b[33m^\u001b[0m \u001b[1m\u001b[33mhelp: if this is intentional, prefix it with an underscore: `_x`\u001b[0m\n\n"
+      "rendered": "\u001b[1m\u001b[33mwarning\u001b[0m\u001b[1m: unused variable: `x`\u001b[0m\n    \u001b[1m\u001b[94m--> \u001b[0msrc/main.rs:1307:11\n     \u001b[1m\u001b[94m|\u001b[0m\n\u001b[1m\u001b[94m1307\u001b[0m \u001b[1m\u001b[94m|\u001b[0m Selection(x) => {\n     \u001b[1m\u001b[94m|\u001b[0m           \u001b[1m\u001b[33m^\u001b[0m \u001b[1m\u001b[33mhelp: if this is intentional, prefix it with an underscore: `_x`\u001b[0m\n\n"
     }
   },
   {
     "range": {
       "start": {
-        "line": 1310,
+        "line": 1334,
         "character": 8
       },
       "end": {
-        "line": 1310,
+        "line": 1334,
         "character": 9
       }
     },
@@ -174,11 +254,11 @@
           "uri": "file:///home/os/gracilaria/src/main.rs",
           "range": {
             "start": {
-              "line": 1310,
+              "line": 1334,
               "character": 8
             },
             "end": {
-              "line": 1310,
+              "line": 1334,
               "character": 9
             }
           }
@@ -190,17 +270,17 @@
       1
     ],
     "data": {
-      "rendered": "\u001b[1m\u001b[33mwarning\u001b[0m\u001b[1m: unused variable: `x`\u001b[0m\n    \u001b[1m\u001b[94m--> \u001b[0msrc/main.rs:1311:9\n     \u001b[1m\u001b[94m|\u001b[0m\n\u001b[1m\u001b[94m1311\u001b[0m \u001b[1m\u001b[94m|\u001b[0m Search((x, y, m)) => {\n     \u001b[1m\u001b[94m|\u001b[0m         \u001b[1m\u001b[33m^\u001b[0m \u001b[1m\u001b[33mhelp: if this is intentional, prefix it with an underscore: `_x`\u001b[0m\n\n"
+      "rendered": "\u001b[1m\u001b[33mwarning\u001b[0m\u001b[1m: unused variable: `x`\u001b[0m\n    \u001b[1m\u001b[94m--> \u001b[0msrc/main.rs:1335:9\n     \u001b[1m\u001b[94m|\u001b[0m\n\u001b[1m\u001b[94m1335\u001b[0m \u001b[1m\u001b[94m|\u001b[0m Search((x, y, m)) => {\n     \u001b[1m\u001b[94m|\u001b[0m         \u001b[1m\u001b[33m^\u001b[0m \u001b[1m\u001b[33mhelp: if this is intentional, prefix it with an underscore: `_x`\u001b[0m\n\n"
     }
   },
   {
     "range": {
       "start": {
-        "line": 1310,
+        "line": 1334,
         "character": 11
       },
       "end": {
-        "line": 1310,
+        "line": 1334,
         "character": 12
       }
     },
@@ -214,11 +294,11 @@
           "uri": "file:///home/os/gracilaria/src/main.rs",
           "range": {
             "start": {
-              "line": 1310,
+              "line": 1334,
               "character": 11
             },
             "end": {
-              "line": 1310,
+              "line": 1334,
               "character": 12
             }
           }
@@ -230,11 +310,11 @@
           "uri": "file:///home/os/gracilaria/src/main.rs",
           "range": {
             "start": {
-              "line": 1310,
+              "line": 1334,
               "character": 11
             },
             "end": {
-              "line": 1310,
+              "line": 1334,
               "character": 12
             }
           }
@@ -246,17 +326,17 @@
       1
     ],
     "data": {
-      "rendered": "\u001b[1m\u001b[33mwarning\u001b[0m\u001b[1m: unused variable: `y`\u001b[0m\n    \u001b[1m\u001b[94m--> \u001b[0msrc/main.rs:1311:12\n     \u001b[1m\u001b[94m|\u001b[0m\n\u001b[1m\u001b[94m1311\u001b[0m \u001b[1m\u001b[94m|\u001b[0m Search((x, y, m)) => {\n     \u001b[1m\u001b[94m|\u001b[0m            \u001b[1m\u001b[33m^\u001b[0m\n     \u001b[1m\u001b[94m|\u001b[0m\n\u001b[1m\u001b[96mhelp\u001b[0m: you might have meant to pattern match on the similarly named constant `N`\n     \u001b[1m\u001b[94m|\u001b[0m\n\u001b[1m\u001b[94m1311\u001b[0m \u001b[91m- \u001b[0mSearch((x, \u001b[91my\u001b[0m, m)) => {\n\u001b[1m\u001b[94m1311\u001b[0m \u001b[92m+ \u001b[0mSearch((x, \u001b[92mcom::N\u001b[0m, m)) => {\n     \u001b[1m\u001b[94m|\u001b[0m\n\u001b[1m\u001b[96mhelp\u001b[0m: if this is intentional, prefix it with an underscore\n     \u001b[1m\u001b[94m|\u001b[0m\n\u001b[1m\u001b[94m1311\u001b[0m \u001b[1m\u001b[94m| \u001b[0mSearch((x, \u001b[92m_\u001b[0my, m)) => {\n     \u001b[1m\u001b[94m|\u001b[0m            \u001b[92m+\u001b[0m\n\n"
+      "rendered": "\u001b[1m\u001b[33mwarning\u001b[0m\u001b[1m: unused variable: `y`\u001b[0m\n    \u001b[1m\u001b[94m--> \u001b[0msrc/main.rs:1335:12\n     \u001b[1m\u001b[94m|\u001b[0m\n\u001b[1m\u001b[94m1335\u001b[0m \u001b[1m\u001b[94m|\u001b[0m Search((x, y, m)) => {\n     \u001b[1m\u001b[94m|\u001b[0m            \u001b[1m\u001b[33m^\u001b[0m\n     \u001b[1m\u001b[94m|\u001b[0m\n\u001b[1m\u001b[96mhelp\u001b[0m: you might have meant to pattern match on the similarly named constant `N`\n     \u001b[1m\u001b[94m|\u001b[0m\n\u001b[1m\u001b[94m1335\u001b[0m \u001b[91m- \u001b[0mSearch((x, \u001b[91my\u001b[0m, m)) => {\n\u001b[1m\u001b[94m1335\u001b[0m \u001b[92m+ \u001b[0mSearch((x, \u001b[92mcom::N\u001b[0m, m)) => {\n     \u001b[1m\u001b[94m|\u001b[0m\n\u001b[1m\u001b[96mhelp\u001b[0m: if this is intentional, prefix it with an underscore\n     \u001b[1m\u001b[94m|\u001b[0m\n\u001b[1m\u001b[94m1335\u001b[0m \u001b[1m\u001b[94m| \u001b[0mSearch((x, \u001b[92m_\u001b[0my, m)) => {\n     \u001b[1m\u001b[94m|\u001b[0m            \u001b[92m+\u001b[0m\n\n"
     }
   },
   {
     "range": {
       "start": {
-        "line": 1310,
+        "line": 1334,
         "character": 14
       },
       "end": {
-        "line": 1310,
+        "line": 1334,
         "character": 15
       }
     },
@@ -270,11 +350,11 @@
           "uri": "file:///home/os/gracilaria/src/main.rs",
           "range": {
             "start": {
-              "line": 1310,
+              "line": 1334,
               "character": 14
             },
             "end": {
-              "line": 1310,
+              "line": 1334,
               "character": 15
             }
           }
@@ -286,11 +366,11 @@
           "uri": "file:///home/os/gracilaria/src/main.rs",
           "range": {
             "start": {
-              "line": 1310,
+              "line": 1334,
               "character": 14
             },
             "end": {
-              "line": 1310,
+              "line": 1334,
               "character": 15
             }
           }
@@ -302,17 +382,17 @@
       1
     ],
     "data": {
-      "rendered": "\u001b[1m\u001b[33mwarning\u001b[0m\u001b[1m: unused variable: `m`\u001b[0m\n    \u001b[1m\u001b[94m--> \u001b[0msrc/main.rs:1311:15\n     \u001b[1m\u001b[94m|\u001b[0m\n\u001b[1m\u001b[94m1311\u001b[0m \u001b[1m\u001b[94m|\u001b[0m Search((x, y, m)) => {\n     \u001b[1m\u001b[94m|\u001b[0m               \u001b[1m\u001b[33m^\u001b[0m\n     \u001b[1m\u001b[94m|\u001b[0m\n\u001b[1m\u001b[96mhelp\u001b[0m: you might have meant to pattern match on the similarly named constant `N`\n     \u001b[1m\u001b[94m|\u001b[0m\n\u001b[1m\u001b[94m1311\u001b[0m \u001b[91m- \u001b[0mSearch((x, y, \u001b[91mm\u001b[0m)) => {\n\u001b[1m\u001b[94m1311\u001b[0m \u001b[92m+ \u001b[0mSearch((x, y, \u001b[92mcom::N\u001b[0m)) => {\n     \u001b[1m\u001b[94m|\u001b[0m\n\u001b[1m\u001b[96mhelp\u001b[0m: if this is intentional, prefix it with an underscore\n     \u001b[1m\u001b[94m|\u001b[0m\n\u001b[1m\u001b[94m1311\u001b[0m \u001b[1m\u001b[94m| \u001b[0mSearch((x, y, \u001b[92m_\u001b[0mm)) => {\n     \u001b[1m\u001b[94m|\u001b[0m               \u001b[92m+\u001b[0m\n\n"
+      "rendered": "\u001b[1m\u001b[33mwarning\u001b[0m\u001b[1m: unused variable: `m`\u001b[0m\n    \u001b[1m\u001b[94m--> \u001b[0msrc/main.rs:1335:15\n     \u001b[1m\u001b[94m|\u001b[0m\n\u001b[1m\u001b[94m1335\u001b[0m \u001b[1m\u001b[94m|\u001b[0m Search((x, y, m)) => {\n     \u001b[1m\u001b[94m|\u001b[0m               \u001b[1m\u001b[33m^\u001b[0m\n     \u001b[1m\u001b[94m|\u001b[0m\n\u001b[1m\u001b[96mhelp\u001b[0m: you might have meant to pattern match on the similarly named constant `N`\n     \u001b[1m\u001b[94m|\u001b[0m\n\u001b[1m\u001b[94m1335\u001b[0m \u001b[91m- \u001b[0mSearch((x, y, \u001b[91mm\u001b[0m)) => {\n\u001b[1m\u001b[94m1335\u001b[0m \u001b[92m+ \u001b[0mSearch((x, y, \u001b[92mcom::N\u001b[0m)) => {\n     \u001b[1m\u001b[94m|\u001b[0m\n\u001b[1m\u001b[96mhelp\u001b[0m: if this is intentional, prefix it with an underscore\n     \u001b[1m\u001b[94m|\u001b[0m\n\u001b[1m\u001b[94m1335\u001b[0m \u001b[1m\u001b[94m| \u001b[0mSearch((x, y, \u001b[92m_\u001b[0mm)) => {\n     \u001b[1m\u001b[94m|\u001b[0m               \u001b[92m+\u001b[0m\n\n"
     }
   },
   {
     "range": {
       "start": {
-        "line": 1272,
+        "line": 1296,
         "character": 6
       },
       "end": {
-        "line": 1272,
+        "line": 1296,
         "character": 22
       }
     },
@@ -326,11 +406,11 @@
           "uri": "file:///home/os/gracilaria/src/main.rs",
           "range": {
             "start": {
-              "line": 1312,
+              "line": 1336,
               "character": 4
             },
             "end": {
-              "line": 1312,
+              "line": 1336,
               "character": 5
             }
           }
@@ -342,11 +422,11 @@
           "uri": "file:///home/os/gracilaria/src/main.rs",
           "range": {
             "start": {
-              "line": 1272,
+              "line": 1296,
               "character": 6
             },
             "end": {
-              "line": 1272,
+              "line": 1296,
               "character": 22
             }
           }
@@ -358,17 +438,17 @@
       1
     ],
     "data": {
-      "rendered": "\u001b[1m\u001b[33mwarning\u001b[0m\u001b[1m: field `0` is never read\u001b[0m\n    \u001b[1m\u001b[94m--> \u001b[0msrc/main.rs:1273:7\n     \u001b[1m\u001b[94m|\u001b[0m\n\u001b[1m\u001b[94m1273\u001b[0m \u001b[1m\u001b[94m|\u001b[0m     C(((usize, usize)) => .. if unsafe { CLICKING }) => Selection(0..0) [StartSelection],\n     \u001b[1m\u001b[94m|\u001b[0m       \u001b[1m\u001b[33m^^^^^^^^^^^^^^^^\u001b[0m\n\u001b[1m\u001b[94m...\u001b[0m\n\u001b[1m\u001b[94m1313\u001b[0m \u001b[1m\u001b[94m|\u001b[0m     C(_) => Search((x, y, m)),\n     \u001b[1m\u001b[94m|\u001b[0m     \u001b[1m\u001b[94m-\u001b[0m \u001b[1m\u001b[94mfield in this variant\u001b[0m\n     \u001b[1m\u001b[94m|\u001b[0m\n     \u001b[1m\u001b[94m= \u001b[0m\u001b[1mnote\u001b[0m: `Action` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis\n     \u001b[1m\u001b[94m= \u001b[0m\u001b[1mnote\u001b[0m: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default\n\u001b[1m\u001b[96mhelp\u001b[0m: consider changing the field to be of unit type to suppress this warning while preserving the field numbering, or remove the field\n     \u001b[1m\u001b[94m|\u001b[0m\n\u001b[1m\u001b[94m1273\u001b[0m \u001b[91m- \u001b[0m    C(\u001b[91m((usize, usize))\u001b[0m => .. if unsafe { CLICKING }) => Selection(0..0) [StartSelection],\n\u001b[1m\u001b[94m1273\u001b[0m \u001b[92m+ \u001b[0m    C(\u001b[92m()\u001b[0m => .. if unsafe { CLICKING }) => Selection(0..0) [StartSelection],\n     \u001b[1m\u001b[94m|\u001b[0m\n\n"
+      "rendered": "\u001b[1m\u001b[33mwarning\u001b[0m\u001b[1m: field `0` is never read\u001b[0m\n    \u001b[1m\u001b[94m--> \u001b[0msrc/main.rs:1297:7\n     \u001b[1m\u001b[94m|\u001b[0m\n\u001b[1m\u001b[94m1297\u001b[0m \u001b[1m\u001b[94m|\u001b[0m     C(((usize, usize)) => .. if unsafe { CLICKING }) => Selection(0..0) [StartSelection],\n     \u001b[1m\u001b[94m|\u001b[0m       \u001b[1m\u001b[33m^^^^^^^^^^^^^^^^\u001b[0m\n\u001b[1m\u001b[94m...\u001b[0m\n\u001b[1m\u001b[94m1337\u001b[0m \u001b[1m\u001b[94m|\u001b[0m     C(_) => Search((x, y, m)),\n     \u001b[1m\u001b[94m|\u001b[0m     \u001b[1m\u001b[94m-\u001b[0m \u001b[1m\u001b[94mfield in this variant\u001b[0m\n     \u001b[1m\u001b[94m|\u001b[0m\n     \u001b[1m\u001b[94m= \u001b[0m\u001b[1mnote\u001b[0m: `Action` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis\n     \u001b[1m\u001b[94m= \u001b[0m\u001b[1mnote\u001b[0m: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default\n\u001b[1m\u001b[96mhelp\u001b[0m: consider changing the field to be of unit type to suppress this warning while preserving the field numbering, or remove the field\n     \u001b[1m\u001b[94m|\u001b[0m\n\u001b[1m\u001b[94m1297\u001b[0m \u001b[91m- \u001b[0m    C(\u001b[91m((usize, usize))\u001b[0m => .. if unsafe { CLICKING }) => Selection(0..0) [StartSelection],\n\u001b[1m\u001b[94m1297\u001b[0m \u001b[92m+ \u001b[0m    C(\u001b[92m()\u001b[0m => .. if unsafe { CLICKING }) => Selection(0..0) [StartSelection],\n     \u001b[1m\u001b[94m|\u001b[0m\n\n"
     }
   },
   {
     "range": {
       "start": {
-        "line": 1422,
+        "line": 1446,
         "character": 3
       },
       "end": {
-        "line": 1422,
+        "line": 1446,
         "character": 15
       }
     },
@@ -380,17 +460,54 @@
       1
     ],
     "data": {
-      "rendered": "\u001b[1m\u001b[33mwarning\u001b[0m\u001b[1m: function `frunctinator` is never used\u001b[0m\n    \u001b[1m\u001b[94m--> \u001b[0msrc/main.rs:1423:4\n     \u001b[1m\u001b[94m|\u001b[0m\n\u001b[1m\u001b[94m1423\u001b[0m \u001b[1m\u001b[94m|\u001b[0m fn frunctinator(\n     \u001b[1m\u001b[94m|\u001b[0m    \u001b[1m\u001b[33m^^^^^^^^^^^^\u001b[0m\n\n"
+      "rendered": "\u001b[1m\u001b[33mwarning\u001b[0m\u001b[1m: function `frunctinator` is never used\u001b[0m\n    \u001b[1m\u001b[94m--> \u001b[0msrc/main.rs:1447:4\n     \u001b[1m\u001b[94m|\u001b[0m\n\u001b[1m\u001b[94m1447\u001b[0m \u001b[1m\u001b[94m|\u001b[0m fn frunctinator(\n     \u001b[1m\u001b[94m|\u001b[0m    \u001b[1m\u001b[33m^^^^^^^^^^^^\u001b[0m\n\n"
     }
   },
   {
     "range": {
       "start": {
-        "line": 1427,
+        "line": 457,
+        "character": 36
+      },
+      "end": {
+        "line": 457,
+        "character": 104
+      }
+    },
+    "severity": 2,
+    "code": "unused_must_use",
+    "source": "rustc",
+    "message": "unused `Result` that must be used\nthis `Result` may be an `Err` variant, which should be handled",
+    "relatedInformation": [
+      {
+        "location": {
+          "uri": "file:///home/os/gracilaria/src/main.rs",
+          "range": {
+            "start": {
+              "line": 457,
+              "character": 36
+            },
+            "end": {
+              "line": 457,
+              "character": 36
+            }
+          }
+        },
+        "message": "use `let _ = ...` to ignore the resulting value: `let _ = `"
+      }
+    ],
+    "data": {
+      "rendered": "\u001b[1m\u001b[33mwarning\u001b[0m\u001b[1m: unused `Result` that must be used\u001b[0m\n   \u001b[1m\u001b[94m--> \u001b[0msrc/main.rs:458:37\n    \u001b[1m\u001b[94m|\u001b[0m\n\u001b[1m\u001b[94m458\u001b[0m \u001b[1m\u001b[94m|\u001b[0m \u001b[1m\u001b[94m...\u001b[0m                   std::fs::write(\"diag\", serde_json::to_string_pretty(&diag).unwrap());\n    \u001b[1m\u001b[94m|\u001b[0m                       \u001b[1m\u001b[33m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\u001b[0m\n    \u001b[1m\u001b[94m|\u001b[0m\n    \u001b[1m\u001b[94m= \u001b[0m\u001b[1mnote\u001b[0m: this `Result` may be an `Err` variant, which should be handled\n\u001b[1m\u001b[96mhelp\u001b[0m: use `let _ = ...` to ignore the resulting value\n    \u001b[1m\u001b[94m|\u001b[0m\n\u001b[1m\u001b[94m458\u001b[0m \u001b[1m\u001b[94m| \u001b[0m                                    \u001b[92mlet _ = \u001b[0mstd::fs::write(\"diag\", serde_json::to_string_pretty(&diag).unwrap());\n    \u001b[1m\u001b[94m|\u001b[0m                                     \u001b[92m+++++++\u001b[0m\n\n"
+    }
+  },
+  {
+    "range": {
+      "start": {
+        "line": 1451,
         "character": 31
       },
       "end": {
-        "line": 1427,
+        "line": 1451,
         "character": 41
       }
     },
@@ -399,7 +516,7 @@
     "source": "rustc",
     "message": "path statement with no effect\n`#[warn(path_statements)]` (part of `#[warn(unused)]`) on by default",
     "data": {
-      "rendered": "\u001b[1m\u001b[33mwarning\u001b[0m\u001b[1m: path statement with no effect\u001b[0m\n    \u001b[1m\u001b[94m--> \u001b[0msrc/main.rs:1428:32\n     \u001b[1m\u001b[94m|\u001b[0m\n\u001b[1m\u001b[94m1428\u001b[0m \u001b[1m\u001b[94m|\u001b[0m     lower::saturating::math! { parameter1  };\n     \u001b[1m\u001b[94m|\u001b[0m                                \u001b[1m\u001b[33m^^^^^^^^^^\u001b[0m\n     \u001b[1m\u001b[94m|\u001b[0m\n     \u001b[1m\u001b[94m= \u001b[0m\u001b[1mnote\u001b[0m: `#[warn(path_statements)]` (part of `#[warn(unused)]`) on by default\n\n"
+      "rendered": "\u001b[1m\u001b[33mwarning\u001b[0m\u001b[1m: path statement with no effect\u001b[0m\n    \u001b[1m\u001b[94m--> \u001b[0msrc/main.rs:1452:32\n     \u001b[1m\u001b[94m|\u001b[0m\n\u001b[1m\u001b[94m1452\u001b[0m \u001b[1m\u001b[94m|\u001b[0m     lower::saturating::math! { parameter1  };\n     \u001b[1m\u001b[94m|\u001b[0m                                \u001b[1m\u001b[33m^^^^^^^^^^\u001b[0m\n     \u001b[1m\u001b[94m|\u001b[0m\n     \u001b[1m\u001b[94m= \u001b[0m\u001b[1mnote\u001b[0m: `#[warn(path_statements)]` (part of `#[warn(unused)]`) on by default\n\n"
     }
   }
 ]

@@ -64,7 +64,7 @@ fn score<'a>(
     let mut v = x
         .map(move |y| {
             let mut utf32 = vec![];
-
+            // std::env::args().nth(1).unwrap().as_bytes().fi .fold(0, |acc, x| acc * 10 + x - b'0');
             let hay = y.filter_text.as_deref().unwrap_or(&y.label);
             let mut indices = vec![];
             let score = p
@@ -80,6 +80,10 @@ fn score<'a>(
             (score, y, indices)
         })
         .collect::<Vec<_>>();
+    // std::fs::write(
+    //     "com",
+    //     v.iter().map(|x| x.1.label.clone() + "\n").collect::<String>(),
+    // );
     v.sort_by_key(|x| x.0);
     v.reverse();
     v

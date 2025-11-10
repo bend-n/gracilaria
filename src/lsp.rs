@@ -401,8 +401,13 @@ pub fn run(
                     diagnostic: Some(DiagnosticWorkspaceClientCapabilities { refresh_support: Some(true) }),
                     ..default()
                 }),
-                
                 text_document: Some(TextDocumentClientCapabilities {
+                    code_action: Some(
+                        CodeActionClientCapabilities {
+                            data_support: Some(true),
+                           ..default() 
+                        }
+                    ),
                     hover: Some(HoverClientCapabilities {
                         dynamic_registration: None,
                         content_format: Some(vec![MarkupKind::PlainText, MarkupKind::Markdown]),
@@ -521,6 +526,7 @@ pub fn run(
                     }),
                     ..default()
                 }),
+                
                 general: Some(GeneralClientCapabilities {
                     markdown: Some(MarkdownClientCapabilities {
                         version: Some("1.0.0".into()),

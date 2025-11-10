@@ -31,6 +31,7 @@
 )]
 #![allow(incomplete_features, redundant_semicolons)]
 use std::borrow::Cow;
+use std::iter::once;
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
@@ -67,7 +68,7 @@ use winit::window::Icon;
 use crate::bar::Bar;
 use crate::hov::Hovr;
 use crate::lsp::{RedrawAfter, RqS};
-use crate::text::{Diff, TextArea, col, color, is_word};
+use crate::text::{Diff, TextArea, col, color, is_word, set_a};
 mod bar;
 pub mod com;
 pub mod hov;
@@ -448,42 +449,60 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             (t_ox, 0),
                             x,
                             |(_c, _r), text,  mut x| {
-                                if let Some((lsp, p)) = lsp!() && let Some(diag) = lsp.diagnostics.get(&Url::from_file_path(p).unwrap(), &lsp.diagnostics.guard()) {
-                                    for diag in diag {                                        
+                                if let Some((lsp, p)) = lsp!() && let uri = Url::from_file_path(p).unwrap() && let Some(diag) = lsp.diagnostics.get(&uri, &lsp.diagnostics.guard()) {
+                                    #[derive(Copy, Clone, Debug)]
+                                    enum EType {
+                                        Hint, Info, Error,Warning,Related(DiagnosticSeverity),
+                                    }
+                                    let mut occupied = vec![];
+                                    diag.iter().flat_map(|diag| {
                                         let sev =  diag.severity.unwrap_or(DiagnosticSeverity::ERROR);
-                                        let f = |cell:&mut Cell| {
+                                        let sev_ = match sev {
+                                            DiagnosticSeverity::ERROR => EType::Error,
+                                            DiagnosticSeverity::WARNING => EType::Warning,
+                                            DiagnosticSeverity::HINT => EType::Hint,
+                                            _ => EType::Info,
+                                        };
+                                        once((diag.range, &*diag.message, sev_)).chain(diag.related_information.iter().flatten().filter(|sp| sp.location.uri == uri).map(move |x| {
+                                            (x.location.range, &*x.message, EType::Related(sev))
+                                        }))
+                                    }).for_each(|(mut r, m, sev)| {
+                                            while occupied.contains(&r.start.line) {
+                                                r.start.line+=1
+                                            };
+                                            occupied.push(r.start.line);
+                                            let f = |cell:&mut Cell| {
                                                 cell.style.bg.blend(match sev {
-                                                    DiagnosticSeverity::ERROR => col!("#ff66662c"),
-                                                    DiagnosticSeverity::WARNING => col!("#9469242c"),
-                                                    _ => return
+                                                    EType::Error => col!("#ff66662c"),
+                                                    EType::Warning | EType::Hint | EType::Info => col!("#9469242c"),
+                                                    EType::Related(DiagnosticSeverity::ERROR) => col!("#dfbfff26"),
+                                                    EType::Related(_) => col!("#ffad6625"),
                                                 });
                                             };
-                                        if diag.range.start == diag.range.end {
-                                            x.get((diag.range.start.character as _, diag.range.start.line as _)).map(f);
-                                        } else {
-                                            x.get_range((diag.range.start.character as _, diag.range.start.line as _), (diag.range.end.character as usize, diag.range.end.line as _))
-                                                .for_each(f)
-                                        }
-                                        {
-                                        let l = diag.range.start.line as usize;
-                                        let x_ = text.rope.line(l).len_chars() + 2;
+                                            if r.start == r.end {
+                                                x.get((r.start.character as _, r.start.line as _)).map(f);
+                                            } else {
+                                                x.get_range((r.start.character as _, r.start.line as _), (r.end.character as usize, r.end.line as _))
+                                                    .for_each(f)
+                                            }
+                                            let l = r.start.line as usize;
+                                            let x_ = text.rope.line(l).len_chars() + 2;
+                                        let m = m.lines().next().unwrap_or(m);
                                         x.get_range(
                                             (x_, l),
-                                            (x_ + diag.message.chars().count(), l),
-                                        ).zip(diag.message.chars()).for_each(|(x, c)| {
-                                            *x=match sev {
-                                                DiagnosticSeverity::WARNING => { Style{ bg :col!("#362f2f"),
-                                                                                 color: col!("#fa973a"), flags: 0 }},
-                                                DiagnosticSeverity::ERROR => {
-                                                    Style { bg : col!("#342833"),
-                                                    color : col!("#f26462"), flags: 0 }
-                                                },
+                                            (x_ + m.chars().count(), l),
+                                        ).zip(m.chars()).for_each(|(x, ch)| {
+                                            let (bg, fg) = match sev {
+                                                EType::Warning => {  col!("#ff942f1b", "#fa973a") },
+                                                EType::Error => { col!("#ff942f1b", "#f26462") },
+                                                EType::Related(DiagnosticSeverity::WARNING) => { col!("#dfbfff26", "#DFBFFF") }
                                                 _ => return
-                                            }.basic(c)
-
-                                        });
-                                        }
-                                    }
+                                            };
+                                            x.style.bg.blend(bg);
+                                            x.style.color = fg;
+                                            x.letter = Some(ch);
+                                        })
+                                    });
                                 }
                                 if let State::Search(re, j, _) = &state {
                                     re.find_iter(&text.rope.to_string())
@@ -581,6 +600,12 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             )};
                             (is_above, left, top, w, h)
                         };
+                        if let Some((lsp, p)) = lsp!() && let Some(diag) = lsp.diagnostics.get(&Url::from_file_path(p).unwrap(), &lsp.diagnostics.guard()) {
+                            let dawg = diag.iter().filter(|x| text.l_range(x.range).is_ok_and(|x| x.contains(&text.cursor)));
+                            for diag in dawg {
+                                
+                            }
+                        }
                         hovering.result.as_ref().map(|x| x.span.clone().map(|sp| {
                             let [(_x, _y), (_x2, _)] = text.position(sp);
                             let [_x, _x2] = [_x, _x2].add(text.line_number_offset()+1);
@@ -798,9 +823,7 @@ let handle = cl.runtime.spawn(window.redraw_after(async move {
         let m = hov::l(&x).into_iter().max().map(_+2).unwrap_or(usize::MAX).min(c-10);
         (m, hov::markdown2(m, &x))
     }).await.unwrap();
-    let span = x.range.and_then(|x| {
-        Some(text.l_position(x.start).ok()?..text.l_position(x.end).ok()?)
-    });
+    let span = x.range.and_then(|x| text.l_range(x).ok());
     anyhow::Ok(Some( hov::Hovr { span, item: text::CellBuffer { c: w, vo: 0, cells: cells.into() }}.into()))
 }));
 hovering.request = (DropH::new(handle), hover).into();
@@ -1395,7 +1418,7 @@ rust_fsm::state_machine! {
     // exit cases
     Complete(_) => Click => None,
     Complete(_) => NoResult => None,
-    Complete(_)=> K(Key::Named(Escape)) => None,
+    Complete(_) => K(Key::Named(Escape)) => None,
     Complete(_) => K(Key::Character(x) if !x.chars().all(is_word)) => None,
 
     Complete(Rq { result: Some(x), .. }) => K(Key::Named(NamedKey::Enter)) => None [Finish(Complete => x)],
