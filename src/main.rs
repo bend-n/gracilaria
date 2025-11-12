@@ -1,6 +1,9 @@
 // this looks pretty good though
 #![feature(tuple_trait, unboxed_closures, fn_traits)]
 #![feature(
+    iter_next_chunk,
+    iter_array_chunks,
+    array_windows,
     slice_as_array,
     str_as_str,
     lazy_type_alias,
@@ -31,8 +34,9 @@
 )]
 #![allow(incomplete_features, redundant_semicolons)]
 use std::borrow::Cow;
-use std::iter::once;
+use std::iter::{Take, once};
 use std::num::NonZeroU32;
+use std::os::fd::AsFd;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 use std::time::Instant;
@@ -82,6 +86,7 @@ fn main() {
     // lsp::x();
     entry(EventLoop::new().unwrap())
 }
+
 #[derive(Debug)]
 struct Hist {
     pub history: Vec<Diff>,
@@ -467,8 +472,9 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                                             (x.location.range, &*x.message, EType::Related(sev))
                                         }))
                                     }).for_each(|(mut r, m, sev)| {
+                                            let p = r.start.line;
                                             while occupied.contains(&r.start.line) {
-                                                r.start.line+=1
+                                                r.start.line+=1;
                                             };
                                             occupied.push(r.start.line);
                                             let f = |cell:&mut Cell| {
@@ -480,13 +486,15 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                                                 });
                                             };
                                             if r.start == r.end {
-                                                x.get((r.start.character as _, r.start.line as _)).map(f);
+                                                x.get((r.start.character as _, p as _)).map(f);
                                             } else {
-                                                x.get_range((r.start.character as _, r.start.line as _), (r.end.character as usize, r.end.line as _))
+                                                x.get_range((r.start.character as _, p as _), (r.end.character as usize, r.end.line as _))
                                                     .for_each(f)
                                             }
                                             let l = r.start.line as usize;
-                                            let x_ = text.rope.line(l).len_chars() + 2;
+                                            let Some(x_) = text.rope.get_line(l).map(|x|x.len_chars() + 2) else { 
+                                                return;
+                                            };
                                         let m = m.lines().next().unwrap_or(m);
                                         x.get_range(
                                             (x_, l),
@@ -572,11 +580,13 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                                 (((_x) as f32 * fw).round() + ox) as usize,
                                 (((_y) as f32 * (fh + ls * fac)).round() + oy) as usize,
                             );
-                            assert!(position.0 < 8000 && position.1 < 8000);
+                            assert!(position.0 < 8000 && position.1 < 8000, "{position:?} {_x} {_y}");
                             let ppem = ppem_;
                             let ls = ls_;
                             let mut r = c.len()/columns;
+                            assert_eq!(c.len()%columns, 0);
                             let (w, h) = dsb::size(&fonts.regular, ppem, ls, (columns, r));                           
+                            assert!(w < window.inner_size().width as _ &&h < window.inner_size().height as _);
                             let is_above = position.1.checked_sub(h).is_some();
                             let top = position.1.checked_sub(h).unwrap_or(((((_y + 1) as f32) * (fh + ls * fac)).round() + toy) as usize);
                             let (_, y) = dsb::fit(&fonts.regular, ppem, ls, (window.inner_size().width as _ /* - left */,(window.inner_size().height as usize - top) ));
@@ -600,13 +610,34 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             )};
                             (is_above, left, top, w, h)
                         };
+                        let mut pass = true;
                         if let Some((lsp, p)) = lsp!() && let Some(diag) = lsp.diagnostics.get(&Url::from_file_path(p).unwrap(), &lsp.diagnostics.guard()) {
-                            let dawg = diag.iter().filter(|x| text.l_range(x.range).is_ok_and(|x| x.contains(&text.cursor)));
+                            let dawg = diag.iter().filter(|diag| text.l_range(diag.range).is_ok_and(|x| x.contains(&text.index_at(cursor_position)) && (text.vo..text.vo+r).contains(&(diag.range.start.line as _))));
                             for diag in dawg {
-                                
+                                match diag.data.as_ref().unwrap_or_default().get("rendered") {
+                                    Some(x) if let Some(x) = x.as_str() => {
+                                        let mut t = pattypan::term::Terminal::new((90, 20), false);
+                                        for b in x.replace('\n', "\r\n").bytes(){ t.rx(b,std::fs::File::open("/dev/null").unwrap().as_fd()); }
+                                        let y_lim = t.cells.rows().position(|x| x.iter().all(_.letter.is_none())).unwrap_or(20);
+                                        let c =t.cells.c() as usize;
+                                        let Some(x_lim) = t.cells.rows().map(_.iter().rev().take_while(_.letter.is_none()).count()).map(|x|
+                                        c -x).max() else { continue };
+                                        let n = t.cells.rows().take(y_lim).flat_map(|x| &x[..x_lim]).copied().collect::<Vec<_>>();
+                                          let (_,left, top, w, h) = place_around_cursor(
+                                (diag.range.start.character as usize+text.line_number_offset()+1, diag.range.start.line as usize - text.vo),
+                                &mut fonts,
+                                i.as_mut(),
+                                &n, x_lim,
+                                17.0, -400., 0., 0., 0.
+                            );
+                            pass=false;
+                            i.r#box((left .saturating_sub(1) as _, top.saturating_sub(1) as _), w as _,h as _, [0;3]);
+                                    },
+                                    _ => {}
+                                }
                             }
-                        }
-                        hovering.result.as_ref().map(|x| x.span.clone().map(|sp| {
+                        };
+                        hovering.result.as_ref().filter(|_|pass).map(|x| x.span.clone().map(|sp| {
                             let [(_x, _y), (_x2, _)] = text.position(sp);
                             let [_x, _x2] = [_x, _x2].add(text.line_number_offset()+1);
                             let _y = _y.wrapping_sub(text.vo);
@@ -1448,5 +1479,6 @@ fn frunctinator(
     _paramter4: u16,
 ) -> usize {
     lower::saturating::math! { parameter1  };
+    
     0
 }

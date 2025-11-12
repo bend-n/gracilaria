@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-dsb = { version = "0.1.0", path = "../dsb" }
+dsb = { git = "https://github.com/bend-n/dsb" }
 fimg = { git = "https://github.com/bend-n/fimg" }
 implicit-fn = "0.1.0"
 ropey = "1.6.1"
@@ -52,6 +52,7 @@ tokio-util = { version = "0.7.17", features = ["rt"] }
 scopeguard = "1.2.0"
 arc-swap = "1.7.1"
 atools = "0.1.10"
+pattypan = { version = "0.1.0", path = "../pattypan" }
 
 [profile.dev.package.rust-analyzer]
 opt-level = 3
@@ -61,6 +62,12 @@ debug-assertions = false
 opt-level = 3
 debug-assertions = false
 
+[profile.release.package.tree-house]
+debug-assertions = false
+
+[profile.dev.package.tree-house]
+debug-assertions = false
+
 [profile.dev.package.nucleo]
 opt-level = 3
 debug-assertions = false
@@ -68,7 +75,7 @@ debug-assertions = false
 [profile.release]
 debug = 2
 overflow-checks = true
-# debug-assertions = true
+debug-assertions = true
 
 [profile.dev]
 incremental = false
