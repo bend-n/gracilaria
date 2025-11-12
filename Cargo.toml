@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 dsb = { git = "https://github.com/bend-n/dsb" }
 fimg = { git = "https://github.com/bend-n/fimg" }
+pattypan = { git = "https://github.com/bend-n/pattypan" }
 implicit-fn = "0.1.0"
 ropey = "1.6.1"
 softbuffer = "0.4.6"
@@ -16,27 +17,30 @@ tree-sitter = "0.25.0"
 car = "0.1.2"
 memchr = "2.7.5"
 lower = "0.2.0"
-amap = { version = "0.1.3", path = "../amap" }
+amap = "0.1.4"
 run_times = "0.1.0"
 array_chunks = "1.0.0"
-rust-fsm = { version = "0.8.0", path = "../rust-fsm/rust-fsm", features = [
+rust-fsm = { git = "https://github.com/bend-n/rust-fsm", features = [
     "diagram",
 ] }
 clipp = "0.1.0"
 diff-match-patch-rs = "0.5.1"
 regex = "1.11.3"
 tree-house = { version = "0.3.0", features = ["fixtures"] }
-helix-loader = { path = "../helix/helix-loader/" }
-helix-core = { path = "../helix/helix-core/" }
+
+helix-loader = { git = "https://github.com/bend-n/helix" }
+helix-core = { git = "https://github.com/bend-n/helix" }
+lsp-types = { git = "https://github.com/bend-n/helix", package = "helix-lsp-types" }
+
+lsp-server = { git = "https://github.com/bend-n/rust-analyzer" }
+rust-analyzer = { git = "https://github.com/bend-n/rust-analyzer" }
+
 serde_json = "1.0.145"
 serde = "1.0.228"
 serde_derive = "1.0.228"
 log = "0.4.28"
 crossbeam = { version = "0.8.4", features = ["nightly", "crossbeam-channel"] }
-lsp-server = { version = "0.7.9", path = "../rust-analyzer/lib/lsp-server" }
-rust-analyzer = { version = "*", path = "../rust-analyzer/crates/rust-analyzer" }
 test-log = "0.2.18"
-lsp-types = { path = "../helix/helix-lsp-types", package = "helix-lsp-types" }
 env_logger = "0.11.8"
 url = "2.5.7"
 anyhow = "1.0.100"
@@ -52,24 +56,14 @@ tokio-util = { version = "0.7.17", features = ["rt"] }
 scopeguard = "1.2.0"
 arc-swap = "1.7.1"
 atools = "0.1.10"
-pattypan = { version = "0.1.0", path = "../pattypan" }
 
-[profile.dev.package.rust-analyzer]
-opt-level = 3
-debug-assertions = false
-
-[profile.dev.package.fimg]
-opt-level = 3
-debug-assertions = false
+[profile.dev.package]
+rust-analyzer.opt-level = 3
+fimg.opt-level = 3
+nucleo.opt-level = 3
+tree.house.debug-assertions = false
 
 [profile.release.package.tree-house]
-debug-assertions = false
-
-[profile.dev.package.tree-house]
-debug-assertions = false
-
-[profile.dev.package.nucleo]
-opt-level = 3
 debug-assertions = false
 
 [profile.release]
@@ -79,6 +73,3 @@ debug-assertions = true
 
 [profile.dev]
 incremental = false
-
-[patch.'https://github.com/bend-n/fimg']
-fimg = { "path" = "../fimg" }
