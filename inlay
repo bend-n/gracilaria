@@ -1,0 +1,5808 @@
+[
+  {
+    "position": {
+      "line": 172,
+      "character": 42
+    },
+    "label": [
+      {
+        "value": "T:",
+        "location": {
+          "uri": "file:///home/os/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/winit-0.30.12/src/event_loop.rs",
+          "range": {
+            "start": {
+              "line": 42,
+              "character": 21
+            },
+            "end": {
+              "line": 42,
+              "character": 31
+            }
+          }
+        }
+      }
+    ],
+    "kind": 2,
+    "paddingLeft": false,
+    "paddingRight": true
+  },
+  {
+    "position": {
+      "line": 173,
+      "character": 12
+    },
+    "label": ": f32",
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false,
+    "data": {
+      "file_id": 0,
+      "hash": "2378190123251648688",
+      "resolve_range": {
+        "start": {
+          "line": 173,
+          "character": 8
+        },
+        "end": {
+          "line": 173,
+          "character": 12
+        }
+      },
+      "version": 114
+    }
+  },
+  {
+    "position": {
+      "line": 174,
+      "character": 10
+    },
+    "label": ": f32",
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false,
+    "data": {
+      "file_id": 0,
+      "hash": "2789821434669287835",
+      "resolve_range": {
+        "start": {
+          "line": 174,
+          "character": 8
+        },
+        "end": {
+          "line": 174,
+          "character": 10
+        }
+      },
+      "version": 114
+    }
+  },
+  {
+    "position": {
+      "line": 175,
+      "character": 16
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "TextArea",
+        "location": {
+          "uri": "file:///home/os/gracilaria/src/text.rs",
+          "range": {
+            "start": {
+              "line": 213,
+              "character": 11
+            },
+            "end": {
+              "line": 213,
+              "character": 19
+            }
+          }
+        }
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false,
+    "data": {
+      "file_id": 0,
+      "hash": "8204039714255747695",
+      "resolve_range": {
+        "start": {
+          "line": 175,
+          "character": 8
+        },
+        "end": {
+          "line": 175,
+          "character": 16
+        }
+      },
+      "version": 114
+    }
+  },
+  {
+    "position": {
+      "line": 176,
+      "character": 18
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "Option",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/option.rs",
+          "range": {
+            "start": {
+              "line": 598,
+              "character": 9
+            },
+            "end": {
+              "line": 598,
+              "character": 15
+            }
+          }
+        }
+      },
+      {
+        "value": "<"
+      },
+      {
+        "value": "PathBuf",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/path.rs",
+          "range": {
+            "start": {
+              "line": 1176,
+              "character": 11
+            },
+            "end": {
+              "line": 1176,
+              "character": 18
+            }
+          }
+        }
+      },
+      {
+        "value": ">"
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false,
+    "data": {
+      "file_id": 0,
+      "hash": "12891956662849899835",
+      "resolve_range": {
+        "start": {
+          "line": 176,
+          "character": 8
+        },
+        "end": {
+          "line": 176,
+          "character": 18
+        }
+      },
+      "version": 114
+    }
+  },
+  {
+    "position": {
+      "line": 178,
+      "character": 20
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "String",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/string.rs",
+          "range": {
+            "start": {
+              "line": 359,
+              "character": 11
+            },
+            "end": {
+              "line": 359,
+              "character": 17
+            }
+          }
+        }
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false,
+    "data": {
+      "file_id": 0,
+      "hash": "18230282071714496777",
+      "resolve_range": {
+        "start": {
+          "line": 178,
+          "character": 19
+        },
+        "end": {
+          "line": 178,
+          "character": 20
+        }
+      },
+      "version": 114
+    }
+  },
+  {
+    "position": {
+      "line": 179,
+      "character": 20
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "PathBuf",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/path.rs",
+          "range": {
+            "start": {
+              "line": 1176,
+              "character": 11
+            },
+            "end": {
+              "line": 1176,
+              "character": 18
+            }
+          }
+        }
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false,
+    "data": {
+      "file_id": 0,
+      "hash": "13106381239930920874",
+      "resolve_range": {
+        "start": {
+          "line": 179,
+          "character": 19
+        },
+        "end": {
+          "line": 179,
+          "character": 20
+        }
+      },
+      "version": 114
+    }
+  },
+  {
+    "position": {
+      "line": 180,
+      "character": 17
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "Fonts",
+        "location": {
+          "uri": "file:///home/os/.cargo/git/checkouts/dsb-871cc53a8b3bdc59/e5d2802/src/lib.rs",
+          "range": {
+            "start": {
+              "line": 34,
+              "character": 11
+            },
+            "end": {
+              "line": 34,
+              "character": 16
+            }
+          }
+        }
+      },
+      {
+        "value": "<'_, '_, '_, '_>"
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false,
+    "data": {
+      "file_id": 0,
+      "hash": "253418090431099831",
+      "resolve_range": {
+        "start": {
+          "line": 180,
+          "character": 8
+        },
+        "end": {
+          "line": 180,
+          "character": 17
+        }
+      },
+      "version": 114
+    }
+  },
+  {
+    "position": {
+      "line": 187,
+      "character": 27
+    },
+    "label": ": (usize, usize)",
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false,
+    "data": {
+      "file_id": 0,
+      "hash": "17267984017541365673",
+      "resolve_range": {
+        "start": {
+          "line": 187,
+          "character": 8
+        },
+        "end": {
+          "line": 187,
+          "character": 27
+        }
+      },
+      "version": 114
+    }
+  },
+  {
+    "position": {
+      "line": 189,
+      "character": 17
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "State",
+        "location": {
+          "uri": "file:///home/os/gracilaria/src/main.rs",
+          "range": {
+            "start": {
+              "line": 1315,
+              "character": 11
+            },
+            "end": {
+              "line": 1315,
+              "character": 16
+            }
+          }
+        }
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false,
+    "data": {
+      "file_id": 0,
+      "hash": "5902986205410117701",
+      "resolve_range": {
+        "start": {
+          "line": 189,
+          "character": 8
+        },
+        "end": {
+          "line": 189,
+          "character": 17
+        }
+      },
+      "version": 114
+    }
+  },
+  {
+    "position": {
+      "line": 190,
+      "character": 15
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "Bar",
+        "location": {
+          "uri": "file:///home/os/gracilaria/src/bar.rs",
+          "range": {
+            "start": {
+              "line": 9,
+              "character": 11
+            },
+            "end": {
+              "line": 9,
+              "character": 14
+            }
+          }
+        }
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false,
+    "data": {
+      "file_id": 0,
+      "hash": "7080707227789278883",
+      "resolve_range": {
+        "start": {
+          "line": 190,
+          "character": 8
+        },
+        "end": {
+          "line": 190,
+          "character": 15
+        }
+      },
+      "version": 114
+    }
+  },
+  {
+    "position": {
+      "line": 191,
+      "character": 13
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "Image",
+        "location": {
+          "uri": "file:///home/os/.cargo/git/checkouts/fimg-49d2da054ddde17f/4ef3759/src/lib.rs",
+          "range": {
+            "start": {
+              "line": 218,
+              "character": 11
+            },
+            "end": {
+              "line": 218,
+              "character": 16
+            }
+          }
+        }
+      },
+      {
+        "value": "<"
+      },
+      {
+        "value": "Box",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/boxed.rs",
+          "range": {
+            "start": {
+              "line": 234,
+              "character": 11
+            },
+            "end": {
+              "line": 234,
+              "character": 14
+            }
+          }
+        }
+      },
+      {
+        "value": "<[u8]>, 3>"
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false,
+    "data": {
+      "file_id": 0,
+      "hash": "2803249156187286050",
+      "resolve_range": {
+        "start": {
+          "line": 191,
+          "character": 8
+        },
+        "end": {
+          "line": 191,
+          "character": 13
+        }
+      },
+      "version": 114
+    }
+  },
+  {
+    "position": {
+      "line": 192,
+      "character": 17
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "Vec",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/vec/mod.rs",
+          "range": {
+            "start": {
+              "line": 433,
+              "character": 11
+            },
+            "end": {
+              "line": 433,
+              "character": 14
+            }
+          }
+        }
+      },
+      {
+        "value": "<"
+      },
+      {
+        "value": "Cell",
+        "location": {
+          "uri": "file:///home/os/.cargo/git/checkouts/dsb-871cc53a8b3bdc59/e5d2802/src/cell.rs",
+          "range": {
+            "start": {
+              "line": 43,
+              "character": 11
+            },
+            "end": {
+              "line": 43,
+              "character": 15
+            }
+          }
+        }
+      },
+      {
+        "value": ">"
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false,
+    "data": {
+      "file_id": 0,
+      "hash": "14599518115910796217",
+      "resolve_range": {
+        "start": {
+          "line": 192,
+          "character": 8
+        },
+        "end": {
+          "line": 192,
+          "character": 17
+        }
+      },
+      "version": 114
+    }
+  },
+  {
+    "position": {
+      "line": 193,
+      "character": 34
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "String",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/string.rs",
+          "range": {
+            "start": {
+              "line": 359,
+              "character": 11
+            },
+            "end": {
+              "line": 359,
+              "character": 17
+            }
+          }
+        }
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false,
+    "data": {
+      "file_id": 0,
+      "hash": "15929652721014459350",
+      "resolve_range": {
+        "start": {
+          "line": 193,
+          "character": 33
+        },
+        "end": {
+          "line": 193,
+          "character": 34
+        }
+      },
+      "version": 114
+    }
+  },
+  {
+    "position": {
+      "line": 197,
+      "character": 34
+    },
+    "label": [
+      {
+        "value": "T:",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/option.rs",
+          "range": {
+            "start": {
+              "line": 598,
+              "character": 16
+            },
+            "end": {
+              "line": 598,
+              "character": 17
+            }
+          }
+        }
+      }
+    ],
+    "kind": 2,
+    "paddingLeft": false,
+    "paddingRight": true
+  },
+  {
+    "position": {
+      "line": 204,
+      "character": 5
+    },
+    "label": [
+      {
+        "value": "fn rooter",
+        "location": {
+          "uri": "file:///home/os/gracilaria/src/main.rs",
+          "range": {
+            "start": {
+              "line": 197,
+              "character": 7
+            },
+            "end": {
+              "line": 197,
+              "character": 13
+            }
+          }
+        }
+      }
+    ],
+    "paddingLeft": true,
+    "paddingRight": false
+  },
+  {
+    "position": {
+      "line": 198,
+      "character": 13
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "DirEntry",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/fs.rs",
+          "range": {
+            "start": {
+              "line": 198,
+              "character": 11
+            },
+            "end": {
+              "line": 198,
+              "character": 19
+            }
+          }
+        }
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false
+  },
+  {
+    "position": {
+      "line": 205,
+      "character": 17
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "Option",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/option.rs",
+          "range": {
+            "start": {
+              "line": 598,
+              "character": 9
+            },
+            "end": {
+              "line": 598,
+              "character": 15
+            }
+          }
+        }
+      },
+      {
+        "value": "<"
+      },
+      {
+        "value": "PathBuf",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/path.rs",
+          "range": {
+            "start": {
+              "line": 1176,
+              "character": 11
+            },
+            "end": {
+              "line": 1176,
+              "character": 18
+            }
+          }
+        }
+      },
+      {
+        "value": ">"
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false,
+    "data": {
+      "file_id": 0,
+      "hash": "14570592744825879285",
+      "resolve_range": {
+        "start": {
+          "line": 205,
+          "character": 8
+        },
+        "end": {
+          "line": 205,
+          "character": 17
+        }
+      },
+      "version": 114
+    }
+  },
+  {
+    "position": {
+      "line": 205,
+      "character": 26
+    },
+    "label": [
+      {
+        "value": "Option",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/option.rs",
+          "range": {
+            "start": {
+              "line": 598,
+              "character": 9
+            },
+            "end": {
+              "line": 598,
+              "character": 15
+            }
+          }
+        }
+      },
+      {
+        "value": "<"
+      },
+      {
+        "value": "PathBuf",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/path.rs",
+          "range": {
+            "start": {
+              "line": 1176,
+              "character": 11
+            },
+            "end": {
+              "line": 1176,
+              "character": 18
+            }
+          }
+        }
+      },
+      {
+        "value": ">"
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": true,
+    "paddingRight": false
+  },
+  {
+    "position": {
+      "line": 207,
+      "character": 20
+    },
+    "label": [
+      {
+        "value": ": &"
+      },
+      {
+        "value": "PathBuf",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/path.rs",
+          "range": {
+            "start": {
+              "line": 1176,
+              "character": 11
+            },
+            "end": {
+              "line": 1176,
+              "character": 18
+            }
+          }
+        }
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false,
+    "data": {
+      "file_id": 0,
+      "hash": "5868300217498467310",
+      "resolve_range": {
+        "start": {
+          "line": 207,
+          "character": 19
+        },
+        "end": {
+          "line": 207,
+          "character": 20
+        }
+      },
+      "version": 114
+    }
+  },
+  {
+    "position": {
+      "line": 208,
+      "character": 20
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "PathBuf",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/path.rs",
+          "range": {
+            "start": {
+              "line": 1176,
+              "character": 11
+            },
+            "end": {
+              "line": 1176,
+              "character": 18
+            }
+          }
+        }
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false,
+    "data": {
+      "file_id": 0,
+      "hash": "6984389984807288195",
+      "resolve_range": {
+        "start": {
+          "line": 208,
+          "character": 19
+        },
+        "end": {
+          "line": 208,
+          "character": 20
+        }
+      },
+      "version": 114
+    }
+  },
+  {
+    "position": {
+      "line": 209,
+      "character": 9
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "Option",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/option.rs",
+          "range": {
+            "start": {
+              "line": 598,
+              "character": 9
+            },
+            "end": {
+              "line": 598,
+              "character": 15
+            }
+          }
+        }
+      },
+      {
+        "value": "<(&"
+      },
+      {
+        "value": "Client",
+        "location": {
+          "uri": "file:///home/os/gracilaria/src/lsp.rs",
+          "range": {
+            "start": {
+              "line": 28,
+              "character": 11
+            },
+            "end": {
+              "line": 28,
+              "character": 17
+            }
+          }
+        }
+      },
+      {
+        "value": ", "
+      },
+      {
+        "value": "JoinHandle",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/thread/mod.rs",
+          "range": {
+            "start": {
+              "line": 1885,
+              "character": 11
+            },
+            "end": {
+              "line": 1885,
+              "character": 21
+            }
+          }
+        }
+      },
+      {
+        "value": "<…>, …)>"
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false,
+    "data": {
+      "file_id": 0,
+      "hash": "7149273305536334994",
+      "resolve_range": {
+        "start": {
+          "line": 209,
+          "character": 8
+        },
+        "end": {
+          "line": 209,
+          "character": 9
+        }
+      },
+      "version": 114
+    }
+  },
+  {
+    "position": {
+      "line": 210,
+      "character": 19
+    },
+    "label": [
+      {
+        "value": ": &"
+      },
+      {
+        "value": "PathBuf",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/path.rs",
+          "range": {
+            "start": {
+              "line": 1176,
+              "character": 11
+            },
+            "end": {
+              "line": 1176,
+              "character": 18
+            }
+          }
+        }
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false
+  },
+  {
+    "position": {
+      "line": 210,
+      "character": 27
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "PathBuf",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/path.rs",
+          "range": {
+            "start": {
+              "line": 1176,
+              "character": 11
+            },
+            "end": {
+              "line": 1176,
+              "character": 18
+            }
+          }
+        }
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false
+  },
+  {
+    "position": {
+      "line": 217,
+      "character": 18
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "Connection",
+        "location": {
+          "uri": "file:///home/os/.cargo/git/checkouts/rust-analyzer-94e62460e169ee43/4472ac7/lib/lsp-server/src/lib.rs",
+          "range": {
+            "start": {
+              "line": 30,
+              "character": 11
+            },
+            "end": {
+              "line": 30,
+              "character": 21
+            }
+          }
+        }
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false
+  },
+  {
+    "position": {
+      "line": 217,
+      "character": 21
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "Connection",
+        "location": {
+          "uri": "file:///home/os/.cargo/git/checkouts/rust-analyzer-94e62460e169ee43/4472ac7/lib/lsp-server/src/lib.rs",
+          "range": {
+            "start": {
+              "line": 30,
+              "character": 11
+            },
+            "end": {
+              "line": 30,
+              "character": 21
+            }
+          }
+        }
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false
+  },
+  {
+    "position": {
+      "line": 223,
+      "character": 18
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "Client",
+        "location": {
+          "uri": "file:///home/os/gracilaria/src/lsp.rs",
+          "range": {
+            "start": {
+              "line": 28,
+              "character": 11
+            },
+            "end": {
+              "line": 28,
+              "character": 17
+            }
+          }
+        }
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false
+  },
+  {
+    "position": {
+      "line": 223,
+      "character": 22
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "JoinHandle",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/thread/mod.rs",
+          "range": {
+            "start": {
+              "line": 1885,
+              "character": 11
+            },
+            "end": {
+              "line": 1885,
+              "character": 21
+            }
+          }
+        }
+      },
+      {
+        "value": "<()>"
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false
+  },
+  {
+    "position": {
+      "line": 223,
+      "character": 31
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "Sender",
+        "location": {
+          "uri": "file:///home/os/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-1.48.0/src/sync/oneshot.rs",
+          "range": {
+            "start": {
+              "line": 221,
+              "character": 11
+            },
+            "end": {
+              "line": 221,
+              "character": 17
+            }
+          }
+        }
+      },
+      {
+        "value": "<"
+      },
+      {
+        "value": "Arc",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/sync.rs",
+          "range": {
+            "start": {
+              "line": 263,
+              "character": 11
+            },
+            "end": {
+              "line": 263,
+              "character": 14
+            }
+          }
+        }
+      },
+      {
+        "value": "<"
+      },
+      {
+        "value": "Window",
+        "location": {
+          "uri": "file:///home/os/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/winit-0.30.12/src/window.rs",
+          "range": {
+            "start": {
+              "line": 34,
+              "character": 11
+            },
+            "end": {
+              "line": 34,
+              "character": 17
+            }
+          }
+        }
+      },
+      {
+        "value": ">>"
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false
+  },
+  {
+    "position": {
+      "line": 231,
+      "character": 35
+    },
+    "label": [
+      {
+        "value": "&"
+      },
+      {
+        "value": "PathBuf",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/path.rs",
+          "range": {
+            "start": {
+              "line": 1176,
+              "character": 11
+            },
+            "end": {
+              "line": 1176,
+              "character": 18
+            }
+          }
+        }
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": true,
+    "paddingRight": false
+  },
+  {
+    "position": {
+      "line": 243,
+      "character": 12
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "Option",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/option.rs",
+          "range": {
+            "start": {
+              "line": 598,
+              "character": 9
+            },
+            "end": {
+              "line": 598,
+              "character": 15
+            }
+          }
+        }
+      },
+      {
+        "value": "<&"
+      },
+      {
+        "value": "Client",
+        "location": {
+          "uri": "file:///home/os/gracilaria/src/lsp.rs",
+          "range": {
+            "start": {
+              "line": 28,
+              "character": 11
+            },
+            "end": {
+              "line": 28,
+              "character": 17
+            }
+          }
+        }
+      },
+      {
+        "value": ">"
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false
+  },
+  {
+    "position": {
+      "line": 243,
+      "character": 16
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "Option",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/option.rs",
+          "range": {
+            "start": {
+              "line": 598,
+              "character": 9
+            },
+            "end": {
+              "line": 598,
+              "character": 15
+            }
+          }
+        }
+      },
+      {
+        "value": "<"
+      },
+      {
+        "value": "JoinHandle",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/thread/mod.rs",
+          "range": {
+            "start": {
+              "line": 1885,
+              "character": 11
+            },
+            "end": {
+              "line": 1885,
+              "character": 21
+            }
+          }
+        }
+      },
+      {
+        "value": "<()>>"
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false
+  },
+  {
+    "position": {
+      "line": 243,
+      "character": 23
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "Option",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/option.rs",
+          "range": {
+            "start": {
+              "line": 598,
+              "character": 9
+            },
+            "end": {
+              "line": 598,
+              "character": 15
+            }
+          }
+        }
+      },
+      {
+        "value": "<"
+      },
+      {
+        "value": "Sender",
+        "location": {
+          "uri": "file:///home/os/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-1.48.0/src/sync/oneshot.rs",
+          "range": {
+            "start": {
+              "line": 221,
+              "character": 11
+            },
+            "end": {
+              "line": 221,
+              "character": 17
+            }
+          }
+        }
+      },
+      {
+        "value": "<"
+      },
+      {
+        "value": "Arc",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/sync.rs",
+          "range": {
+            "start": {
+              "line": 263,
+              "character": 11
+            },
+            "end": {
+              "line": 263,
+              "character": 14
+            }
+          }
+        }
+      },
+      {
+        "value": "<"
+      },
+      {
+        "value": "Window",
+        "location": {
+          "uri": "file:///home/os/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/winit-0.30.12/src/window.rs",
+          "range": {
+            "start": {
+              "line": 34,
+              "character": 11
+            },
+            "end": {
+              "line": 34,
+              "character": 17
+            }
+          }
+        }
+      },
+      {
+        "value": ">>>"
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false
+  },
+  {
+    "position": {
+      "line": 244,
+      "character": 15
+    },
+    "label": [
+      {
+        "value": ": &"
+      },
+      {
+        "value": "Client",
+        "location": {
+          "uri": "file:///home/os/gracilaria/src/lsp.rs",
+          "range": {
+            "start": {
+              "line": 28,
+              "character": 11
+            },
+            "end": {
+              "line": 28,
+              "character": 17
+            }
+          }
+        }
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false
+  },
+  {
+    "position": {
+      "line": 244,
+      "character": 18
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "JoinHandle",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/thread/mod.rs",
+          "range": {
+            "start": {
+              "line": 1885,
+              "character": 11
+            },
+            "end": {
+              "line": 1885,
+              "character": 21
+            }
+          }
+        }
+      },
+      {
+        "value": "<()>"
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false
+  },
+  {
+    "position": {
+      "line": 244,
+      "character": 21
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "Sender",
+        "location": {
+          "uri": "file:///home/os/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-1.48.0/src/sync/oneshot.rs",
+          "range": {
+            "start": {
+              "line": 221,
+              "character": 11
+            },
+            "end": {
+              "line": 221,
+              "character": 17
+            }
+          }
+        }
+      },
+      {
+        "value": "<"
+      },
+      {
+        "value": "Arc",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/sync.rs",
+          "range": {
+            "start": {
+              "line": 263,
+              "character": 11
+            },
+            "end": {
+              "line": 263,
+              "character": 14
+            }
+          }
+        }
+      },
+      {
+        "value": "<"
+      },
+      {
+        "value": "Window",
+        "location": {
+          "uri": "file:///home/os/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/winit-0.30.12/src/window.rs",
+          "range": {
+            "start": {
+              "line": 34,
+              "character": 11
+            },
+            "end": {
+              "line": 34,
+              "character": 17
+            }
+          }
+        }
+      },
+      {
+        "value": ">>"
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false
+  },
+  {
+    "position": {
+      "line": 252,
+      "character": 20
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "Rq",
+        "location": {
+          "uri": "file:///home/os/gracilaria/src/lsp.rs",
+          "range": {
+            "start": {
+              "line": 844,
+              "character": 11
+            },
+            "end": {
+              "line": 844,
+              "character": 13
+            }
+          }
+        }
+      },
+      {
+        "value": "<"
+      },
+      {
+        "value": "Hovr",
+        "location": {
+          "uri": "file:///home/os/gracilaria/src/hov.rs",
+          "range": {
+            "start": {
+              "line": 305,
+              "character": 11
+            },
+            "end": {
+              "line": 305,
+              "character": 15
+            }
+          }
+        }
+      },
+      {
+        "value": ", "
+      },
+      {
+        "value": "Option",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/option.rs",
+          "range": {
+            "start": {
+              "line": 598,
+              "character": 9
+            },
+            "end": {
+              "line": 598,
+              "character": 15
+            }
+          }
+        }
+      },
+      {
+        "value": "<"
+      },
+      {
+        "value": "Hovr",
+        "location": {
+          "uri": "file:///home/os/gracilaria/src/hov.rs",
+          "range": {
+            "start": {
+              "line": 305,
+              "character": 11
+            },
+            "end": {
+              "line": 305,
+              "character": 15
+            }
+          }
+        }
+      },
+      {
+        "value": ">, usize, …>"
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false,
+    "data": {
+      "file_id": 0,
+      "hash": "17808790406277811891",
+      "resolve_range": {
+        "start": {
+          "line": 252,
+          "character": 8
+        },
+        "end": {
+          "line": 252,
+          "character": 20
+        }
+      },
+      "version": 114
+    }
+  },
+  {
+    "position": {
+      "line": 253,
+      "character": 13
+    },
+    "label": [
+      {
+        "value": "T:",
+        "location": {
+          "uri": "file:///home/os/gracilaria/src/lsp.rs",
+          "range": {
+            "start": {
+              "line": 844,
+              "character": 14
+            },
+            "end": {
+              "line": 844,
+              "character": 15
+            }
+          }
+        }
+      }
+    ],
+    "kind": 2,
+    "paddingLeft": false,
+    "paddingRight": true
+  },
+  {
+    "position": {
+      "line": 253,
+      "character": 19
+    },
+    "label": [
+      {
+        "value": "R:",
+        "location": {
+          "uri": "file:///home/os/gracilaria/src/lsp.rs",
+          "range": {
+            "start": {
+              "line": 844,
+              "character": 17
+            },
+            "end": {
+              "line": 844,
+              "character": 18
+            }
+          }
+        }
+      }
+    ],
+    "kind": 2,
+    "paddingLeft": false,
+    "paddingRight": true
+  },
+  {
+    "position": {
+      "line": 253,
+      "character": 33
+    },
+    "label": [
+      {
+        "value": "D:",
+        "location": {
+          "uri": "file:///home/os/gracilaria/src/lsp.rs",
+          "range": {
+            "start": {
+              "line": 844,
+              "character": 20
+            },
+            "end": {
+              "line": 844,
+              "character": 26
+            }
+          }
+        }
+      }
+    ],
+    "kind": 2,
+    "paddingLeft": false,
+    "paddingRight": true
+  },
+  {
+    "position": {
+      "line": 253,
+      "character": 40
+    },
+    "label": [
+      {
+        "value": "E:",
+        "location": {
+          "uri": "file:///home/os/gracilaria/src/lsp.rs",
+          "range": {
+            "start": {
+              "line": 844,
+              "character": 28
+            },
+            "end": {
+              "line": 844,
+              "character": 44
+            }
+          }
+        }
+      }
+    ],
+    "kind": 2,
+    "paddingLeft": false,
+    "paddingRight": true
+  },
+  {
+    "position": {
+      "line": 253,
+      "character": 26
+    },
+    "label": [
+      {
+        "value": "T:",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/option.rs",
+          "range": {
+            "start": {
+              "line": 598,
+              "character": 16
+            },
+            "end": {
+              "line": 598,
+              "character": 17
+            }
+          }
+        }
+      }
+    ],
+    "kind": 2,
+    "paddingLeft": false,
+    "paddingRight": true
+  },
+  {
+    "position": {
+      "line": 254,
+      "character": 20
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "CompletionState",
+        "location": {
+          "uri": "file:///home/os/gracilaria/src/main.rs",
+          "range": {
+            "start": {
+              "line": 1438,
+              "character": 15
+            },
+            "end": {
+              "line": 1438,
+              "character": 30
+            }
+          }
+        }
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false,
+    "data": {
+      "file_id": 0,
+      "hash": "1465202237954953212",
+      "resolve_range": {
+        "start": {
+          "line": 254,
+          "character": 8
+        },
+        "end": {
+          "line": 254,
+          "character": 20
+        }
+      },
+      "version": 114
+    }
+  },
+  {
+    "position": {
+      "line": 255,
+      "character": 20
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "Rq",
+        "location": {
+          "uri": "file:///home/os/gracilaria/src/lsp.rs",
+          "range": {
+            "start": {
+              "line": 844,
+              "character": 11
+            },
+            "end": {
+              "line": 844,
+              "character": 13
+            }
+          }
+        }
+      },
+      {
+        "value": "<("
+      },
+      {
+        "value": "SignatureHelp",
+        "location": {
+          "uri": "file:///home/os/.cargo/git/checkouts/helix-93fb9717c38fa114/fffeb3c/helix-lsp-types/src/signature_help.rs",
+          "range": {
+            "start": {
+              "line": 142,
+              "character": 11
+            },
+            "end": {
+              "line": 142,
+              "character": 24
+            }
+          }
+        }
+      },
+      {
+        "value": ", usize, …), …>"
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false,
+    "data": {
+      "file_id": 0,
+      "hash": "17109826368545006083",
+      "resolve_range": {
+        "start": {
+          "line": 255,
+          "character": 8
+        },
+        "end": {
+          "line": 255,
+          "character": 20
+        }
+      },
+      "version": 114
+    }
+  },
+  {
+    "position": {
+      "line": 256,
+      "character": 14
+    },
+    "label": [
+      {
+        "value": "T:",
+        "location": {
+          "uri": "file:///home/os/gracilaria/src/lsp.rs",
+          "range": {
+            "start": {
+              "line": 848,
+              "character": 13
+            },
+            "end": {
+              "line": 848,
+              "character": 14
+            }
+          }
+        }
+      }
+    ],
+    "kind": 2,
+    "paddingLeft": false,
+    "paddingRight": true
+  },
+  {
+    "position": {
+      "line": 256,
+      "character": 53
+    },
+    "label": [
+      {
+        "value": "R:",
+        "location": {
+          "uri": "file:///home/os/gracilaria/src/lsp.rs",
+          "range": {
+            "start": {
+              "line": 848,
+              "character": 16
+            },
+            "end": {
+              "line": 848,
+              "character": 26
+            }
+          }
+        }
+      }
+    ],
+    "kind": 2,
+    "paddingLeft": false,
+    "paddingRight": true
+  },
+  {
+    "position": {
+      "line": 256,
+      "character": 75
+    },
+    "label": [
+      {
+        "value": "D:",
+        "location": {
+          "uri": "file:///home/os/gracilaria/src/lsp.rs",
+          "range": {
+            "start": {
+              "line": 848,
+              "character": 28
+            },
+            "end": {
+              "line": 848,
+              "character": 34
+            }
+          }
+        }
+      }
+    ],
+    "kind": 2,
+    "paddingLeft": false,
+    "paddingRight": true
+  },
+  {
+    "position": {
+      "line": 256,
+      "character": 44
+    },
+    "label": [
+      {
+        "value": "T:",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/option.rs",
+          "range": {
+            "start": {
+              "line": 598,
+              "character": 16
+            },
+            "end": {
+              "line": 598,
+              "character": 17
+            }
+          }
+        }
+      }
+    ],
+    "kind": 2,
+    "paddingLeft": false,
+    "paddingRight": true
+  },
+  {
+    "position": {
+      "line": 257,
+      "character": 27
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "Rq",
+        "location": {
+          "uri": "file:///home/os/gracilaria/src/lsp.rs",
+          "range": {
+            "start": {
+              "line": 844,
+              "character": 11
+            },
+            "end": {
+              "line": 844,
+              "character": 13
+            }
+          }
+        }
+      },
+      {
+        "value": "<"
+      },
+      {
+        "value": "Box",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/boxed.rs",
+          "range": {
+            "start": {
+              "line": 234,
+              "character": 11
+            },
+            "end": {
+              "line": 234,
+              "character": 14
+            }
+          }
+        }
+      },
+      {
+        "value": "<["
+      },
+      {
+        "value": "SemanticToken",
+        "location": {
+          "uri": "file:///home/os/.cargo/git/checkouts/helix-93fb9717c38fa114/fffeb3c/helix-lsp-types/src/semantic_tokens.rs",
+          "range": {
+            "start": {
+              "line": 146,
+              "character": 11
+            },
+            "end": {
+              "line": 146,
+              "character": 24
+            }
+          }
+        }
+      },
+      {
+        "value": "]>, …>"
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false,
+    "data": {
+      "file_id": 0,
+      "hash": "4166254487634182400",
+      "resolve_range": {
+        "start": {
+          "line": 257,
+          "character": 8
+        },
+        "end": {
+          "line": 257,
+          "character": 27
+        }
+      },
+      "version": 114
+    }
+  },
+  {
+    "position": {
+      "line": 258,
+      "character": 16
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "Rq",
+        "location": {
+          "uri": "file:///home/os/gracilaria/src/lsp.rs",
+          "range": {
+            "start": {
+              "line": 844,
+              "character": 11
+            },
+            "end": {
+              "line": 844,
+              "character": 13
+            }
+          }
+        }
+      },
+      {
+        "value": "<"
+      },
+      {
+        "value": "String",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/string.rs",
+          "range": {
+            "start": {
+              "line": 359,
+              "character": 11
+            },
+            "end": {
+              "line": 359,
+              "character": 17
+            }
+          }
+        }
+      },
+      {
+        "value": ", "
+      },
+      {
+        "value": "Option",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/option.rs",
+          "range": {
+            "start": {
+              "line": 598,
+              "character": 9
+            },
+            "end": {
+              "line": 598,
+              "character": 15
+            }
+          }
+        }
+      },
+      {
+        "value": "<"
+      },
+      {
+        "value": "String",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/string.rs",
+          "range": {
+            "start": {
+              "line": 359,
+              "character": 11
+            },
+            "end": {
+              "line": 359,
+              "character": 17
+            }
+          }
+        }
+      },
+      {
+        "value": ">, …, …>"
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false,
+    "data": {
+      "file_id": 0,
+      "hash": "3913809942888977650",
+      "resolve_range": {
+        "start": {
+          "line": 258,
+          "character": 8
+        },
+        "end": {
+          "line": 258,
+          "character": 16
+        }
+      },
+      "version": 114
+    }
+  },
+  {
+    "position": {
+      "line": 259,
+      "character": 13
+    },
+    "label": [
+      {
+        "value": "T:",
+        "location": {
+          "uri": "file:///home/os/gracilaria/src/lsp.rs",
+          "range": {
+            "start": {
+              "line": 844,
+              "character": 14
+            },
+            "end": {
+              "line": 844,
+              "character": 15
+            }
+          }
+        }
+      }
+    ],
+    "kind": 2,
+    "paddingLeft": false,
+    "paddingRight": true
+  },
+  {
+    "position": {
+      "line": 259,
+      "character": 21
+    },
+    "label": [
+      {
+        "value": "R:",
+        "location": {
+          "uri": "file:///home/os/gracilaria/src/lsp.rs",
+          "range": {
+            "start": {
+              "line": 844,
+              "character": 17
+            },
+            "end": {
+              "line": 844,
+              "character": 18
+            }
+          }
+        }
+      }
+    ],
+    "kind": 2,
+    "paddingLeft": false,
+    "paddingRight": true
+  },
+  {
+    "position": {
+      "line": 259,
+      "character": 37
+    },
+    "label": [
+      {
+        "value": "D:",
+        "location": {
+          "uri": "file:///home/os/gracilaria/src/lsp.rs",
+          "range": {
+            "start": {
+              "line": 844,
+              "character": 20
+            },
+            "end": {
+              "line": 844,
+              "character": 26
+            }
+          }
+        }
+      }
+    ],
+    "kind": 2,
+    "paddingLeft": false,
+    "paddingRight": true
+  },
+  {
+    "position": {
+      "line": 259,
+      "character": 41
+    },
+    "label": [
+      {
+        "value": "E:",
+        "location": {
+          "uri": "file:///home/os/gracilaria/src/lsp.rs",
+          "range": {
+            "start": {
+              "line": 844,
+              "character": 28
+            },
+            "end": {
+              "line": 844,
+              "character": 44
+            }
+          }
+        }
+      }
+    ],
+    "kind": 2,
+    "paddingLeft": false,
+    "paddingRight": true
+  },
+  {
+    "position": {
+      "line": 259,
+      "character": 28
+    },
+    "label": [
+      {
+        "value": "T:",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/option.rs",
+          "range": {
+            "start": {
+              "line": 598,
+              "character": 16
+            },
+            "end": {
+              "line": 598,
+              "character": 17
+            }
+          }
+        }
+      }
+    ],
+    "kind": 2,
+    "paddingLeft": false,
+    "paddingRight": true
+  },
+  {
+    "position": {
+      "line": 272,
+      "character": 16
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "Hist",
+        "location": {
+          "uri": "file:///home/os/gracilaria/src/main.rs",
+          "range": {
+            "start": {
+              "line": 92,
+              "character": 7
+            },
+            "end": {
+              "line": 92,
+              "character": 11
+            }
+          }
+        }
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false,
+    "data": {
+      "file_id": 0,
+      "hash": "375241452594036681",
+      "resolve_range": {
+        "start": {
+          "line": 272,
+          "character": 8
+        },
+        "end": {
+          "line": 272,
+          "character": 16
+        }
+      },
+      "version": 114
+    }
+  },
+  {
+    "position": {
+      "line": 287,
+      "character": 18
+    },
+    "label": [
+      {
+        "value": ": &"
+      },
+      {
+        "value": "Client",
+        "location": {
+          "uri": "file:///home/os/gracilaria/src/lsp.rs",
+          "range": {
+            "start": {
+              "line": 28,
+              "character": 11
+            },
+            "end": {
+              "line": 28,
+              "character": 17
+            }
+          }
+        }
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false
+  },
+  {
+    "position": {
+      "line": 287,
+      "character": 26
+    },
+    "label": [
+      {
+        "value": ": &"
+      },
+      {
+        "value": "Path",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/path.rs",
+          "range": {
+            "start": {
+              "line": 2302,
+              "character": 11
+            },
+            "end": {
+              "line": 2302,
+              "character": 15
+            }
+          }
+        }
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false
+  },
+  {
+    "position": {
+      "line": 290,
+      "character": 26
+    },
+    "label": [
+      {
+        "value": "T:",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/option.rs",
+          "range": {
+            "start": {
+              "line": 598,
+              "character": 16
+            },
+            "end": {
+              "line": 598,
+              "character": 17
+            }
+          }
+        }
+      }
+    ],
+    "kind": 2,
+    "paddingLeft": false,
+    "paddingRight": true
+  },
+  {
+    "position": {
+      "line": 308,
+      "character": 11
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "WinitApp",
+        "location": {
+          "uri": "file:///home/os/gracilaria/src/winit_app.rs",
+          "range": {
+            "start": {
+              "line": 39,
+              "character": 18
+            },
+            "end": {
+              "line": 39,
+              "character": 26
+            }
+          }
+        }
+      },
+      {
+        "value": "<("
+      },
+      {
+        "value": "Arc",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/sync.rs",
+          "range": {
+            "start": {
+              "line": 263,
+              "character": 11
+            },
+            "end": {
+              "line": 263,
+              "character": 14
+            }
+          }
+        }
+      },
+      {
+        "value": "<"
+      },
+      {
+        "value": "Window",
+        "location": {
+          "uri": "file:///home/os/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/winit-0.30.12/src/window.rs",
+          "range": {
+            "start": {
+              "line": 34,
+              "character": 11
+            },
+            "end": {
+              "line": 34,
+              "character": 17
+            }
+          }
+        }
+      },
+      {
+        "value": ">, "
+      },
+      {
+        "value": "Context",
+        "location": {
+          "uri": "file:///home/os/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/softbuffer-0.4.6/src/lib.rs",
+          "range": {
+            "start": {
+              "line": 32,
+              "character": 11
+            },
+            "end": {
+              "line": 32,
+              "character": 18
+            }
+          }
+        }
+      },
+      {
+        "value": "<…>), …, …, …, …>"
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false
+  },
+  {
+    "position": {
+      "line": 309,
+      "character": 18
+    },
+    "label": [
+      {
+        "value": ": &"
+      },
+      {
+        "value": "ActiveEventLoop",
+        "location": {
+          "uri": "file:///home/os/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/winit-0.30.12/src/event_loop.rs",
+          "range": {
+            "start": {
+              "line": 51,
+              "character": 11
+            },
+            "end": {
+              "line": 51,
+              "character": 26
+            }
+          }
+        }
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false,
+    "data": {
+      "file_id": 0,
+      "hash": "6031379334000232086",
+      "resolve_range": {
+        "start": {
+          "line": 309,
+          "character": 14
+        },
+        "end": {
+          "line": 309,
+          "character": 18
+        }
+      },
+      "version": 114
+    }
+  },
+  {
+    "position": {
+      "line": 310,
+      "character": 22
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "Arc",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/sync.rs",
+          "range": {
+            "start": {
+              "line": 263,
+              "character": 11
+            },
+            "end": {
+              "line": 263,
+              "character": 14
+            }
+          }
+        }
+      },
+      {
+        "value": "<"
+      },
+      {
+        "value": "Window",
+        "location": {
+          "uri": "file:///home/os/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/winit-0.30.12/src/window.rs",
+          "range": {
+            "start": {
+              "line": 34,
+              "character": 11
+            },
+            "end": {
+              "line": 34,
+              "character": 17
+            }
+          }
+        }
+      },
+      {
+        "value": ">"
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false,
+    "data": {
+      "file_id": 0,
+      "hash": "15604331129027173500",
+      "resolve_range": {
+        "start": {
+          "line": 310,
+          "character": 16
+        },
+        "end": {
+          "line": 310,
+          "character": 22
+        }
+      },
+      "version": 114
+    }
+  },
+  {
+    "position": {
+      "line": 310,
+      "character": 56
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "WindowAttributes",
+        "location": {
+          "uri": "file:///home/os/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/winit-0.30.12/src/window.rs",
+          "range": {
+            "start": {
+              "line": 103,
+              "character": 11
+            },
+            "end": {
+              "line": 103,
+              "character": 27
+            }
+          }
+        }
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false,
+    "data": {
+      "file_id": 0,
+      "hash": "645969963223919016",
+      "resolve_range": {
+        "start": {
+          "line": 310,
+          "character": 55
+        },
+        "end": {
+          "line": 310,
+          "character": 56
+        }
+      },
+      "version": 114
+    }
+  },
+  {
+    "position": {
+      "line": 317,
+      "character": 25
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "Sender",
+        "location": {
+          "uri": "file:///home/os/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-1.48.0/src/sync/oneshot.rs",
+          "range": {
+            "start": {
+              "line": 221,
+              "character": 11
+            },
+            "end": {
+              "line": 221,
+              "character": 17
+            }
+          }
+        }
+      },
+      {
+        "value": "<"
+      },
+      {
+        "value": "Arc",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/sync.rs",
+          "range": {
+            "start": {
+              "line": 263,
+              "character": 11
+            },
+            "end": {
+              "line": 263,
+              "character": 14
+            }
+          }
+        }
+      },
+      {
+        "value": "<"
+      },
+      {
+        "value": "Window",
+        "location": {
+          "uri": "file:///home/os/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/winit-0.30.12/src/window.rs",
+          "range": {
+            "start": {
+              "line": 34,
+              "character": 11
+            },
+            "end": {
+              "line": 34,
+              "character": 17
+            }
+          }
+        }
+      },
+      {
+        "value": ">>"
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false
+  },
+  {
+    "position": {
+      "line": 323,
+      "character": 23
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "Context",
+        "location": {
+          "uri": "file:///home/os/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/softbuffer-0.4.6/src/lib.rs",
+          "range": {
+            "start": {
+              "line": 32,
+              "character": 11
+            },
+            "end": {
+              "line": 32,
+              "character": 18
+            }
+          }
+        }
+      },
+      {
+        "value": "<"
+      },
+      {
+        "value": "Arc",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/sync.rs",
+          "range": {
+            "start": {
+              "line": 263,
+              "character": 11
+            },
+            "end": {
+              "line": 263,
+              "character": 14
+            }
+          }
+        }
+      },
+      {
+        "value": "<"
+      },
+      {
+        "value": "Window",
+        "location": {
+          "uri": "file:///home/os/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/winit-0.30.12/src/window.rs",
+          "range": {
+            "start": {
+              "line": 34,
+              "character": 11
+            },
+            "end": {
+              "line": 34,
+              "character": 17
+            }
+          }
+        }
+      },
+      {
+        "value": ">>"
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false,
+    "data": {
+      "file_id": 0,
+      "hash": "9746336051057975452",
+      "resolve_range": {
+        "start": {
+          "line": 323,
+          "character": 16
+        },
+        "end": {
+          "line": 323,
+          "character": 23
+        }
+      },
+      "version": 114
+    }
+  },
+  {
+    "position": {
+      "line": 328,
+      "character": 14
+    },
+    "label": [
+      {
+        "value": ": &"
+      },
+      {
+        "value": "ActiveEventLoop",
+        "location": {
+          "uri": "file:///home/os/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/winit-0.30.12/src/event_loop.rs",
+          "range": {
+            "start": {
+              "line": 51,
+              "character": 11
+            },
+            "end": {
+              "line": 51,
+              "character": 26
+            }
+          }
+        }
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false,
+    "data": {
+      "file_id": 0,
+      "hash": "12971153746480130799",
+      "resolve_range": {
+        "start": {
+          "line": 328,
+          "character": 9
+        },
+        "end": {
+          "line": 328,
+          "character": 14
+        }
+      },
+      "version": 114
+    }
+  },
+  {
+    "position": {
+      "line": 328,
+      "character": 23
+    },
+    "label": [
+      {
+        "value": ": &mut "
+      },
+      {
+        "value": "Arc",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/sync.rs",
+          "range": {
+            "start": {
+              "line": 263,
+              "character": 11
+            },
+            "end": {
+              "line": 263,
+              "character": 14
+            }
+          }
+        }
+      },
+      {
+        "value": "<"
+      },
+      {
+        "value": "Window",
+        "location": {
+          "uri": "file:///home/os/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/winit-0.30.12/src/window.rs",
+          "range": {
+            "start": {
+              "line": 34,
+              "character": 11
+            },
+            "end": {
+              "line": 34,
+              "character": 17
+            }
+          }
+        }
+      },
+      {
+        "value": ">"
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false
+  },
+  {
+    "position": {
+      "line": 328,
+      "character": 32
+    },
+    "label": [
+      {
+        "value": ": &mut "
+      },
+      {
+        "value": "Context",
+        "location": {
+          "uri": "file:///home/os/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/softbuffer-0.4.6/src/lib.rs",
+          "range": {
+            "start": {
+              "line": 32,
+              "character": 11
+            },
+            "end": {
+              "line": 32,
+              "character": 18
+            }
+          }
+        }
+      },
+      {
+        "value": "<"
+      },
+      {
+        "value": "Arc",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/sync.rs",
+          "range": {
+            "start": {
+              "line": 263,
+              "character": 11
+            },
+            "end": {
+              "line": 263,
+              "character": 14
+            }
+          }
+        }
+      },
+      {
+        "value": "<"
+      },
+      {
+        "value": "Window",
+        "location": {
+          "uri": "file:///home/os/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/winit-0.30.12/src/window.rs",
+          "range": {
+            "start": {
+              "line": 34,
+              "character": 11
+            },
+            "end": {
+              "line": 34,
+              "character": 17
+            }
+          }
+        }
+      },
+      {
+        "value": ">>"
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false
+  },
+  {
+    "position": {
+      "line": 333,
+      "character": 21
+    },
+    "label": [
+      {
+        "value": ": &mut "
+      },
+      {
+        "value": "Arc",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/sync.rs",
+          "range": {
+            "start": {
+              "line": 263,
+              "character": 11
+            },
+            "end": {
+              "line": 263,
+              "character": 14
+            }
+          }
+        }
+      },
+      {
+        "value": "<"
+      },
+      {
+        "value": "Window",
+        "location": {
+          "uri": "file:///home/os/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/winit-0.30.12/src/window.rs",
+          "range": {
+            "start": {
+              "line": 34,
+              "character": 11
+            },
+            "end": {
+              "line": 34,
+              "character": 17
+            }
+          }
+        }
+      },
+      {
+        "value": ">"
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false
+  },
+  {
+    "position": {
+      "line": 333,
+      "character": 31
+    },
+    "label": [
+      {
+        "value": ": &mut "
+      },
+      {
+        "value": "Context",
+        "location": {
+          "uri": "file:///home/os/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/softbuffer-0.4.6/src/lib.rs",
+          "range": {
+            "start": {
+              "line": 32,
+              "character": 11
+            },
+            "end": {
+              "line": 32,
+              "character": 18
+            }
+          }
+        }
+      },
+      {
+        "value": "<"
+      },
+      {
+        "value": "Arc",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/sync.rs",
+          "range": {
+            "start": {
+              "line": 263,
+              "character": 11
+            },
+            "end": {
+              "line": 263,
+              "character": 14
+            }
+          }
+        }
+      },
+      {
+        "value": "<"
+      },
+      {
+        "value": "Window",
+        "location": {
+          "uri": "file:///home/os/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/winit-0.30.12/src/window.rs",
+          "range": {
+            "start": {
+              "line": 34,
+              "character": 11
+            },
+            "end": {
+              "line": 34,
+              "character": 17
+            }
+          }
+        }
+      },
+      {
+        "value": ">>"
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false
+  },
+  {
+    "position": {
+      "line": 333,
+      "character": 41
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "Option",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/option.rs",
+          "range": {
+            "start": {
+              "line": 598,
+              "character": 9
+            },
+            "end": {
+              "line": 598,
+              "character": 15
+            }
+          }
+        }
+      },
+      {
+        "value": "<&mut "
+      },
+      {
+        "value": "Surface",
+        "location": {
+          "uri": "file:///home/os/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/softbuffer-0.4.6/src/lib.rs",
+          "range": {
+            "start": {
+              "line": 74,
+              "character": 11
+            },
+            "end": {
+              "line": 74,
+              "character": 18
+            }
+          }
+        }
+      },
+      {
+        "value": "<"
+      },
+      {
+        "value": "Arc",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/sync.rs",
+          "range": {
+            "start": {
+              "line": 263,
+              "character": 11
+            },
+            "end": {
+              "line": 263,
+              "character": 14
+            }
+          }
+        }
+      },
+      {
+        "value": "<"
+      },
+      {
+        "value": "Window",
+        "location": {
+          "uri": "file:///home/os/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/winit-0.30.12/src/window.rs",
+          "range": {
+            "start": {
+              "line": 34,
+              "character": 11
+            },
+            "end": {
+              "line": 34,
+              "character": 17
+            }
+          }
+        }
+      },
+      {
+        "value": ">, …>>"
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false,
+    "data": {
+      "file_id": 0,
+      "hash": "4048954655260694955",
+      "resolve_range": {
+        "start": {
+          "line": 333,
+          "character": 34
+        },
+        "end": {
+          "line": 333,
+          "character": 41
+        }
+      },
+      "version": 114
+    }
+  },
+  {
+    "position": {
+      "line": 333,
+      "character": 48
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "Event",
+        "location": {
+          "uri": "file:///home/os/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/winit-0.30.12/src/event.rs",
+          "range": {
+            "start": {
+              "line": 60,
+              "character": 9
+            },
+            "end": {
+              "line": 60,
+              "character": 14
+            }
+          }
+        }
+      },
+      {
+        "value": "<()>"
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false,
+    "data": {
+      "file_id": 0,
+      "hash": "8284377374651278122",
+      "resolve_range": {
+        "start": {
+          "line": 333,
+          "character": 43
+        },
+        "end": {
+          "line": 333,
+          "character": 48
+        }
+      },
+      "version": 114
+    }
+  },
+  {
+    "position": {
+      "line": 333,
+      "character": 54
+    },
+    "label": [
+      {
+        "value": ": &"
+      },
+      {
+        "value": "ActiveEventLoop",
+        "location": {
+          "uri": "file:///home/os/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/winit-0.30.12/src/event_loop.rs",
+          "range": {
+            "start": {
+              "line": 51,
+              "character": 11
+            },
+            "end": {
+              "line": 51,
+              "character": 26
+            }
+          }
+        }
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false,
+    "data": {
+      "file_id": 0,
+      "hash": "385403187896352526",
+      "resolve_range": {
+        "start": {
+          "line": 333,
+          "character": 50
+        },
+        "end": {
+          "line": 333,
+          "character": 54
+        }
+      },
+      "version": 114
+    }
+  },
+  {
+    "position": {
+      "line": 343,
+      "character": 19
+    },
+    "label": ": f32",
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false
+  },
+  {
+    "position": {
+      "line": 343,
+      "character": 23
+    },
+    "label": ": f32",
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false
+  },
+  {
+    "position": {
+      "line": 344,
+      "character": 18
+    },
+    "label": ": usize",
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false
+  },
+  {
+    "position": {
+      "line": 344,
+      "character": 21
+    },
+    "label": ": usize",
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false
+  },
+  {
+    "position": {
+      "line": 358,
+      "character": 26
+    },
+    "label": [
+      {
+        "value": ": &"
+      },
+      {
+        "value": "Client",
+        "location": {
+          "uri": "file:///home/os/gracilaria/src/lsp.rs",
+          "range": {
+            "start": {
+              "line": 28,
+              "character": 11
+            },
+            "end": {
+              "line": 28,
+              "character": 17
+            }
+          }
+        }
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false
+  },
+  {
+    "position": {
+      "line": 358,
+      "character": 29
+    },
+    "label": [
+      {
+        "value": ": &"
+      },
+      {
+        "value": "Path",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/path.rs",
+          "range": {
+            "start": {
+              "line": 2302,
+              "character": 11
+            },
+            "end": {
+              "line": 2302,
+              "character": 15
+            }
+          }
+        }
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false
+  },
+  {
+    "position": {
+      "line": 359,
+      "character": 22
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "Request",
+        "location": {
+          "uri": "file:///home/os/.cargo/git/checkouts/rust-analyzer-94e62460e169ee43/4472ac7/lib/lsp-server/src/msg.rs",
+          "range": {
+            "start": {
+              "line": 102,
+              "character": 11
+            },
+            "end": {
+              "line": 102,
+              "character": 18
+            }
+          }
+        }
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false
+  },
+  {
+    "position": {
+      "line": 362,
+      "character": 33
+    },
+    "label": [
+      {
+        "value": ": impl "
+      },
+      {
+        "value": "Future",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/future/future.rs",
+          "range": {
+            "start": {
+              "line": 36,
+              "character": 10
+            },
+            "end": {
+              "line": 36,
+              "character": 16
+            }
+          }
+        }
+      },
+      {
+        "value": "<"
+      },
+      {
+        "value": "Output",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/future/future.rs",
+          "range": {
+            "start": {
+              "line": 40,
+              "character": 9
+            },
+            "end": {
+              "line": 40,
+              "character": 15
+            }
+          }
+        }
+      },
+      {
+        "value": " = "
+      },
+      {
+        "value": "Result",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/result.rs",
+          "range": {
+            "start": {
+              "line": 556,
+              "character": 9
+            },
+            "end": {
+              "line": 556,
+              "character": 15
+            }
+          }
+        }
+      },
+      {
+        "value": "<…, …>>"
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false
+  },
+  {
+    "position": {
+      "line": 365,
+      "character": 26
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "Request",
+        "location": {
+          "uri": "file:///home/os/.cargo/git/checkouts/rust-analyzer-94e62460e169ee43/4472ac7/lib/lsp-server/src/msg.rs",
+          "range": {
+            "start": {
+              "line": 102,
+              "character": 11
+            },
+            "end": {
+              "line": 102,
+              "character": 18
+            }
+          }
+        }
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false
+  },
+  {
+    "position": {
+      "line": 369,
+      "character": 28
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "Result",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/result.rs",
+          "range": {
+            "start": {
+              "line": 556,
+              "character": 9
+            },
+            "end": {
+              "line": 556,
+              "character": 15
+            }
+          }
+        }
+      },
+      {
+        "value": "<"
+      },
+      {
+        "value": "Option",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/option.rs",
+          "range": {
+            "start": {
+              "line": 598,
+              "character": 9
+            },
+            "end": {
+              "line": 598,
+              "character": 15
+            }
+          }
+        }
+      },
+      {
+        "value": "<"
+      },
+      {
+        "value": "String",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/string.rs",
+          "range": {
+            "start": {
+              "line": 359,
+              "character": 11
+            },
+            "end": {
+              "line": 359,
+              "character": 17
+            }
+          }
+        }
+      },
+      {
+        "value": ">, "
+      },
+      {
+        "value": "Error",
+        "location": {
+          "uri": "file:///home/os/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/anyhow-1.0.100/src/lib.rs",
+          "range": {
+            "start": {
+              "line": 393,
+              "character": 11
+            },
+            "end": {
+              "line": 393,
+              "character": 16
+            }
+          }
+        }
+      },
+      {
+        "value": ">"
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false,
+    "data": {
+      "file_id": 0,
+      "hash": "12763259919117714608",
+      "resolve_range": {
+        "start": {
+          "line": 369,
+          "character": 27
+        },
+        "end": {
+          "line": 369,
+          "character": 28
+        }
+      },
+      "version": 114
+    }
+  },
+  {
+    "position": {
+      "line": 370,
+      "character": 51
+    },
+    "label": [
+      {
+        "value": ": &mut "
+      },
+      {
+        "value": "Rq",
+        "location": {
+          "uri": "file:///home/os/gracilaria/src/lsp.rs",
+          "range": {
+            "start": {
+              "line": 844,
+              "character": 11
+            },
+            "end": {
+              "line": 844,
+              "character": 13
+            }
+          }
+        }
+      },
+      {
+        "value": "<"
+      },
+      {
+        "value": "Complete",
+        "location": {
+          "uri": "file:///home/os/gracilaria/src/com.rs",
+          "range": {
+            "start": {
+              "line": 14,
+              "character": 11
+            },
+            "end": {
+              "line": 14,
+              "character": 19
+            }
+          }
+        }
+      },
+      {
+        "value": ", "
+      },
+      {
+        "value": "Option",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/option.rs",
+          "range": {
+            "start": {
+              "line": 598,
+              "character": 9
+            },
+            "end": {
+              "line": 598,
+              "character": 15
+            }
+          }
+        }
+      },
+      {
+        "value": "<"
+      },
+      {
+        "value": "CompletionResponse",
+        "location": {
+          "uri": "file:///home/os/.cargo/git/checkouts/helix-93fb9717c38fa114/fffeb3c/helix-lsp-types/src/completion.rs",
+          "range": {
+            "start": {
+              "line": 344,
+              "character": 9
+            },
+            "end": {
+              "line": 344,
+              "character": 27
+            }
+          }
+        }
+      },
+      {
+        "value": ">, …>"
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false
+  },
+  {
+    "position": {
+      "line": 371,
+      "character": 30
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "Result",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/result.rs",
+          "range": {
+            "start": {
+              "line": 556,
+              "character": 9
+            },
+            "end": {
+              "line": 556,
+              "character": 15
+            }
+          }
+        }
+      },
+      {
+        "value": "<"
+      },
+      {
+        "value": "Option",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/option.rs",
+          "range": {
+            "start": {
+              "line": 598,
+              "character": 9
+            },
+            "end": {
+              "line": 598,
+              "character": 15
+            }
+          }
+        }
+      },
+      {
+        "value": "<"
+      },
+      {
+        "value": "CompletionResponse",
+        "location": {
+          "uri": "file:///home/os/.cargo/git/checkouts/helix-93fb9717c38fa114/fffeb3c/helix-lsp-types/src/completion.rs",
+          "range": {
+            "start": {
+              "line": 344,
+              "character": 9
+            },
+            "end": {
+              "line": 344,
+              "character": 27
+            }
+          }
+        }
+      },
+      {
+        "value": ">, …>"
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false,
+    "data": {
+      "file_id": 0,
+      "hash": "17295209807845546528",
+      "resolve_range": {
+        "start": {
+          "line": 371,
+          "character": 29
+        },
+        "end": {
+          "line": 371,
+          "character": 30
+        }
+      },
+      "version": 114
+    }
+  },
+  {
+    "position": {
+      "line": 371,
+      "character": 34
+    },
+    "label": ": usize",
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false
+  },
+  {
+    "position": {
+      "line": 372,
+      "character": 47
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "CompletionResponse",
+        "location": {
+          "uri": "file:///home/os/.cargo/git/checkouts/helix-93fb9717c38fa114/fffeb3c/helix-lsp-types/src/completion.rs",
+          "range": {
+            "start": {
+              "line": 344,
+              "character": 9
+            },
+            "end": {
+              "line": 344,
+              "character": 27
+            }
+          }
+        }
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false,
+    "data": {
+      "file_id": 0,
+      "hash": "15872752186798058464",
+      "resolve_range": {
+        "start": {
+          "line": 372,
+          "character": 46
+        },
+        "end": {
+          "line": 372,
+          "character": 47
+        }
+      },
+      "version": 114
+    }
+  },
+  {
+    "position": {
+      "line": 375,
+      "character": 39
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "Result",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/result.rs",
+          "range": {
+            "start": {
+              "line": 556,
+              "character": 9
+            },
+            "end": {
+              "line": 556,
+              "character": 15
+            }
+          }
+        }
+      },
+      {
+        "value": "<"
+      },
+      {
+        "value": "Box",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/boxed.rs",
+          "range": {
+            "start": {
+              "line": 234,
+              "character": 11
+            },
+            "end": {
+              "line": 234,
+              "character": 14
+            }
+          }
+        }
+      },
+      {
+        "value": "<["
+      },
+      {
+        "value": "SemanticToken",
+        "location": {
+          "uri": "file:///home/os/.cargo/git/checkouts/helix-93fb9717c38fa114/fffeb3c/helix-lsp-types/src/semantic_tokens.rs",
+          "range": {
+            "start": {
+              "line": 146,
+              "character": 11
+            },
+            "end": {
+              "line": 146,
+              "character": 24
+            }
+          }
+        }
+      },
+      {
+        "value": "]>, …>"
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false,
+    "data": {
+      "file_id": 0,
+      "hash": "13221065354968477482",
+      "resolve_range": {
+        "start": {
+          "line": 375,
+          "character": 38
+        },
+        "end": {
+          "line": 375,
+          "character": 39
+        }
+      },
+      "version": 114
+    }
+  },
+  {
+    "position": {
+      "line": 376,
+      "character": 32
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "Result",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/result.rs",
+          "range": {
+            "start": {
+              "line": 556,
+              "character": 9
+            },
+            "end": {
+              "line": 556,
+              "character": 15
+            }
+          }
+        }
+      },
+      {
+        "value": "<"
+      },
+      {
+        "value": "Option",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/option.rs",
+          "range": {
+            "start": {
+              "line": 598,
+              "character": 9
+            },
+            "end": {
+              "line": 598,
+              "character": 15
+            }
+          }
+        }
+      },
+      {
+        "value": "<"
+      },
+      {
+        "value": "SignatureHelp",
+        "location": {
+          "uri": "file:///home/os/.cargo/git/checkouts/helix-93fb9717c38fa114/fffeb3c/helix-lsp-types/src/signature_help.rs",
+          "range": {
+            "start": {
+              "line": 142,
+              "character": 11
+            },
+            "end": {
+              "line": 142,
+              "character": 24
+            }
+          }
+        }
+      },
+      {
+        "value": ">, …>"
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false,
+    "data": {
+      "file_id": 0,
+      "hash": "12348608600095910952",
+      "resolve_range": {
+        "start": {
+          "line": 376,
+          "character": 31
+        },
+        "end": {
+          "line": 376,
+          "character": 32
+        }
+      },
+      "version": 114
+    }
+  },
+  {
+    "position": {
+      "line": 376,
+      "character": 40
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "Option",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/option.rs",
+          "range": {
+            "start": {
+              "line": 598,
+              "character": 9
+            },
+            "end": {
+              "line": 598,
+              "character": 15
+            }
+          }
+        }
+      },
+      {
+        "value": "<("
+      },
+      {
+        "value": "SignatureHelp",
+        "location": {
+          "uri": "file:///home/os/.cargo/git/checkouts/helix-93fb9717c38fa114/fffeb3c/helix-lsp-types/src/signature_help.rs",
+          "range": {
+            "start": {
+              "line": 142,
+              "character": 11
+            },
+            "end": {
+              "line": 142,
+              "character": 24
+            }
+          }
+        }
+      },
+      {
+        "value": ", usize, …)>"
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false
+  },
+  {
+    "position": {
+      "line": 376,
+      "character": 66
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "SignatureHelp",
+        "location": {
+          "uri": "file:///home/os/.cargo/git/checkouts/helix-93fb9717c38fa114/fffeb3c/helix-lsp-types/src/signature_help.rs",
+          "range": {
+            "start": {
+              "line": 142,
+              "character": 11
+            },
+            "end": {
+              "line": 142,
+              "character": 24
+            }
+          }
+        }
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false,
+    "data": {
+      "file_id": 0,
+      "hash": "8309493448695784503",
+      "resolve_range": {
+        "start": {
+          "line": 376,
+          "character": 65
+        },
+        "end": {
+          "line": 376,
+          "character": 66
+        }
+      },
+      "version": 114
+    }
+  },
+  {
+    "position": {
+      "line": 377,
+      "character": 36
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "SignatureHelp",
+        "location": {
+          "uri": "file:///home/os/.cargo/git/checkouts/helix-93fb9717c38fa114/fffeb3c/helix-lsp-types/src/signature_help.rs",
+          "range": {
+            "start": {
+              "line": 142,
+              "character": 11
+            },
+            "end": {
+              "line": 142,
+              "character": 24
+            }
+          }
+        }
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false
+  },
+  {
+    "position": {
+      "line": 377,
+      "character": 40
+    },
+    "label": ": usize",
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false
+  },
+  {
+    "position": {
+      "line": 377,
+      "character": 45
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "Option",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/option.rs",
+          "range": {
+            "start": {
+              "line": 598,
+              "character": 9
+            },
+            "end": {
+              "line": 598,
+              "character": 15
+            }
+          }
+        }
+      },
+      {
+        "value": "<usize>"
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false
+  },
+  {
+    "position": {
+      "line": 383,
+      "character": 28
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "Result",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/result.rs",
+          "range": {
+            "start": {
+              "line": 556,
+              "character": 9
+            },
+            "end": {
+              "line": 556,
+              "character": 15
+            }
+          }
+        }
+      },
+      {
+        "value": "<"
+      },
+      {
+        "value": "Option",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/option.rs",
+          "range": {
+            "start": {
+              "line": 598,
+              "character": 9
+            },
+            "end": {
+              "line": 598,
+              "character": 15
+            }
+          }
+        }
+      },
+      {
+        "value": "<"
+      },
+      {
+        "value": "Hovr",
+        "location": {
+          "uri": "file:///home/os/gracilaria/src/hov.rs",
+          "range": {
+            "start": {
+              "line": 305,
+              "character": 11
+            },
+            "end": {
+              "line": 305,
+              "character": 15
+            }
+          }
+        }
+      },
+      {
+        "value": ">, "
+      },
+      {
+        "value": "Error",
+        "location": {
+          "uri": "file:///home/os/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/anyhow-1.0.100/src/lib.rs",
+          "range": {
+            "start": {
+              "line": 393,
+              "character": 11
+            },
+            "end": {
+              "line": 393,
+              "character": 16
+            }
+          }
+        }
+      },
+      {
+        "value": ">"
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false,
+    "data": {
+      "file_id": 0,
+      "hash": "2884004005642618203",
+      "resolve_range": {
+        "start": {
+          "line": 383,
+          "character": 27
+        },
+        "end": {
+          "line": 383,
+          "character": 28
+        }
+      },
+      "version": 114
+    }
+  },
+  {
+    "position": {
+      "line": 383,
+      "character": 35
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "Option",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/option.rs",
+          "range": {
+            "start": {
+              "line": 598,
+              "character": 9
+            },
+            "end": {
+              "line": 598,
+              "character": 15
+            }
+          }
+        }
+      },
+      {
+        "value": "<"
+      },
+      {
+        "value": "Hovr",
+        "location": {
+          "uri": "file:///home/os/gracilaria/src/hov.rs",
+          "range": {
+            "start": {
+              "line": 305,
+              "character": 11
+            },
+            "end": {
+              "line": 305,
+              "character": 15
+            }
+          }
+        }
+      },
+      {
+        "value": ">"
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false
+  },
+  {
+    "position": {
+      "line": 387,
+      "character": 29
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "WindowId",
+        "location": {
+          "uri": "file:///home/os/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/winit-0.30.12/src/window.rs",
+          "range": {
+            "start": {
+              "line": 68,
+              "character": 11
+            },
+            "end": {
+              "line": 68,
+              "character": 19
+            }
+          }
+        }
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false
+  },
+  {
+    "position": {
+      "line": 388,
+      "character": 52
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "PhysicalSize",
+        "location": {
+          "uri": "file:///home/os/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/dpi-0.1.2/src/lib.rs",
+          "range": {
+            "start": {
+              "line": 615,
+              "character": 11
+            },
+            "end": {
+              "line": 615,
+              "character": 23
+            }
+          }
+        }
+      },
+      {
+        "value": "<u32>"
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false
+  },
+  {
+    "position": {
+      "line": 390,
+      "character": 36
+    },
+    "label": [
+      {
+        "value": ": &mut "
+      },
+      {
+        "value": "Surface",
+        "location": {
+          "uri": "file:///home/os/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/softbuffer-0.4.6/src/lib.rs",
+          "range": {
+            "start": {
+              "line": 74,
+              "character": 11
+            },
+            "end": {
+              "line": 74,
+              "character": 18
+            }
+          }
+        }
+      },
+      {
+        "value": "<"
+      },
+      {
+        "value": "Arc",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/sync.rs",
+          "range": {
+            "start": {
+              "line": 263,
+              "character": 11
+            },
+            "end": {
+              "line": 263,
+              "character": 14
+            }
+          }
+        }
+      },
+      {
+        "value": "<"
+      },
+      {
+        "value": "Window",
+        "location": {
+          "uri": "file:///home/os/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/winit-0.30.12/src/window.rs",
+          "range": {
+            "start": {
+              "line": 34,
+              "character": 11
+            },
+            "end": {
+              "line": 34,
+              "character": 17
+            }
+          }
+        }
+      },
+      {
+        "value": ">, "
+      },
+      {
+        "value": "Arc",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/sync.rs",
+          "range": {
+            "start": {
+              "line": 263,
+              "character": 11
+            },
+            "end": {
+              "line": 263,
+              "character": 14
+            }
+          }
+        }
+      },
+      {
+        "value": "<…>>"
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false
+  },
+  {
+    "position": {
+      "line": 398,
+      "character": 38
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "NonZero",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/num/nonzero.rs",
+          "range": {
+            "start": {
+              "line": 126,
+              "character": 11
+            },
+            "end": {
+              "line": 126,
+              "character": 18
+            }
+          }
+        }
+      },
+      {
+        "value": "<u32>"
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false
+  },
+  {
+    "position": {
+      "line": 398,
+      "character": 52
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "NonZero",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/num/nonzero.rs",
+          "range": {
+            "start": {
+              "line": 126,
+              "character": 11
+            },
+            "end": {
+              "line": 126,
+              "character": 18
+            }
+          }
+        }
+      },
+      {
+        "value": "<u32>"
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false
+  },
+  {
+    "position": {
+      "line": 418,
+      "character": 29
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "WindowId",
+        "location": {
+          "uri": "file:///home/os/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/winit-0.30.12/src/window.rs",
+          "range": {
+            "start": {
+              "line": 68,
+              "character": 11
+            },
+            "end": {
+              "line": 68,
+              "character": 19
+            }
+          }
+        }
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false
+  },
+  {
+    "position": {
+      "line": 421,
+      "character": 36
+    },
+    "label": [
+      {
+        "value": ": &mut "
+      },
+      {
+        "value": "Surface",
+        "location": {
+          "uri": "file:///home/os/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/softbuffer-0.4.6/src/lib.rs",
+          "range": {
+            "start": {
+              "line": 74,
+              "character": 11
+            },
+            "end": {
+              "line": 74,
+              "character": 18
+            }
+          }
+        }
+      },
+      {
+        "value": "<"
+      },
+      {
+        "value": "Arc",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/sync.rs",
+          "range": {
+            "start": {
+              "line": 263,
+              "character": 11
+            },
+            "end": {
+              "line": 263,
+              "character": 14
+            }
+          }
+        }
+      },
+      {
+        "value": "<"
+      },
+      {
+        "value": "Window",
+        "location": {
+          "uri": "file:///home/os/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/winit-0.30.12/src/window.rs",
+          "range": {
+            "start": {
+              "line": 34,
+              "character": 11
+            },
+            "end": {
+              "line": 34,
+              "character": 17
+            }
+          }
+        }
+      },
+      {
+        "value": ">, "
+      },
+      {
+        "value": "Arc",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/sync.rs",
+          "range": {
+            "start": {
+              "line": 263,
+              "character": 11
+            },
+            "end": {
+              "line": 263,
+              "character": 14
+            }
+          }
+        }
+      },
+      {
+        "value": "<…>>"
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false
+  },
+  {
+    "position": {
+      "line": 428,
+      "character": 28
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "PhysicalSize",
+        "location": {
+          "uri": "file:///home/os/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/dpi-0.1.2/src/lib.rs",
+          "range": {
+            "start": {
+              "line": 615,
+              "character": 11
+            },
+            "end": {
+              "line": 615,
+              "character": 23
+            }
+          }
+        }
+      },
+      {
+        "value": "<u32>"
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false,
+    "data": {
+      "file_id": 0,
+      "hash": "554845905536600452",
+      "resolve_range": {
+        "start": {
+          "line": 428,
+          "character": 24
+        },
+        "end": {
+          "line": 428,
+          "character": 28
+        }
+      },
+      "version": 114
+    }
+  },
+  {
+    "position": {
+      "line": 431,
+      "character": 31
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "Instant",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/time.rs",
+          "range": {
+            "start": {
+              "line": 157,
+              "character": 11
+            },
+            "end": {
+              "line": 157,
+              "character": 18
+            }
+          }
+        }
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false,
+    "data": {
+      "file_id": 0,
+      "hash": "1249655471166542177",
+      "resolve_range": {
+        "start": {
+          "line": 431,
+          "character": 28
+        },
+        "end": {
+          "line": 431,
+          "character": 31
+        }
+      },
+      "version": 114
+    }
+  },
+  {
+    "position": {
+      "line": 439,
+      "character": 29
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "Option",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/option.rs",
+          "range": {
+            "start": {
+              "line": 598,
+              "character": 9
+            },
+            "end": {
+              "line": 598,
+              "character": 15
+            }
+          }
+        }
+      },
+      {
+        "value": "<"
+      },
+      {
+        "value": "Range",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/ops/range.rs",
+          "range": {
+            "start": {
+              "line": 81,
+              "character": 11
+            },
+            "end": {
+              "line": 81,
+              "character": 16
+            }
+          }
+        }
+      },
+      {
+        "value": "<usize>>"
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false,
+    "data": {
+      "file_id": 0,
+      "hash": "2373729206185663797",
+      "resolve_range": {
+        "start": {
+          "line": 439,
+          "character": 28
+        },
+        "end": {
+          "line": 439,
+          "character": 29
+        }
+      },
+      "version": 114
+    }
+  },
+  {
+    "position": {
+      "line": 440,
+      "character": 46
+    },
+    "label": [
+      {
+        "value": ": &"
+      },
+      {
+        "value": "Range",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/ops/range.rs",
+          "range": {
+            "start": {
+              "line": 81,
+              "character": 11
+            },
+            "end": {
+              "line": 81,
+              "character": 16
+            }
+          }
+        }
+      },
+      {
+        "value": "<usize>"
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false
+  },
+  {
+    "position": {
+      "line": 450,
+      "character": 32
+    },
+    "label": ": usize",
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false,
+    "data": {
+      "file_id": 0,
+      "hash": "11612996505645132466",
+      "resolve_range": {
+        "start": {
+          "line": 450,
+          "character": 28
+        },
+        "end": {
+          "line": 450,
+          "character": 32
+        }
+      },
+      "version": 114
+    }
+  },
+  {
+    "position": {
+      "line": 457,
+      "character": 32
+    },
+    "label": ": usize",
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false
+  },
+  {
+    "position": {
+      "line": 457,
+      "character": 36
+    },
+    "label": ": usize",
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false
+  },
+  {
+    "position": {
+      "line": 457,
+      "character": 43
+    },
+    "label": [
+      {
+        "value": ": &mut "
+      },
+      {
+        "value": "TextArea",
+        "location": {
+          "uri": "file:///home/os/gracilaria/src/text.rs",
+          "range": {
+            "start": {
+              "line": 213,
+              "character": 11
+            },
+            "end": {
+              "line": 213,
+              "character": 19
+            }
+          }
+        }
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false,
+    "data": {
+      "file_id": 0,
+      "hash": "2865463369686423350",
+      "resolve_range": {
+        "start": {
+          "line": 457,
+          "character": 39
+        },
+        "end": {
+          "line": 457,
+          "character": 43
+        }
+      },
+      "version": 114
+    }
+  },
+  {
+    "position": {
+      "line": 457,
+      "character": 51
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "Output",
+        "location": {
+          "uri": "file:///home/os/gracilaria/src/text.rs",
+          "range": {
+            "start": {
+              "line": 1311,
+              "character": 11
+            },
+            "end": {
+              "line": 1311,
+              "character": 17
+            }
+          }
+        }
+      },
+      {
+        "value": "<'_>"
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false,
+    "data": {
+      "file_id": 0,
+      "hash": "4780143008517611683",
+      "resolve_range": {
+        "start": {
+          "line": 457,
+          "character": 46
+        },
+        "end": {
+          "line": 457,
+          "character": 51
+        }
+      },
+      "version": 114
+    }
+  },
+  {
+    "position": {
+      "line": 458,
+      "character": 48
+    },
+    "label": [
+      {
+        "value": ": &"
+      },
+      {
+        "value": "Client",
+        "location": {
+          "uri": "file:///home/os/gracilaria/src/lsp.rs",
+          "range": {
+            "start": {
+              "line": 28,
+              "character": 11
+            },
+            "end": {
+              "line": 28,
+              "character": 17
+            }
+          }
+        }
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false
+  },
+  {
+    "position": {
+      "line": 458,
+      "character": 51
+    },
+    "label": [
+      {
+        "value": ": &"
+      },
+      {
+        "value": "Path",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/path.rs",
+          "range": {
+            "start": {
+              "line": 2302,
+              "character": 11
+            },
+            "end": {
+              "line": 2302,
+              "character": 15
+            }
+          }
+        }
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false
+  },
+  {
+    "position": {
+      "line": 458,
+      "character": 73
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "Url",
+        "location": {
+          "uri": "file:///home/os/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/url-2.5.7/src/lib.rs",
+          "range": {
+            "start": {
+              "line": 227,
+              "character": 11
+            },
+            "end": {
+              "line": 227,
+              "character": 14
+            }
+          }
+        }
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false
+  },
+  {
+    "position": {
+      "line": 458,
+      "character": 124
+    },
+    "label": [
+      {
+        "value": ": &"
+      },
+      {
+        "value": "Vec",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/vec/mod.rs",
+          "range": {
+            "start": {
+              "line": 433,
+              "character": 11
+            },
+            "end": {
+              "line": 433,
+              "character": 14
+            }
+          }
+        }
+      },
+      {
+        "value": "<"
+      },
+      {
+        "value": "Diagnostic",
+        "location": {
+          "uri": "file:///home/os/.cargo/git/checkouts/helix-93fb9717c38fa114/fffeb3c/helix-lsp-types/src/lib.rs",
+          "range": {
+            "start": {
+              "line": 369,
+              "character": 11
+            },
+            "end": {
+              "line": 369,
+              "character": 21
+            }
+          }
+        }
+      },
+      {
+        "value": ">"
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false
+  },
+  {
+    "position": {
+      "line": 463,
+      "character": 52
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "Vec",
+        "location": {
+          "uri": "file:///home/os/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/vec/mod.rs",
+          "range": {
+            "start": {
+              "line": 433,
+              "character": 11
+            },
+            "end": {
+              "line": 433,
+              "character": 14
+            }
+          }
+        }
+      },
+      {
+        "value": "<u32>"
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false,
+    "data": {
+      "file_id": 0,
+      "hash": "779868099067206180",
+      "resolve_range": {
+        "start": {
+          "line": 463,
+          "character": 40
+        },
+        "end": {
+          "line": 463,
+          "character": 52
+        }
+      },
+      "version": 114
+    }
+  },
+  {
+    "position": {
+      "line": 464,
+      "character": 62
+    },
+    "label": [
+      {
+        "value": ": &"
+      },
+      {
+        "value": "Diagnostic",
+        "location": {
+          "uri": "file:///home/os/.cargo/git/checkouts/helix-93fb9717c38fa114/fffeb3c/helix-lsp-types/src/lib.rs",
+          "range": {
+            "start": {
+              "line": 369,
+              "character": 11
+            },
+            "end": {
+              "line": 369,
+              "character": 21
+            }
+          }
+        }
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false,
+    "data": {
+      "file_id": 0,
+      "hash": "2157070224440877568",
+      "resolve_range": {
+        "start": {
+          "line": 464,
+          "character": 58
+        },
+        "end": {
+          "line": 464,
+          "character": 62
+        }
+      },
+      "version": 114
+    }
+  },
+  {
+    "position": {
+      "line": 465,
+      "character": 47
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "DiagnosticSeverity",
+        "location": {
+          "uri": "file:///home/os/.cargo/git/checkouts/helix-93fb9717c38fa114/fffeb3c/helix-lsp-types/src/lib.rs",
+          "range": {
+            "start": {
+              "line": 460,
+              "character": 11
+            },
+            "end": {
+              "line": 460,
+              "character": 29
+            }
+          }
+        }
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false,
+    "data": {
+      "file_id": 0,
+      "hash": "11360557387436378292",
+      "resolve_range": {
+        "start": {
+          "line": 465,
+          "character": 44
+        },
+        "end": {
+          "line": 465,
+          "character": 47
+        }
+      },
+      "version": 114
+    }
+  },
+  {
+    "position": {
+      "line": 466,
+      "character": 48
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "EType",
+        "location": {
+          "uri": "file:///home/os/gracilaria/src/main.rs",
+          "range": {
+            "start": {
+              "line": 460,
+              "character": 41
+            },
+            "end": {
+              "line": 460,
+              "character": 46
+            }
+          }
+        }
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false,
+    "data": {
+      "file_id": 0,
+      "hash": "5949810695372277047",
+      "resolve_range": {
+        "start": {
+          "line": 466,
+          "character": 44
+        },
+        "end": {
+          "line": 466,
+          "character": 48
+        }
+      },
+      "version": 114
+    }
+  },
+  {
+    "position": {
+      "line": 472,
+      "character": 139
+    },
+    "label": [
+      {
+        "value": ": &&"
+      },
+      {
+        "value": "DiagnosticRelatedInformation",
+        "location": {
+          "uri": "file:///home/os/.cargo/git/checkouts/helix-93fb9717c38fa114/fffeb3c/helix-lsp-types/src/lib.rs",
+          "range": {
+            "start": {
+              "line": 478,
+              "character": 11
+            },
+            "end": {
+              "line": 478,
+              "character": 39
+            }
+          }
+        }
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false,
+    "data": {
+      "file_id": 0,
+      "hash": "8324177226982108991",
+      "resolve_range": {
+        "start": {
+          "line": 472,
+          "character": 137
+        },
+        "end": {
+          "line": 472,
+          "character": 139
+        }
+      },
+      "version": 114
+    }
+  },
+  {
+    "position": {
+      "line": 472,
+      "character": 176
+    },
+    "label": [
+      {
+        "value": ": &"
+      },
+      {
+        "value": "DiagnosticRelatedInformation",
+        "location": {
+          "uri": "file:///home/os/.cargo/git/checkouts/helix-93fb9717c38fa114/fffeb3c/helix-lsp-types/src/lib.rs",
+          "range": {
+            "start": {
+              "line": 478,
+              "character": 11
+            },
+            "end": {
+              "line": 478,
+              "character": 39
+            }
+          }
+        }
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false,
+    "data": {
+      "file_id": 0,
+      "hash": "7315375997936835009",
+      "resolve_range": {
+        "start": {
+          "line": 472,
+          "character": 175
+        },
+        "end": {
+          "line": 472,
+          "character": 176
+        }
+      },
+      "version": 114
+    }
+  },
+  {
+    "position": {
+      "line": 475,
+      "character": 55
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "Range",
+        "location": {
+          "uri": "file:///home/os/.cargo/git/checkouts/helix-93fb9717c38fa114/fffeb3c/helix-lsp-types/src/lib.rs",
+          "range": {
+            "start": {
+              "line": 273,
+              "character": 11
+            },
+            "end": {
+              "line": 273,
+              "character": 16
+            }
+          }
+        }
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false
+  },
+  {
+    "position": {
+      "line": 475,
+      "character": 58
+    },
+    "label": ": &str",
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false
+  },
+  {
+    "position": {
+      "line": 475,
+      "character": 63
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "EType",
+        "location": {
+          "uri": "file:///home/os/gracilaria/src/main.rs",
+          "range": {
+            "start": {
+              "line": 460,
+              "character": 41
+            },
+            "end": {
+              "line": 460,
+              "character": 46
+            }
+          }
+        }
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false
+  },
+  {
+    "position": {
+      "line": 476,
+      "character": 49
+    },
+    "label": ": u32",
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false,
+    "data": {
+      "file_id": 0,
+      "hash": "10217986206021811790",
+      "resolve_range": {
+        "start": {
+          "line": 476,
+          "character": 48
+        },
+        "end": {
+          "line": 476,
+          "character": 49
+        }
+      },
+      "version": 114
+    }
+  },
+  {
+    "position": {
+      "line": 481,
+      "character": 49
+    },
+    "label": [
+      {
+        "value": ": |&mut "
+      },
+      {
+        "value": "Cell",
+        "location": {
+          "uri": "file:///home/os/.cargo/git/checkouts/dsb-871cc53a8b3bdc59/e5d2802/src/cell.rs",
+          "range": {
+            "start": {
+              "line": 43,
+              "character": 11
+            },
+            "end": {
+              "line": 43,
+              "character": 15
+            }
+          }
+        }
+      },
+      {
+        "value": "| -> ()"
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false
+  },
+  {
+    "position": {
+      "line": 495,
+      "character": 49
+    },
+    "label": ": usize",
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false,
+    "data": {
+      "file_id": 0,
+      "hash": "3629305234643442951",
+      "resolve_range": {
+        "start": {
+          "line": 495,
+          "character": 48
+        },
+        "end": {
+          "line": 495,
+          "character": 49
+        }
+      },
+      "version": 114
+    }
+  },
+  {
+    "position": {
+      "line": 496,
+      "character": 55
+    },
+    "label": ": usize",
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false
+  },
+  {
+    "position": {
+      "line": 496,
+      "character": 87
+    },
+    "label": [
+      {
+        "value": ": "
+      },
+      {
+        "value": "RopeSlice",
+        "location": {
+          "uri": "file:///home/os/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ropey-1.6.1/src/slice.rs",
+          "range": {
+            "start": {
+              "line": 24,
+              "character": 11
+            },
+            "end": {
+              "line": 24,
+              "character": 20
+            }
+          }
+        }
+      },
+      {
+        "value": "<'_>"
+      }
+    ],
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false,
+    "data": {
+      "file_id": 0,
+      "hash": "16646102023681377141",
+      "resolve_range": {
+        "start": {
+          "line": 496,
+          "character": 86
+        },
+        "end": {
+          "line": 496,
+          "character": 87
+        }
+      },
+      "version": 114
+    }
+  },
+  {
+    "position": {
+      "line": 499,
+      "character": 45
+    },
+    "label": ": &str",
+    "kind": 1,
+    "paddingLeft": false,
+    "paddingRight": false,
+    "data": {
+      "file_id": 0,
+      "hash": "6837260651689634118",
+      "resolve_range": {
+        "start": {
+          "line": 499,
+          "character": 44
+        },
+        "end": {
+          "line": 499,
+          "character": 45
+        }
+      },
+      "version": 114
+    }
+  }
+]

@@ -14,8 +14,12 @@ use dsb::cell::Style;
 use helix_core::Syntax;
 use helix_core::syntax::{HighlightEvent, Loader};
 use implicit_fn::implicit_fn;
+use itertools::Itertools;
 use log::error;
-use lsp_types::{Position, SemanticToken, SemanticTokensLegend, TextEdit};
+use lsp_types::{
+    InlayHint, InlayHintLabel, Position, SemanticToken,
+    SemanticTokensLegend, TextEdit,
+};
 use ropey::{Rope, RopeSlice};
 use tree_house::Language;
 use winit::keyboard::{NamedKey, SmolStr};
@@ -321,6 +325,7 @@ impl TextArea {
         });
         Ok(())
     }
+
     pub fn insert(&mut self, c: &str) {
         self.rope.insert(self.cursor, c);
         self.tabstops.as_mut().map(|x| {
@@ -362,6 +367,10 @@ impl TextArea {
     }
     pub fn cursor(&self) -> (usize, usize) {
         self.xy(self.cursor)
+    }
+    pub fn visible_(&self) -> Range<usize> {
+        self.rope.line_to_char(self.vo)
+            ..self.rope.line_to_char(self.vo + self.r)
     }
     pub fn visible(&self, x: usize) -> bool {
         (self.vo..self.vo + self.r).contains(&self.rope.char_to_line(x))
@@ -739,22 +748,32 @@ impl TextArea {
             + (p.character as usize)
                 .min(self.rope.line(p.line as _).len_chars()))
     }
+    pub fn to_l_position(&self, l: usize) -> lsp_types::Position {
+        Position { line: self.y(l) as _, character: self.x(l) as _ }
+    }
     pub fn l_range(
         &self,
         r: lsp_types::Range,
     ) -> Result<Range<usize>, ropey::Error> {
         Ok(self.l_position(r.start)?..self.l_position(r.end)?)
     }
+    pub fn to_l_range(&self, r: Range<usize>) -> lsp_types::Range {
+        lsp_types::Range {
+            start: self.to_l_position(r.start),
+            end: self.to_l_position(r.end),
+        }
+    }
 
     #[implicit_fn]
     pub fn write_to<'lsp>(
-        &mut self,
+        &self,
         (into, into_s): (&mut [Cell], (usize, usize)),
         (ox, oy): (usize, usize),
         selection: Option<Range<usize>>,
-        apply: impl FnOnce((usize, usize), &mut Self, Output),
+        apply: impl FnOnce((usize, usize), &Self, Output),
         path: Option<&Path>,
         tokens: Option<(&[SemanticToken], &SemanticTokensLegend)>,
+        inlay: Option<&[InlayHint]>,
     ) {
         let (c, r) = (self.c, self.r);
         let mut cells = Output {
@@ -922,6 +941,33 @@ impl TextArea {
                     // 0x23, 0x34, 0x4B
                 })
         });
+        for (y, inlay) in inlay
+            .into_iter()
+            .flatten()
+            .chunk_by(|x| x.position.line)
+            .into_iter()
+            .filter(|&(y, _)| {
+                (self.vo..self.vo + r).contains(&(y as usize))
+            })
+        {
+            // self.l_position(inlay.position) {}
+            let mut off = self.rope.line(y as _).len_chars();
+            for inlay in inlay {
+                let label = match &inlay.label {
+                    InlayHintLabel::String(x) => x.clone(),
+                    InlayHintLabel::LabelParts(v) =>
+                        v.iter().map(_.value.clone()).collect::<String>(),
+                };
+                cells
+                    .get_range((off, y as _), (!0, y as _))
+                    .zip(label.chars())
+                    .for_each(|(x, y)| {
+                        x.letter = Some(y);
+                        x.style.color = color_("#536172")
+                    });
+                off += label.chars().count();
+            }
+        }
         apply((c, r), self, cells);
     }
     pub fn line_number_offset(&self) -> usize {

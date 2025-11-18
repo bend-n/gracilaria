@@ -61,7 +61,7 @@ atools = "0.1.10"
 rust-analyzer.opt-level = 3
 fimg.opt-level = 3
 nucleo.opt-level = 3
-tree.house.debug-assertions = false
+tree-house.debug-assertions = false
 
 [profile.release.package.tree-house]
 debug-assertions = false

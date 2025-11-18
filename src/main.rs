@@ -4,7 +4,6 @@
     iter_next_chunk,
     iter_array_chunks,
     array_windows,
-    slice_as_array,
     str_as_str,
     lazy_type_alias,
     const_convert,
@@ -50,6 +49,7 @@ use dsb::cell::Style;
 use dsb::{Cell, F, Fonts};
 use fimg::pixels::Blend;
 use fimg::{Image, OverlayAt};
+use itertools::Itertools as _;
 use lsp::{PathURI, Rq};
 use lsp_server::{Connection, Request as LRq};
 use lsp_types::request::{HoverRequest, SignatureHelpRequest};
@@ -82,6 +82,7 @@ mod sni;
 mod text;
 mod winit_app;
 fn main() {
+    unsafe { std::env::set_var("CARGO_UNSTABLE_RUSTC_UNICODE", "true") };
     env_logger::init();
     // lsp::x();
     entry(EventLoop::new().unwrap())
@@ -184,7 +185,9 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
     );
 
     let mut cursor_position = (0, 0);
+ 
 
+ 
     let mut state = State::Default;
     let mut bar = Bar { last_action: String::default() };
     let mut i = Image::build(1, 1).fill(BG);
@@ -201,6 +204,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
         }
         x.parent().and_then(rooter)
     }
+    
     let workspace = origin
         .as_ref()
         .and_then(|x| rooter(&x.parent().unwrap()))
@@ -256,6 +260,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
     let mut semantic_tokens = default();
     let mut diag =
         Rq::<String, Option<String>, (), anyhow::Error>::default();
+    let mut inlay: Rq::<Vec<InlayHint>, Vec<InlayHint>> = default();
     // let mut complete = None::<(CompletionResponse, (usize, usize))>;
     // let mut complete_ = None::<(
     //     JoinHandle<
@@ -330,11 +335,17 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
     )
     .with_event_handler(
         move |(window, _context), surface, event, elwt| {
+        macro_rules! inlay {
+            () => {
+                lsp!().map(|(lsp, path)| inlay.request(lsp.runtime.spawn(window.redraw_after(lsp.inlay(path, &text)))));
+            };
+        }
                 macro_rules! change {
         () => {
             lsp!().map(|(x, origin)| {
                 x.edit(&origin, text.rope.to_string()).unwrap();
                 x.rq_semantic_tokens(&mut semantic_tokens, origin, Some(window.clone())).unwrap();
+                inlay!();
             });
         };
     }
@@ -365,6 +376,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             log::debug!("discarding request {rq:?}"),
                     }
                 }
+                inlay.poll(|x, p| x.ok().or(p.1), &l.runtime);
                 diag.poll(|x, _|x.ok().flatten(), &l.runtime);
                 if let CompletionState::Complete(rq)= &mut complete {
                     rq.poll(|f, (c,_)| {
@@ -449,6 +461,20 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                         let t_ox = text.line_number_offset() + 1;
                         text.c = c - t_ox;
                         text.r = r - 1;
+                        // let mut text = text.clone();
+                        // for (_, inlay) in inlay.result.as_ref().into_iter().flatten().chunk_by(|x| x.position.line).into_iter() {
+                        //     let mut off = 0;
+                        //     for inlay in inlay {
+                        //     let label = match &inlay.label {
+                        //         InlayHintLabel::String(x) => x.clone(),
+                        //         InlayHintLabel::LabelParts(v) => {
+                        //             v.iter().map(_.value.clone()).collect::<String>()
+                        //         },
+                        //     };
+                        //     text.rope.insert(text.l_position(inlay.position).unwrap() + off, &label);
+                        //     off += label.chars().count();
+                        //     }
+                        // }
                         text.write_to(
                             (&mut cells, (c, r)),
                             (t_ox, 0),
@@ -546,6 +572,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                                 }) => Some(legend),
                                 _ => None,
                             }),
+                            inlay.result.as_deref()
                         );
 
                         bar.write_to(
@@ -942,6 +969,7 @@ hovering.request = (DropH::new(handle), hover).into();
                         *vo = vo.saturating_sub(rows);
                     }
                     window.request_redraw();
+                    inlay!();
                 }
                 Event::WindowEvent {
                     event: WindowEvent::ModifiersChanged(modifiers),
@@ -980,7 +1008,7 @@ hovering.request = (DropH::new(handle), hover).into();
                     match o {
                         Some(Do::Reinsert) => panic!(),
                         Some(Do::Save) => match &origin {
-                            Some(_) => {
+                            Some(x) => {
                                 state.consume(Action::Saved).unwrap();
                                 save!();
                             }
@@ -1003,6 +1031,7 @@ hovering.request = (DropH::new(handle), hover).into();
                             }
                         
                             text.scroll_to_cursor();
+                            inlay!();
                             if cb4 != text.cursor && let CompletionState::Complete(Rq{ result: Some(c),.. })= &mut complete
                                 && ((text.cursor < c.start) || (!is_word(text.at_())&& (text.at_() != '.' || text.at_() != ':')) ) {                                
                                 complete = CompletionState::None;
@@ -1010,7 +1039,7 @@ hovering.request = (DropH::new(handle), hover).into();
                             if sig_help.running() && cb4 != text.cursor && let Some((lsp, path)) = lsp!() {
                                 sig_help.request(lsp.runtime.spawn(window.redraw_after(lsp.request_sig_help(path, text.cursor()))));
                             }
-                            if hist.record(&text) {
+                            if hist.record(&text) && let Some((lsp, path)) = lsp!() {
                                 change!();
                             }
     lsp!().map(|(lsp, o)|{
@@ -1102,6 +1131,7 @@ hovering.request = (DropH::new(handle), hover).into();
                             *state.sel() = text
                                 .extend_selection(y, state.sel().clone());
                             text.scroll_to_cursor();
+                            inlay!();
                         }
                         Some(Do::Insert(x, c)) => {
                             hist.push_if_changed(&text);
@@ -1134,7 +1164,7 @@ hovering.request = (DropH::new(handle), hover).into();
                             text.insert(&clipp::paste());
                             hist.push_if_changed(&text);
                         }
-                        Some(Do::OpenFile(x)) => { let _: anyhow::Result<()> = try {
+                        Some(Do::OpenFile(x)) => { let _ = try {
                             origin = Some(PathBuf::from(&x).canonicalize()?);
                             text = TextArea::default();
                             let new = std::fs::read_to_string(x)?;
@@ -1178,6 +1208,7 @@ hovering.request = (DropH::new(handle), hover).into();
                                     text.cursor =
                                         text.rope.byte_to_char(m.end());
                                     text.scroll_to_cursor_centering();
+                                    inlay!();
                                 })
                                 .unwrap_or_else(|| {
                                     bar.last_action = "no matches".into()
@@ -1189,6 +1220,7 @@ hovering.request = (DropH::new(handle), hover).into();
                             let m = re.find_iter(&s).nth(*index).unwrap();
                             text.cursor = text.rope.byte_to_char(m.end());
                             text.scroll_to_cursor_centering();
+                            inlay!();
                         }
                         Some(Do::Boolean(
                             BoolRequest::ReloadFile,

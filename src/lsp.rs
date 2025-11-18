@@ -328,6 +328,16 @@ impl Client {
         }
     }
 
+    pub fn inlay(&'static self, f: &Path, t:&TextArea) -> impl Future<Output = Result<Vec<InlayHint>, RequestError>> + use<> {
+        self.request::<lsp_request!("textDocument/inlayHint")>(&InlayHintParams {
+            work_done_progress_params: default(),
+            text_document: f.tid(),
+            range: t.to_l_range(lower::saturating::math!{
+                t.rope.line_to_char(t.vo-t.r)..t.rope.line_to_char(t.vo + t.r + t.r)
+            })
+        }).unwrap().0.map(|x| x.map(Option::unwrap_or_default))
+    }
+
     pub fn rq_semantic_tokens(
         &'static self,
         to: &mut Rq<Box<[SemanticToken]>, Box<[SemanticToken]>>,
@@ -399,9 +409,13 @@ pub fn run(
                 }),
                 workspace: Some(WorkspaceClientCapabilities {
                     diagnostic: Some(DiagnosticWorkspaceClientCapabilities { refresh_support: Some(true) }),
+                    inlay_hint: Some(InlayHintWorkspaceClientCapabilities { refresh_support: Some(true) }),
                     ..default()
                 }),
                 text_document: Some(TextDocumentClientCapabilities {
+                    inlay_hint: Some(InlayHintClientCapabilities { dynamic_registration: None, resolve_support: Some(InlayHintResolveClientCapabilities {
+                        properties: vec!["textEdits".into()], })
+                    }),
                     code_action: Some(
                         CodeActionClientCapabilities {
                             data_support: Some(true),
@@ -808,6 +822,8 @@ impl<T, U, F: FnMut(T) -> U, Fu: Future<Output = T>> Map_<T, U, F> for Fu {
     }
 }
 use tokio::task;
+
+use crate::text::TextArea;
 #[derive(Debug)]
 pub enum OnceOff<T> {
     Waiting(task::JoinHandle<Result<T, oneshot::error::RecvError>>),
