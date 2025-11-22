@@ -34,6 +34,7 @@
 #![allow(incomplete_features, redundant_semicolons)]
 use std::borrow::Cow;
 use std::iter::{Take, once};
+use std::mem::transmute;
 use std::num::NonZeroU32;
 use std::os::fd::AsFd;
 use std::path::{Path, PathBuf};
@@ -49,7 +50,6 @@ use dsb::cell::Style;
 use dsb::{Cell, F, Fonts};
 use fimg::pixels::Blend;
 use fimg::{Image, OverlayAt};
-use itertools::Itertools as _;
 use lsp::{PathURI, Rq};
 use lsp_server::{Connection, Request as LRq};
 use lsp_types::request::{HoverRequest, SignatureHelpRequest};
@@ -72,7 +72,7 @@ use winit::window::Icon;
 use crate::bar::Bar;
 use crate::hov::Hovr;
 use crate::lsp::{RedrawAfter, RqS};
-use crate::text::{Diff, TextArea, col, color, is_word, set_a};
+use crate::text::{Diff, Mapping, TextArea, col, is_word};
 mod bar;
 pub mod com;
 pub mod hov;
@@ -168,6 +168,7 @@ static mut CLICKING: bool = false;
 
 const BG: [u8; 3] = [31, 36, 48];
 const FG: [u8; 3] = [204, 202, 194];
+const BORDER: [u8; 3] = col!("#ffffff");
 #[implicit_fn::implicit_fn]
 pub(crate) fn entry(event_loop: EventLoop<()>) {
     let ppem = 20.0;
@@ -183,11 +184,8 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
         F::FontRef(*IFONT, &[(2003265652, 550.0)]),
         F::instance(*IFONT, *BIFONT),
     );
-
     let mut cursor_position = (0, 0);
- 
 
- 
     let mut state = State::Default;
     let mut bar = Bar { last_action: String::default() };
     let mut i = Image::build(1, 1).fill(BG);
@@ -204,7 +202,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
         }
         x.parent().and_then(rooter)
     }
-    
+
     let workspace = origin
         .as_ref()
         .and_then(|x| rooter(&x.parent().unwrap()))
@@ -253,14 +251,14 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
         };
     }
     let mut hovering =
-        Rq::<Hovr, Option<Hovr>, usize, anyhow::Error>::default();
+        Rq::<Hovr, Option<Hovr>, (usize, usize), anyhow::Error>::default();
     let mut complete = CompletionState::None;
     let mut sig_help = // vo, lines
         RqS::<(SignatureHelp, usize, Option<usize>), SignatureHelpRequest, ()>::default();
     let mut semantic_tokens = default();
     let mut diag =
         Rq::<String, Option<String>, (), anyhow::Error>::default();
-    let mut inlay: Rq::<Vec<InlayHint>, Vec<InlayHint>> = default();
+    let mut inlay: Rq<Vec<InlayHint>, Vec<InlayHint>> = default();
     // let mut complete = None::<(CompletionResponse, (usize, usize))>;
     // let mut complete_ = None::<(
     //     JoinHandle<
@@ -376,7 +374,9 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             log::debug!("discarding request {rq:?}"),
                     }
                 }
-                inlay.poll(|x, p| x.ok().or(p.1), &l.runtime);
+                inlay.poll(|x, p| x.ok().or(p.1).inspect(|x| {
+                    text.set_inlay(x);
+                }), &l.runtime);
                 diag.poll(|x, _|x.ok().flatten(), &l.runtime);
                 if let CompletionState::Complete(rq)= &mut complete {
                     rq.poll(|f, (c,_)| {
@@ -391,7 +391,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                     (x, 0, None)
                 }
             }), &l.runtime);
-            hovering.poll(|x, (_, p)|x.ok().flatten().or(p), &l.runtime);
+            hovering.poll(|x, _| x.ok().flatten(), &l.runtime);
             }            match event {
                 Event::AboutToWait => {}
                 Event::WindowEvent {
@@ -512,13 +512,14 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                                                 });
                                             };
                                             if r.start == r.end {
-                                                x.get((r.start.character as _, p as _)).map(f);
+                                                x.get(text.map_to_visual((r.start.character as _, p as _)).unwrap()).map(f);
                                             } else {
-                                                x.get_range((r.start.character as _, p as _), (r.end.character as usize, r.end.line as _))
+                                                x.get_range(text.map_to_visual((r.start.character as _, p as _)).unwrap(), 
+                                                            text.map_to_visual((r.end.character as usize, r.end.line as _)).unwrap())
                                                     .for_each(f)
                                             }
                                             let l = r.start.line as usize;
-                                            let Some(x_) = text.rope.get_line(l).map(|x|x.len_chars() + 2) else { 
+                                            let Some(x_) = text.visual_eol(l).map(_+2) else { 
                                                 return;
                                             };
                                         let m = m.lines().next().unwrap_or(m);
@@ -543,11 +544,11 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                                         .enumerate()
                                         .for_each(|(i, m)| {
                                             for x in x.get_range(
-                                            text.xy(text.rope.byte_to_char(m.start())), text.xy(text
+                                            text.map_to_visual(text.xy(text.rope.byte_to_char(m.start())).unwrap()).unwrap(),text.map_to_visual(                                             text.xy(text
                                                         .rope
                                                         .byte_to_char(
                                                             m.end(),
-                                                        )))
+                                                        )).unwrap()).unwrap())
                                              {
                                                 x.style.bg = if i == *j {
                                                     [105, 83, 128]
@@ -572,7 +573,6 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                                 }) => Some(legend),
                                 _ => None,
                             }),
-                            inlay.result.as_deref()
                         );
 
                         bar.write_to(
@@ -616,7 +616,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             assert!(w < window.inner_size().width as _ &&h < window.inner_size().height as _);
                             let is_above = position.1.checked_sub(h).is_some();
                             let top = position.1.checked_sub(h).unwrap_or(((((_y + 1) as f32) * (fh + ls * fac)).round() + toy) as usize);
-                            let (_, y) = dsb::fit(&fonts.regular, ppem, ls, (window.inner_size().width as _ /* - left */,(window.inner_size().height as usize - top) ));
+                            let (_, y) = dsb::fit(&fonts.regular, ppem, ls, (window.inner_size().width as _ /* - left */,((window.inner_size().height as usize).saturating_sub( top)) )); /* suspicious saturation */
                             r = r.min(y);
 
                             let left =
@@ -639,7 +639,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                         };
                         let mut pass = true;
                         if let Some((lsp, p)) = lsp!() && let Some(diag) = lsp.diagnostics.get(&Url::from_file_path(p).unwrap(), &lsp.diagnostics.guard()) {
-                            let dawg = diag.iter().filter(|diag| text.l_range(diag.range).is_ok_and(|x| x.contains(&text.index_at(cursor_position)) && (text.vo..text.vo+r).contains(&(diag.range.start.line as _))));
+                            let dawg = diag.iter().filter(|diag| text.l_range(diag.range).is_ok_and(|x| x.contains(&text.mapped_index_at(cursor_position)) && (text.vo..text.vo+r).contains(&(diag.range.start.line as _))));
                             for diag in dawg {
                                 match diag.data.as_ref().unwrap_or_default().get("rendered") {
                                     Some(x) if let Some(x) = x.as_str() => {
@@ -650,27 +650,37 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                                         let Some(x_lim) = t.cells.rows().map(_.iter().rev().take_while(_.letter.is_none()).count()).map(|x|
                                         c -x).max() else { continue };
                                         let n = t.cells.rows().take(y_lim).flat_map(|x| &x[..x_lim]).copied().collect::<Vec<_>>();
-                                          let (_,left, top, w, h) = place_around_cursor(
-                                (diag.range.start.character as usize+text.line_number_offset()+1, diag.range.start.line as usize - text.vo),
+    let (_,left, top, w, h) = place_around_cursor(
+    text.map_to_visual((diag.range.start.character as _, diag.range.start.line as usize))
+        .map(|(x, y)| (x + text.line_number_offset() + 1, y - text.vo))
+        .unwrap_or((diag.range.start.character as _, diag.range.start.line as usize - text.vo)),
                                 &mut fonts,
                                 i.as_mut(),
                                 &n, x_lim,
                                 17.0, -400., 0., 0., 0.
                             );
                             pass=false;
-                            i.r#box((left .saturating_sub(1) as _, top.saturating_sub(1) as _), w as _,h as _, [0;3]);
+                            i.r#box((left .saturating_sub(1) as _, top.saturating_sub(1) as _), w as _,h as _, BORDER);
                                     },
                                     _ => {}
                                 }
                             }
                         };
-                        hovering.result.as_ref().filter(|_|pass).map(|x| x.span.clone().map(|sp| {
-                            let [(_x, _y), (_x2, _)] = text.position(sp);
+                        hovering.result.as_ref().filter(|_|pass).map(|x| x.span.clone().map(|[(_x, _y),(_x2, _)]| {
+                            // let [(_x, _y), (_x2, _)] = text.position(sp);
+                            // dbg!(x..=x2, cursor_position.0)
+                        // if !(_x..=_x2).contains(&&(cursor_position.0 .wrapping_sub( text.line_number_offset()+1))) {
+                        //     return
+                        // }
+
                             let [_x, _x2] = [_x, _x2].add(text.line_number_offset()+1);
-                            let _y = _y.wrapping_sub(text.vo);
-                            if !(cursor_position.1 == _y && (_x..=_x2).contains(&cursor_position.0)) {
+                            let Some(_y) = _y.checked_sub(text.vo) else {
                                 return;
-                            }
+                            };
+                            
+                            // if !(cursor_position.1 == _y && (_x..=_x2).contains(&cursor_position.0)) {
+                                // return;
+                            // }
 
                             let r = x.item.l().min(15);
                             let c = x.item.displayable(r);
@@ -681,7 +691,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                                 c, x.item.c,
                                 18.0, 10.0, 0., 0., 0.
                             );
-                            i.r#box((left .saturating_sub(1) as _, top.saturating_sub(1) as _), w as _,h as _, [0;3]);
+                            i.r#box((left .saturating_sub(1) as _, top.saturating_sub(1) as _), w as _,h as _, BORDER);
                         }));
                         let com = match complete {
                             CompletionState::Complete(Rq{ result: Some(ref x,),..}) => {
@@ -698,7 +708,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             let _x = _x + text.line_number_offset()+1;
                             let Some(_y) = _y.checked_sub(text.vo) else { break 'out };
                             let (is_above,left, top, w, mut h) = place_around_cursor((_x, _y), &mut fonts, i.as_mut(), &c, 40, ppem, ls, 0., 0., 0.);
-                                i.r#box((left .saturating_sub(1) as _, top.saturating_sub(1) as _), w as _,h as _, [0;3]);
+                                i.r#box((left .saturating_sub(1) as _, top.saturating_sub(1) as _), w as _,h as _, BORDER);
                             
                             let com = com.map(|c| {
                                 let (is_above_,left, top, w_, h_) = place_around_cursor(
@@ -707,7 +717,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                                     i.as_mut(),
                                     &c, 40, ppem, ls, 0., -(h as f32), if is_above { 0.0 } else { h as f32 }
                                 );
-                                i.r#box((left .saturating_sub(1) as _, top.saturating_sub(1) as _), w_ as _,h_ as _, [0;3]);
+                                i.r#box((left .saturating_sub(1) as _, top.saturating_sub(1) as _), w_ as _,h_ as _, BORDER);
                                 if is_above { // completion below, we need to push the docs, if any, below only below us, if the sig help is still above.
                                     h = h_;
                                 } else {
@@ -727,7 +737,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                                 let (_,left_, top_, _w_, h_) = place_around_cursor((_x, _y),
                                     &mut fonts, i.as_mut(), cells, cols, ppem, ls,
                                     0., -(h as f32), if is_above { com.filter(|x| !x.0).map(|(_is, _l, _t, _w, h)| h).unwrap_or_default() as f32 } else { h as f32 });
-                                i.r#box((left_.saturating_sub(1) as _, top_.saturating_sub(1) as _), w as _,h_ as _, [0;3]);
+                                i.r#box((left_.saturating_sub(1) as _, top_.saturating_sub(1) as _), w as _,h_ as _, BORDER);
                             });
                             }
                         } else if let Some(c) = com {
@@ -741,7 +751,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                                 i.as_mut(),
                                 &c, 40, ppem, ls, 0., 0., 0.
                             );
-                            i.r#box((left .saturating_sub(1) as _, top.saturating_sub(1) as _), w as _,h as _, [0;3]);
+                            i.r#box((left .saturating_sub(1) as _, top.saturating_sub(1) as _), w as _,h as _, BORDER);
                         }
                         }
                         let met = FONT.metrics(&[]);
@@ -767,12 +777,12 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                                 );
                             }
                         };
-                        let (x, y) = text.cursor();
+                        let (x, y) = text.cursor_visual();
                         let image =
                             Image::<_, 4>::build(2, (fh).ceil() as u32)
                                 .fill([82,82,82, 255]);
                         for stop in text.tabstops.as_ref().into_iter().flat_map(|x|x.list()) {
-                            let (x, y) = text.xy(stop.clone().r().end); 
+                            let Some((x, y)) = text.xy(stop.clone().r().end) else { continue };
                             draw_at(x, y, &image);
                         }
                         if matches!(
@@ -819,45 +829,60 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                     {
                         Some(Do::ExtendSelectionToMouse) => {
                             *state.sel() = text.extend_selection_to(
-                                text.index_at(cursor_position),
+                                text.mapped_index_at(cursor_position),
                                 state.sel().clone(),
                             );
                             window.request_redraw();
                         }
                         Some(Do::StartSelection) => {
-                            let x = text.index_at(cursor_position);
+                            let x = text.mapped_index_at(cursor_position);
                             hist.last.cursor = x;
                             text.cursor = x;
                             *state.sel() = x..x;
                         }
-                        Some(Do::Hover) if let Some(hover) = text.raw_index_at(cursor_position) => {
-                            // assert_eq!(hover, text.index_at(cursor_position));
-                            let (x, y) =text.xy(hover);
-                            let text = text.clone();
-                        'out: {
-                            let l = &mut hovering.result;
-                            if let  Some(Hovr{ span: Some(span),..}) = &*l {
-                            let [(_x, _y), (_x2, _)] = text.position(span.clone());
-                            let [_x, _x2] = [_x, _x2].add(text.line_number_offset()+1);
-                            let Some(_y) = _y.checked_sub(text.vo) else { break 'out };
-                            if cursor_position.1 == _y && (_x.._x2).contains(&cursor_position.0) {
-                                break 'out;
-                            } else {
-                                *l = None;
-                                window.request_redraw();
-                            }
-                            if let Some((_, c)) = hovering.request && c == hover {
-                                break 'out;
-                            }
+                        Some(Do::Hover) if let Some(hover) = text.visual_index_at(cursor_position) &&
+                        let Some((cl, o)) = lsp!() => 'out: {
+                    let l = &mut hovering.result;
+                    if let Some(Hovr{ span: Some([(_x, _y), (_x2, _)]),..}) = &*l {
+                        let Some(_y) = _y.checked_sub(text.vo) else { break 'out };
+                        if cursor_position.1 == _y && (_x..=_x2).contains(&&(cursor_position.0 - text.line_number_offset()-1)) {
+                            break 'out;
+                        } else {
+                            // println!("span no longer below cursor; cancel hover {_x}..{_x2} {}", cursor_position.0 - text.line_number_offset() - 1);
+                            *l = None;
+                            window.request_redraw();
                         }
-                        if let Some((cl, o)) = lsp!() {
-                        // if !running.insert(hover) {return}
-                        let (rx, _) = cl.request::<HoverRequest>(&HoverParams {
-text_document_position_params: TextDocumentPositionParams { text_document: TextDocumentIdentifier::new(Url::from_file_path(o).unwrap()), position: Position {
-    line: y as _, character: x as _,
-}},
-work_done_progress_params:default() }).unwrap();
-let handle = cl.runtime.spawn(window.redraw_after(async move {
+                    }
+                            let text = text.clone();
+                            let mut rang = None;
+                            let z = match hover {
+                                Mapping::Char(_, _, i) => {
+                                    TextDocumentPositionParams { position: text.to_l_position(i), text_document: o.tid() }
+                                },
+                                Mapping::Fake(mark, index, _) => {
+                                    let Some(ref loc) = mark.l[index].1 else {
+                                        break 'out;
+                                    };
+                                    let (x, y) = text.xy(mark.start).unwrap();
+                                    let Some(begin) = text.reverse_source_map(y) else { break 'out };
+                                    let start = begin[x - 1] + 1;
+                                    let left = mark.l[..index].iter().rev().take_while(_.1.as_ref() == Some(loc)).count();
+                                    let start = start + index - left;
+                                    let length = mark.l[index..].iter().take_while(_.1.as_ref() == Some(loc)).count() + left;
+                                    rang = Some([(start, y), (start + length, y)]);
+                                    TextDocumentPositionParams { text_document: TextDocumentIdentifier { uri: loc.uri.clone() }, position: loc.range.start }
+                                }
+                            };
+if let Some((_, c)) = hovering.request && c == cursor_position {
+    break 'out;
+}
+                    // if !running.insert(hover) {return}
+let (rx, _) = cl.request::<HoverRequest>(&HoverParams {
+    text_document_position_params: z,
+    work_done_progress_params:default()
+}).unwrap();
+// println!("rq hov of {hover:?} (cur {})", hovering.request.is_some());
+let handle: tokio::task::JoinHandle<Result<Option<Hovr>, anyhow::Error>> = cl.runtime.spawn(window.redraw_after(async move {
     let Some(x) = rx.await? else {return Ok(None::<Hovr>)};
     let (w, cells) = spawn_blocking(move || {
         let x = match &x.contents {
@@ -881,13 +906,15 @@ let handle = cl.runtime.spawn(window.redraw_after(async move {
         let m = hov::l(&x).into_iter().max().map(_+2).unwrap_or(usize::MAX).min(c-10);
         (m, hov::markdown2(m, &x))
     }).await.unwrap();
-    let span = x.range.and_then(|x| text.l_range(x).ok());
+    let span = rang.or_else(|| x.range.and_then(|range| try {
+        let x1 = text.reverse_source_map(range.start.line as _)?[range.start.character as usize];
+        let x2 = text.reverse_source_map(range.end.line as _)?[range.end.character as usize];
+        [(x1, range.start.line as _), (x2, range.start.line as _)]
+    }));
     anyhow::Ok(Some( hov::Hovr { span, item: text::CellBuffer { c: w, vo: 0, cells: cells.into() }}.into()))
 }));
-hovering.request = (DropH::new(handle), hover).into();
-}
-                    }
-                            
+hovering.request = (DropH::new(handle), cursor_position).into();
+// hovering.result = None;
 //                             lsp!().map(|(cl, o)| {
 // let window = window.clone();
 // });
@@ -912,17 +939,18 @@ hovering.request = (DropH::new(handle), hover).into();
                     _ = complete.consume(CompletionAction::Click).unwrap();
                     match state.consume(Action::M(button)).unwrap() {
                         Some(Do::MoveCursor) => {
-                            text.cursor = text.index_at(cursor_position);
+                            text.cursor = text.mapped_index_at(cursor_position);
                             text.setc();
                         }
                         Some(Do::ExtendSelectionToMouse) => {
+                            println!("ext2");
                             *state.sel() = text.extend_selection_to(
-                                text.index_at(cursor_position),
+                                text.mapped_index_at(cursor_position),
                                 state.sel().clone(),
                             );
                         }
                         Some(Do::StartSelection) => {
-                            let x = text.index_at(cursor_position);
+                            let x = text.mapped_index_at(cursor_position);
                             hist.last.cursor = x;
                             *state.sel() = text.extend_selection_to(
                                 x,
@@ -1511,6 +1539,6 @@ fn frunctinator(
     _paramter4: u16,
 ) -> usize {
     lower::saturating::math! { parameter1  };
-    
+
     0
 }

@@ -303,7 +303,10 @@ fn t() {
     println!("{:?}", now.elapsed());
     x.as_ref().save("x");
 }
+#[derive(Debug)]
 pub struct Hovr {
-    pub(crate) span: Option<Range<usize>>,
+    pub(crate) span: Option<[(VisualX, usize); 2]>,
     pub(crate) item: crate::text::CellBuffer,
 }
+
+type VisualX = usize;

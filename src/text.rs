@@ -17,7 +17,7 @@ use implicit_fn::implicit_fn;
 use itertools::Itertools;
 use log::error;
 use lsp_types::{
-    InlayHint, InlayHintLabel, Position, SemanticToken,
+    InlayHint, InlayHintLabel, Location, Position, SemanticToken,
     SemanticTokensLegend, TextEdit,
 };
 use ropey::{Rope, RopeSlice};
@@ -74,7 +74,6 @@ mod semantic {
 
     "comment" b"#5c6773" Style::ITALIC,
     // "decorator" b"#cccac2",
-    // "enumMember" b"#cccac2",
     "function" b"#FFD173" Style::ITALIC,
     "interface" b"#5CCFE6",
     "keyword" b"#FFAD66"  Style::ITALIC | Style::BOLD,
@@ -88,6 +87,7 @@ mod semantic {
     // "struct" b"#cccac2",
     // "typeParameter" b"#cccac2",
     "class" b"#73b9ff",
+    "enumMember" b"#73b9ff",
     "enum" b"#73b9ff" Style::ITALIC | Style::BOLD,
     "builtinType" b"#73d0ff" Style::ITALIC,
     // "type" b"#73d0ff" Style::ITALIC | Style::BOLD,
@@ -236,12 +236,32 @@ pub struct TextArea {
     pub c: usize,
 
     pub tabstops: Option<Snippet>,
+    pub decorations: Decorations,
 }
+
+pub type Decorations = Vec<Vec<Mark>>;
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Mark {
+    pub start: usize,
+    pub l: Box<[(char, Option<Location>)]>,
+    ty: u8,
+}
+const INLAY: u8 = 0;
 
 pub struct CellBuffer {
     pub c: usize,
     pub vo: usize,
     pub cells: Box<[Cell]>,
+}
+impl Debug for CellBuffer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CellBuffer")
+            .field("c", &self.c)
+            .field("vo", &self.vo)
+            .field("cells", &self.cells.len())
+            .finish()
+    }
 }
 impl Deref for CellBuffer {
     type Target = [Cell];
@@ -274,6 +294,41 @@ impl Debug for TextArea {
 }
 
 impl TextArea {
+    #[implicit_fn::implicit_fn]
+    pub fn set_inlay(&mut self, inlay: &[InlayHint]) {
+        let mut decorations = vec![vec![]; self.l()];
+        inlay
+            .iter()
+            .map(|i| {
+                let mut label = match &i.label {
+                    InlayHintLabel::String(x) =>
+                        x.chars().map(|x| (x, None)).collect::<Vec<_>>(),
+                    InlayHintLabel::LabelParts(v) => v
+                        .iter()
+                        .flat_map(|x| {
+                            x.value
+                                .chars()
+                                .map(|y| (y, x.location.clone()))
+                        })
+                        .collect(),
+                };
+                if i.padding_left == Some(true) {
+                    label.insert(0, (' ', None));
+                }
+                if i.padding_right == Some(true) {
+                    label.push((' ', None));
+                }
+                Mark {
+                    start: self.l_position(i.position).unwrap(),
+                    ty: INLAY,
+                    l: label.into(),
+                }
+            })
+            .chunk_by(|x| self.rope.char_to_line(x.start))
+            .into_iter()
+            .for_each(|(i, x)| decorations[i] = x.collect());
+        self.decorations = decorations;
+    }
     pub fn position(
         &self,
         Range { start, end }: Range<usize>,
@@ -282,7 +337,14 @@ impl TextArea {
         let y2 = self.rope.char_to_line(end);
         let x1 = start - self.rope.line_to_char(y1);
         let x2 = end - self.rope.line_to_char(y2);
-        [(min(x1, self.c), y1), (min(x2, self.c), y2)]
+        [(x1, y1), (x2, y2)]
+    }
+
+    pub fn map_to_visual(
+        &self,
+        (x, y): (usize, usize),
+    ) -> Option<(usize, usize)> {
+        self.reverse_source_map(y)?.get(x).map(|&x| (x, y))
     }
 
     /// number of lines
@@ -290,29 +352,80 @@ impl TextArea {
         self.rope.len_lines()
     }
 
-    #[implicit_fn]
-    #[lower::apply(saturating)]
-    pub fn index_at(&self, (x, y): (usize, usize)) -> usize {
-        let l_i = self.vo + y;
+    pub fn source_map(
+        &'_ self,
+        l: usize,
+    ) -> Option<impl Iterator<Item = Mapping<'_>>> {
+        let rel = self.decorations.get(l).unwrap_or(const { &vec![] });
+        let s = self.rope.try_line_to_char(l).ok()?;
+        let lin = self.rope.get_line(l)?;
+        Some(gen move {
+            for (char, i) in lin.chars().zip(s..) {
+                if let Some(x) = rel.iter().find(|x| x.start == i) {
+                    for (i, (c, _)) in x.l.iter().enumerate() {
+                        yield Mapping::Fake(x, i, *c);
+                    }
+                }
+                yield Mapping::Char(char, i - s, i);
+            }
+        })
+    }
+    pub fn reverse_source_map(&'_ self, l: usize) -> Option<Vec<usize>> {
+        let mut to = vec![];
+        let mut off = 0;
+        for elem in self.source_map(l)? {
+            match elem {
+                Mapping::Fake(..) => off += 1,
+                Mapping::Char(_, i, _) => to.push(i + off),
+            }
+        }
+        Some(to)
+    }
+
+    pub fn visual_eol(&self, li: usize) -> Option<usize> {
+        Some(self.source_map(li)?.count())
+    }
+
+    /// or eof
+    pub fn eol(&self, li: usize) -> usize {
         self.rope
-            .try_line_to_char(l_i)
+            .try_line_to_char(li)
             .map(|l| {
-                l + (self
+                l + self
                     .rope
-                    .get_line(l_i)
-                    .map(_.len_chars() - 1)
-                    .unwrap_or_default())
-                .min((x - (self.line_number_offset() + 1)) + self.ho)
+                    .get_line(li)
+                    .map(|x| x.len_chars() - 1)
+                    .unwrap_or_default()
             })
             .unwrap_or(usize::MAX)
             .min(self.rope.len_chars())
     }
 
+    #[implicit_fn::implicit_fn]
     pub fn raw_index_at(&self, (x, y): (usize, usize)) -> Option<usize> {
         let x = x.checked_sub(self.line_number_offset() + 1)? + self.ho;
         Some(self.vo + y)
-            .filter(|&l| self.rope.line(l).len_chars() > x)
+            .filter(|&l| {
+                self.rope.get_line(l).is_some_and(_.len_chars() > x)
+            })
             .and_then(|l| Some(self.rope.try_line_to_char(l).ok()? + x))
+    }
+
+    pub fn visual_index_at(
+        &'_ self,
+        (x, y): (usize, usize),
+    ) -> Option<Mapping<'_>> {
+        self.source_map(self.vo + y).and_then(|mut i| {
+            i.nth(x.checked_sub(self.line_number_offset() + 1)? + self.ho)
+        })
+    }
+
+    pub fn mapped_index_at(&'_ self, (x, y): (usize, usize)) -> usize {
+        match self.visual_index_at((x, y)) {
+            Some(Mapping::Char(_, _, index)) => index,
+            Some(Mapping::Fake(mark, ..)) => mark.start,
+            None => self.eol(self.vo + y),
+        }
     }
 
     pub fn remove(&mut self, r: Range<usize>) -> Result<(), ropey::Error> {
@@ -366,7 +479,12 @@ impl TextArea {
         Ok(())
     }
     pub fn cursor(&self) -> (usize, usize) {
-        self.xy(self.cursor)
+        self.xy(self.cursor).unwrap()
+    }
+    pub fn cursor_visual(&self) -> (usize, usize) {
+        let (x, y) = self.cursor();
+        let z = self.reverse_source_map(y).unwrap();
+        (z.get(x).copied().unwrap_or(x), y)
     }
     pub fn visible_(&self) -> Range<usize> {
         self.rope.line_to_char(self.vo)
@@ -376,16 +494,16 @@ impl TextArea {
         (self.vo..self.vo + self.r).contains(&self.rope.char_to_line(x))
     }
     pub fn x(&self, c: usize) -> usize {
-        self.xy(c).0
+        self.xy(c).unwrap().0
     }
     pub fn y(&self, c: usize) -> usize {
         self.rope.char_to_line(c)
     }
 
-    pub fn xy(&self, c: usize) -> (usize, usize) {
-        let y = self.rope.char_to_line(c);
-        let x = c - self.rope.line_to_char(y);
-        (x, y)
+    pub fn xy(&self, c: usize) -> Option<(usize, usize)> {
+        let y = self.rope.try_char_to_line(c).ok()?;
+        let x = c - self.rope.try_line_to_char(y).ok()?;
+        Some((x, y))
     }
 
     fn cl(&self) -> RopeSlice<'_> {
@@ -773,7 +891,6 @@ impl TextArea {
         apply: impl FnOnce((usize, usize), &Self, Output),
         path: Option<&Path>,
         tokens: Option<(&[SemanticToken], &SemanticTokensLegend)>,
-        inlay: Option<&[InlayHint]>,
     ) {
         let (c, r) = (self.c, self.r);
         let mut cells = Output {
@@ -796,19 +913,31 @@ impl TextArea {
         //     (self.l().max(r) + r - 1) * c
         // ];
         let lns = self.vo..self.vo + r;
-        for (l, y) in lns.clone().map(self.rope.get_line(_)).zip(lns) {
+        for (l, y) in lns.clone().map(self.source_map(_)).zip(lns) {
             for (e, x) in l
-                .iter()
-                .flat_map(|x| x.chars().skip(self.ho))
+                .coerce()
+                .skip(self.ho)
+                // .flat_map(|x| x.chars().skip(self.ho))
                 .take(c)
                 .zip(0..)
             {
-                if e != '\n' {
-                    cells.get((x + self.ho, y)).unwrap().letter = Some(e);
-                    cells.get((x + self.ho, y)).unwrap().style.color =
-                        crate::FG;
-                    cells.get((x + self.ho, y)).unwrap().style.bg =
-                        crate::BG;
+                if e.c() != '\n' {
+                    cells.get((x + self.ho, y)).unwrap().letter =
+                        Some(e.c());
+                    cells.get((x + self.ho, y)).unwrap().style = match e {
+                        Mapping::Char(..) => Style {
+                            color: crate::FG,
+                            bg: crate::BG,
+                            flags: 0,
+                        },
+                        Mapping::Fake(Mark { ty: INLAY, .. }, _, _) =>
+                            Style {
+                                color: const { color_("#536172") },
+                                bg: crate::BG,
+                                flags: 0,
+                            },
+                        _ => unreachable!(),
+                    };
                 }
             }
         }
@@ -832,6 +961,15 @@ impl TextArea {
             let mut ch = 0;
             for t in t {
                 ln += t.delta_line;
+                let src_map =
+                    self.source_map(ln as _).coerce().collect::<Vec<_>>();
+                let mapping =
+                    self.reverse_source_map(ln as _).unwrap_or_default();
+                // dbg!(
+                //     &mapping,
+                //     self.source_map(ln as _).coerce().collect::<Vec<_>>(),
+                //     self.rope.line(ln as _)
+                // );
                 ch = match t.delta_line {
                     1.. => t.delta_start,
                     0 => ch + t.delta_start,
@@ -856,6 +994,8 @@ impl TextArea {
                 } else if ln as usize * c + x1 > self.vo * c + r * c {
                     break;
                 }
+                let Some(&x1) = mapping.get(x1) else { continue };
+                let Some(&x2) = mapping.get(x2) else { continue };
                 let Some(tty) = leg.token_types.get(t.token_type as usize)
                 else {
                     error!(
@@ -868,8 +1008,14 @@ impl TextArea {
                     semantic::NAMES.iter().position(|&x| x == tty.as_str())
                 {
                     cells
-                        .get_range((x1, ln as _), (x2, ln as _))
-                        .for_each(|x| {
+                        .get_range_enumerated((x1, ln as _), (x2, ln as _))
+                        .filter(|(_, i)| {
+                            matches!(
+                                src_map.get(i.0),
+                                Some(Mapping::Char(..))
+                            )
+                        })
+                        .for_each(|(x, _)| {
                             x.style.color = semantic::COLORS[f];
                             x.style.flags |= semantic::STYLES[f];
                         });
@@ -894,8 +1040,17 @@ impl TextArea {
                         })
                         .map(|i| {
                             cells
-                                .get_range((x1, ln as _), (x2, ln as _))
-                                .for_each(|x| {
+                                .get_range_enumerated(
+                                    (x1, ln as _),
+                                    (x2, ln as _),
+                                )
+                                .filter(|(_, i)| {
+                                    matches!(
+                                        src_map.get(i.0),
+                                        Some(Mapping::Char(..))
+                                    )
+                                })
+                                .for_each(|(x, _)| {
                                     x.style.color = MCOLORS[i];
                                     x.style.flags |= MSTYLE[i];
                                 });
@@ -919,6 +1074,8 @@ impl TextArea {
         }
         selection.map(|x| {
             let [a, b] = self.position(x);
+            let a = self.map_to_visual(a).unwrap();
+            let b = self.map_to_visual(b).unwrap();
             cells
                 .get_range_enumerated(a, b)
                 .filter(|(c, (x, y))| {
@@ -941,33 +1098,34 @@ impl TextArea {
                     // 0x23, 0x34, 0x4B
                 })
         });
-        for (y, inlay) in inlay
-            .into_iter()
-            .flatten()
-            .chunk_by(|x| x.position.line)
-            .into_iter()
-            .filter(|&(y, _)| {
-                (self.vo..self.vo + r).contains(&(y as usize))
-            })
-        {
-            // self.l_position(inlay.position) {}
-            let mut off = self.rope.line(y as _).len_chars();
-            for inlay in inlay {
-                let label = match &inlay.label {
-                    InlayHintLabel::String(x) => x.clone(),
-                    InlayHintLabel::LabelParts(v) =>
-                        v.iter().map(_.value.clone()).collect::<String>(),
-                };
-                cells
-                    .get_range((off, y as _), (!0, y as _))
-                    .zip(label.chars())
-                    .for_each(|(x, y)| {
-                        x.letter = Some(y);
-                        x.style.color = color_("#536172")
-                    });
-                off += label.chars().count();
-            }
-        }
+
+        // for (y, inlay) in inlay
+        //     .into_iter()
+        //     .flatten()
+        //     .chunk_by(|x| x.position.line)
+        //     .into_iter()
+        //     .filter(|&(y, _)| {
+        //         (self.vo..self.vo + r).contains(&(y as usize))
+        //     })
+        // {
+        //     // self.l_position(inlay.position) {}
+        //     let mut off = self.rope.line(y as _).len_chars();
+        //     for inlay in inlay {
+        //         let label = match &inlay.label {
+        //             InlayHintLabel::String(x) => x.clone(),
+        //             InlayHintLabel::LabelParts(v) =>
+        //                 v.iter().map(_.value.clone()).collect::<String>(),
+        //         };
+        //         cells
+        //             .get_range((off, y as _), (!0, y as _))
+        //             .zip(label.chars())
+        //             .for_each(|(x, y)| {
+        //                 x.letter = Some(y);
+        //                 x.style.color = color_("#536172")
+        //             });
+        //         off += label.chars().count();
+        //     }
+        // }
         apply((c, r), self, cells);
     }
     pub fn line_number_offset(&self) -> usize {
@@ -1543,3 +1701,14 @@ impl<I: Iterator<Item = T>, T> CoerceOption<T> for Option<I> {
 }
 // #[test]
 pub(crate) use col;
+#[derive(Debug, PartialEq)]
+pub enum Mapping<'a> {
+    Fake(&'a Mark, usize /* label rel */, char),
+    Char(char, usize /* line rel */, usize /* true position */),
+}
+impl Mapping<'_> {
+    fn c(&self) -> char {
+        let (Mapping::Char(x, ..) | Mapping::Fake(.., x)) = self;
+        *x
+    }
+}

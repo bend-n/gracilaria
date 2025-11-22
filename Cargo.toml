@@ -66,6 +66,9 @@ tree-house.debug-assertions = false
 [profile.release.package.tree-house]
 debug-assertions = false
 
+[profile.release.package]
+fimg.debug-assertions = true
+
 [profile.release]
 debug = 2
 overflow-checks = true

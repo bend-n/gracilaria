@@ -328,14 +328,33 @@ impl Client {
         }
     }
 
-    pub fn inlay(&'static self, f: &Path, t:&TextArea) -> impl Future<Output = Result<Vec<InlayHint>, RequestError>> + use<> {
+    pub fn inlay(
+        &'static self,
+        f: &Path,
+        t: &TextArea,
+    ) -> impl Future<Output = Result<Vec<InlayHint>, RequestError>> + use<>
+    {
         self.request::<lsp_request!("textDocument/inlayHint")>(&InlayHintParams {
             work_done_progress_params: default(),
             text_document: f.tid(),
             range: t.to_l_range(lower::saturating::math!{
-                t.rope.line_to_char(t.vo-t.r)..t.rope.line_to_char(t.vo + t.r + t.r)
+                t.rope.try_line_to_char(t.vo-t.r).unwrap_or(0)..t.rope.try_line_to_char(t.vo + t.r + t.r).unwrap_or(t.rope.len_chars())
             })
         }).unwrap().0.map(|x| x.map(Option::unwrap_or_default))
+        //     async {
+        //     if let Ok(z) = z.await {
+        //         let mut into = vec![];
+        //         for lem in z.into_iter(){
+        //             // if let Some(_) = lem.data {
+        //                 into.push(self.request::<lsp_request!("inlayHint/resolve")>(&lem).unwrap().0.await.unwrap());
+        //             // }
+        //         }
+        //         // std::fs::write("inlay", serde_json::to_string_pretty(&into).unwrap()).unwrap();
+        //         Ok(into)
+        //     } else {
+        //         panic!()
+        //     }
+        // }
     }
 
     pub fn rq_semantic_tokens(
@@ -414,7 +433,7 @@ pub fn run(
                 }),
                 text_document: Some(TextDocumentClientCapabilities {
                     inlay_hint: Some(InlayHintClientCapabilities { dynamic_registration: None, resolve_support: Some(InlayHintResolveClientCapabilities {
-                        properties: vec!["textEdits".into()], })
+                        properties: vec!["textEdits".into(), "tooltip".into(), "label.tooltip".into(), "label.command".into()], })
                     }),
                     code_action: Some(
                         CodeActionClientCapabilities {
@@ -574,13 +593,12 @@ pub fn run(
                     "closureReturnTypeHints": { "enable": "with_block" },
                     "closingBraceHints": { "minLines": 5 },
                     "closureStyle": "rust_analyzer",
-                    "genericParameterHints": {
-                    "type": { "enable": true } },
+                    "genericParameterHints": { "type": { "enable": true } },
                     "rangeExclusiveHints": { "enable": true },
                     "closureCaptureHints": { "enable": true },
                     "expressionAdjustmentHints": {
                         "hideOutsideUnsafe": true,
-                        "enable": "never",
+                        "enable": "reborrow",
                         "mode": "prefer_prefix"
                     }
                 },
