@@ -4,7 +4,6 @@
     iter_next_chunk,
     iter_array_chunks,
     array_windows,
-    str_as_str,
     lazy_type_alias,
     const_convert,
     const_result_trait_fn,
@@ -497,7 +496,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                                         once((diag.range, &*diag.message, sev_)).chain(diag.related_information.iter().flatten().filter(|sp| sp.location.uri == uri).map(move |x| {
                                             (x.location.range, &*x.message, EType::Related(sev))
                                         }))
-                                    }).for_each(|(mut r, m, sev)| {
+                                    }).for_each(|(mut r, m, sev)| _ = try {
                                             let p = r.start.line;
                                             while occupied.contains(&r.start.line) {
                                                 r.start.line+=1;
@@ -512,10 +511,10 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                                                 });
                                             };
                                             if r.start == r.end {
-                                                x.get(text.map_to_visual((r.start.character as _, p as _)).unwrap()).map(f);
+                                                x.get(text.map_to_visual((r.start.character as _, p as _))?).map(f);
                                             } else {
-                                                x.get_range(text.map_to_visual((r.start.character as _, p as _)).unwrap(), 
-                                                            text.map_to_visual((r.end.character as usize, r.end.line as _)).unwrap())
+                                                x.get_range(text.map_to_visual((r.start.character as _, p as _))?, 
+                                                            text.map_to_visual((r.end.character as usize, r.end.line as _))?)
                                                     .for_each(f)
                                             }
                                             let l = r.start.line as usize;
@@ -607,6 +606,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                                 (((_x) as f32 * fw).round() + ox) as usize,
                                 (((_y) as f32 * (fh + ls * fac)).round() + oy) as usize,
                             );
+                            dbg!(position);
                             assert!(position.0 < 8000 && position.1 < 8000, "{position:?} {_x} {_y}");
                             let ppem = ppem_;
                             let ls = ls_;
@@ -639,11 +639,11 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                         };
                         let mut pass = true;
                         if let Some((lsp, p)) = lsp!() && let Some(diag) = lsp.diagnostics.get(&Url::from_file_path(p).unwrap(), &lsp.diagnostics.guard()) {
-                            let dawg = diag.iter().filter(|diag| text.l_range(diag.range).is_ok_and(|x| x.contains(&text.mapped_index_at(cursor_position)) && (text.vo..text.vo+r).contains(&(diag.range.start.line as _))));
+                            let dawg = diag.iter().filter(|diag| text.l_range(diag.range).is_some_and(|x| x.contains(&text.mapped_index_at(cursor_position)) && (text.vo..text.vo+r).contains(&(diag.range.start.line as _))));
                             for diag in dawg {
                                 match diag.data.as_ref().unwrap_or_default().get("rendered") {
-                                    Some(x) if let Some(x) = x.as_str() => {
-                                        let mut t = pattypan::term::Terminal::new((90, 20), false);
+                                    Some(x) if let Some(x) = x.as_str() => { _ = try { 
+                                        let mut t = pattypan::term::Terminal::new((90, (r.saturating_sub(5)) as _), false);
                                         for b in x.replace('\n', "\r\n").bytes(){ t.rx(b,std::fs::File::open("/dev/null").unwrap().as_fd()); }
                                         let y_lim = t.cells.rows().position(|x| x.iter().all(_.letter.is_none())).unwrap_or(20);
                                         let c =t.cells.c() as usize;
@@ -652,16 +652,15 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                                         let n = t.cells.rows().take(y_lim).flat_map(|x| &x[..x_lim]).copied().collect::<Vec<_>>();
     let (_,left, top, w, h) = place_around_cursor(
     text.map_to_visual((diag.range.start.character as _, diag.range.start.line as usize))
-        .map(|(x, y)| (x + text.line_number_offset() + 1, y - text.vo))
-        .unwrap_or((diag.range.start.character as _, diag.range.start.line as usize - text.vo)),
+    .map(|(x, y)| (x + text.line_number_offset() + 1, y - text.vo))?,
                                 &mut fonts,
                                 i.as_mut(),
                                 &n, x_lim,
-                                17.0, -400., 0., 0., 0.
+                                17.0, 0., 0., 0., 0.
                             );
                             pass=false;
                             i.r#box((left .saturating_sub(1) as _, top.saturating_sub(1) as _), w as _,h as _, BORDER);
-                                    },
+                                    } },
                                     _ => {}
                                 }
                             }
@@ -1293,7 +1292,7 @@ fn handle2<'a>(key: &'a Key, text: &mut TextArea) -> Option<&'a str> {
         }
         Named(End) if ctrl() => {
             text.cursor = text.rope.len_chars();
-            text.vo = text.l() - text.r;
+            text.vo = text.l().saturating_sub(text.r);
         }
         Named(Home) => text.home(),
         Named(End) => text.end(),
@@ -1524,7 +1523,7 @@ impl Default for CompletionState {
     }
 }
 fn filter(text: &TextArea) -> String {
-    if matches!(text.rope.get_char(text.cursor - 1), Some('.' | ':')) {
+    if text.cursor.checked_sub(1).is_none_or(|x| matches!(text.rope.get_char(x), Some('.' | ':'))) {
         "".to_string()
     } else {
         text.rope

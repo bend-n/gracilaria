@@ -318,6 +318,13 @@ impl TextArea {
                 if i.padding_right == Some(true) {
                     label.push((' ', None));
                 }
+                let mut i = i.clone();
+                i.position.character = (self.rope.byte_to_char(
+                    self.rope.line_to_byte(i.position.line as _)
+                        + i.position.character as usize,
+                ) as usize
+                    - self.rope.line_to_char(i.position.line as _))
+                    as _;
                 Mark {
                     start: self.l_position(i.position).unwrap(),
                     ty: INLAY,
@@ -387,6 +394,7 @@ impl TextArea {
     }
 
     /// or eof
+    #[lower::apply(saturating)]
     pub fn eol(&self, li: usize) -> usize {
         self.rope
             .try_line_to_char(li)
@@ -451,16 +459,20 @@ impl TextArea {
         self.set_ho();
     }
 
-    pub fn apply(&mut self, x: &TextEdit) -> Result<(), ropey::Error> {
-        let begin = self.l_position(x.range.start)?;
-        let end = self.l_position(x.range.end)?;
-        self.rope.try_remove(begin..end)?;
-        self.rope.try_insert(begin, &x.new_text)?;
+    pub fn apply(&mut self, x: &TextEdit) -> Result<(), ()> {
+        let begin = self.l_position(x.range.start).ok_or(())?;
+        let end = self.l_position(x.range.end).ok_or(())?;
+        self.rope.try_remove(begin..end).map_err(|_| ())?;
+        self.rope.try_insert(begin, &x.new_text).map_err(|_| ())?;
         Ok(())
     }
     pub fn apply_snippet(&mut self, x: &TextEdit) -> anyhow::Result<()> {
-        let begin = self.l_position(x.range.start)?;
-        let end = self.l_position(x.range.end)?;
+        let begin = self
+            .l_position(x.range.start)
+            .ok_or(anyhow!("couldnt get start"))?;
+        let end = self
+            .l_position(x.range.end)
+            .ok_or(anyhow!("couldnt get end"))?;
         self.rope.try_remove(begin..end)?;
         let (mut sni, tex) =
             crate::sni::Snippet::parse(&x.new_text, begin)
@@ -861,19 +873,18 @@ impl TextArea {
         &mut cell[y1 * c + x1..y2 * c + x2]
     }
 
-    pub fn l_position(&self, p: Position) -> Result<usize, ropey::Error> {
-        Ok(self.rope.try_line_to_char(p.line as _)?
-            + (p.character as usize)
-                .min(self.rope.line(p.line as _).len_chars()))
+    pub fn l_position(&self, p: Position) -> Option<usize> {
+        Some(
+            self.rope.try_line_to_char(p.line as _).ok()?
+                + (p.character as usize)
+                    .min(self.rope.get_line(p.line as _)?.len_chars()),
+        )
     }
     pub fn to_l_position(&self, l: usize) -> lsp_types::Position {
         Position { line: self.y(l) as _, character: self.x(l) as _ }
     }
-    pub fn l_range(
-        &self,
-        r: lsp_types::Range,
-    ) -> Result<Range<usize>, ropey::Error> {
-        Ok(self.l_position(r.start)?..self.l_position(r.end)?)
+    pub fn l_range(&self, r: lsp_types::Range) -> Option<Range<usize>> {
+        Some(self.l_position(r.start)?..self.l_position(r.end)?)
     }
     pub fn to_l_range(&self, r: Range<usize>) -> lsp_types::Range {
         lsp_types::Range {

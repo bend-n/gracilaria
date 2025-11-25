@@ -596,11 +596,6 @@ pub fn run(
                     "genericParameterHints": { "type": { "enable": true } },
                     "rangeExclusiveHints": { "enable": true },
                     "closureCaptureHints": { "enable": true },
-                    "expressionAdjustmentHints": {
-                        "hideOutsideUnsafe": true,
-                        "enable": "reborrow",
-                        "mode": "prefer_prefix"
-                    }
                 },
                 "checkOnSave": true,
                 "diagnostics": { "enable": true },
