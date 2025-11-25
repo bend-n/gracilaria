@@ -339,7 +339,7 @@ impl Client {
             text_document: f.tid(),
             range: t.to_l_range(lower::saturating::math!{
                 t.rope.try_line_to_char(t.vo-t.r).unwrap_or(0)..t.rope.try_line_to_char(t.vo + t.r + t.r).unwrap_or(t.rope.len_chars())
-            })
+            }).unwrap()
         }).unwrap().0.map(|x| x.map(Option::unwrap_or_default))
         //     async {
         //     if let Ok(z) = z.await {

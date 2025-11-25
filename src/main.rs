@@ -32,8 +32,7 @@
 )]
 #![allow(incomplete_features, redundant_semicolons)]
 use std::borrow::Cow;
-use std::iter::{Take, once};
-use std::mem::transmute;
+use std::iter::{once};
 use std::num::NonZeroU32;
 use std::os::fd::AsFd;
 use std::path::{Path, PathBuf};
@@ -856,7 +855,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             let mut rang = None;
                             let z = match hover {
                                 Mapping::Char(_, _, i) => {
-                                    TextDocumentPositionParams { position: text.to_l_position(i), text_document: o.tid() }
+                                    TextDocumentPositionParams { position: text.to_l_position(i).unwrap(), text_document: o.tid() }
                                 },
                                 Mapping::Fake(mark, index, _) => {
                                     let Some(ref loc) = mark.l[index].1 else {
@@ -906,8 +905,10 @@ let handle: tokio::task::JoinHandle<Result<Option<Hovr>, anyhow::Error>> = cl.ru
         (m, hov::markdown2(m, &x))
     }).await.unwrap();
     let span = rang.or_else(|| x.range.and_then(|range| try {
-        let x1 = text.reverse_source_map(range.start.line as _)?[range.start.character as usize];
-        let x2 = text.reverse_source_map(range.end.line as _)?[range.end.character as usize];
+        let (startx, starty) = text.l_pos_to_char(range.start)?;
+        let (endx, endy) = text.l_pos_to_char(range.end)?;
+        let x1 = text.reverse_source_map(starty)?[startx];
+        let x2 = text.reverse_source_map(endy)?[endx];
         [(x1, range.start.line as _), (x2, range.start.line as _)]
     }));
     anyhow::Ok(Some( hov::Hovr { span, item: text::CellBuffer { c: w, vo: 0, cells: cells.into() }}.into()))

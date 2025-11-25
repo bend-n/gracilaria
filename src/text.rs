@@ -135,7 +135,7 @@ mod semantic {
     // "unresolvedReference" b"#cccac2",
     }
     modified! { 2
-        "function" . "library" b"#F28779",
+        "function" . "unsafe" b"#F28779",
         "variable" . "mutable" b"#e6dab6",
     }
 }
@@ -318,13 +318,6 @@ impl TextArea {
                 if i.padding_right == Some(true) {
                     label.push((' ', None));
                 }
-                let mut i = i.clone();
-                i.position.character = (self.rope.byte_to_char(
-                    self.rope.line_to_byte(i.position.line as _)
-                        + i.position.character as usize,
-                ) as usize
-                    - self.rope.line_to_char(i.position.line as _))
-                    as _;
                 Mark {
                     start: self.l_position(i.position).unwrap(),
                     ty: INLAY,
@@ -508,13 +501,23 @@ impl TextArea {
     pub fn x(&self, c: usize) -> usize {
         self.xy(c).unwrap().0
     }
+    // input: char, output: utf8
+    pub fn x_bytes(&self, c: usize) -> Option<usize> {
+        let y = self.rope.try_char_to_line(c).ok()?;
+        let x = self
+            .rope
+            .try_char_to_byte(c)
+            .ok()?
+            .checked_sub(self.rope.try_line_to_byte(y).ok()?)?;
+        Some(x)
+    }
     pub fn y(&self, c: usize) -> usize {
         self.rope.char_to_line(c)
     }
 
     pub fn xy(&self, c: usize) -> Option<(usize, usize)> {
         let y = self.rope.try_char_to_line(c).ok()?;
-        let x = c - self.rope.try_line_to_char(y).ok()?;
+        let x = c.checked_sub(self.rope.try_line_to_char(y).ok()?)?;
         Some((x, y))
     }
 
@@ -873,24 +876,33 @@ impl TextArea {
         &mut cell[y1 * c + x1..y2 * c + x2]
     }
 
-    pub fn l_position(&self, p: Position) -> Option<usize> {
-        Some(
-            self.rope.try_line_to_char(p.line as _).ok()?
-                + (p.character as usize)
-                    .min(self.rope.get_line(p.line as _)?.len_chars()),
-        )
+    pub fn l_pos_to_char(&self, p: Position) -> Option<(usize, usize)> {
+        self.l_position(p).and_then(|x| self.xy(x))
     }
-    pub fn to_l_position(&self, l: usize) -> lsp_types::Position {
-        Position { line: self.y(l) as _, character: self.x(l) as _ }
+
+    pub fn l_position(&self, p: Position) -> Option<usize> {
+        self.rope
+            .try_byte_to_char(
+                self.rope.try_line_to_byte(p.line as _).ok()?
+                    + (p.character as usize)
+                        .min(self.rope.get_line(p.line as _)?.len_bytes()),
+            )
+            .ok()
+    }
+    pub fn to_l_position(&self, l: usize) -> Option<lsp_types::Position> {
+        Some(Position {
+            line: self.y(l) as _,
+            character: self.x_bytes(l)? as _,
+        })
     }
     pub fn l_range(&self, r: lsp_types::Range) -> Option<Range<usize>> {
         Some(self.l_position(r.start)?..self.l_position(r.end)?)
     }
-    pub fn to_l_range(&self, r: Range<usize>) -> lsp_types::Range {
-        lsp_types::Range {
-            start: self.to_l_position(r.start),
-            end: self.to_l_position(r.end),
-        }
+    pub fn to_l_range(&self, r: Range<usize>) -> Option<lsp_types::Range> {
+        Some(lsp_types::Range {
+            start: self.to_l_position(r.start)?,
+            end: self.to_l_position(r.end)?,
+        })
     }
 
     #[implicit_fn]
