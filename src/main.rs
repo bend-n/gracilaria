@@ -1185,11 +1185,13 @@ hovering.request = (DropH::new(handle), cursor_position).into();
                             text.rope.remove(x.clone());
                             text.cursor = x.start;
                             hist.push_if_changed(&text);
+                            change!();
                         }
                         Some(Do::Paste) => {
                             hist.push_if_changed(&text);
                             text.insert(&clipp::paste());
                             hist.push_if_changed(&text);
+                            change!();
                         }
                         Some(Do::OpenFile(x)) => { let _ = try {
                             origin = Some(PathBuf::from(&x).canonicalize()?);
