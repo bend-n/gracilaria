@@ -598,14 +598,13 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                         )
                         };
 
-                        let place_around_cursor = |(_x, _y): (usize, usize), fonts: &mut Fonts,mut i:Image<&mut [u8], 3> ,c: &[Cell],columns:usize, ppem_:f32,ls_:f32, ox:f32, oy: f32, toy: f32| {
+                        let place_around = |(_x, _y): (usize, usize), fonts: &mut Fonts,mut i:Image<&mut [u8], 3> ,c: &[Cell],columns:usize, ppem_:f32,ls_:f32, ox:f32, oy: f32, toy: f32| {
                             let met = FONT.metrics(&[]);
                             let fac = ppem / met.units_per_em as f32;
                             let position = (
                                 (((_x) as f32 * fw).round() + ox) as usize,
                                 (((_y) as f32 * (fh + ls * fac)).round() + oy) as usize,
                             );
-                            dbg!(position);
                             assert!(position.0 < 8000 && position.1 < 8000, "{position:?} {_x} {_y}");
                             let ppem = ppem_;
                             let ls = ls_;
@@ -649,7 +648,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                                         let Some(x_lim) = t.cells.rows().map(_.iter().rev().take_while(_.letter.is_none()).count()).map(|x|
                                         c -x).max() else { continue };
                                         let n = t.cells.rows().take(y_lim).flat_map(|x| &x[..x_lim]).copied().collect::<Vec<_>>();
-    let (_,left, top, w, h) = place_around_cursor(
+    let (_,left, top, w, h) = place_around(
     text.map_to_visual((diag.range.start.character as _, diag.range.start.line as usize))
     .map(|(x, y)| (x + text.line_number_offset() + 1, y - text.vo))?,
                                 &mut fonts,
@@ -682,7 +681,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
 
                             let r = x.item.l().min(15);
                             let c = x.item.displayable(r);
-                            let (_,left, top, w, h) = place_around_cursor(
+                            let (_,left, top, w, h) = place_around(
                                 (_x, _y),
                                 &mut fonts,
                                 i.as_mut(),
@@ -702,14 +701,14 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                         'out: {if let Rq{result: Some((ref x, vo, ref mut max)), .. } = sig_help {
                             let (sig, p) = sig::active(x);
                             let c = sig::sig((sig, p), 40);
-                            let (_x, _y) = text.cursor();
+                            let (_x, _y) = text.cursor_visual();
                             let _x = _x + text.line_number_offset()+1;
                             let Some(_y) = _y.checked_sub(text.vo) else { break 'out };
-                            let (is_above,left, top, w, mut h) = place_around_cursor((_x, _y), &mut fonts, i.as_mut(), &c, 40, ppem, ls, 0., 0., 0.);
+                            let (is_above,left, top, w, mut h) = place_around((_x, _y), &mut fonts, i.as_mut(), &c, 40, ppem, ls, 0., 0., 0.);
                                 i.r#box((left .saturating_sub(1) as _, top.saturating_sub(1) as _), w as _,h as _, BORDER);
                             
                             let com = com.map(|c| {
-                                let (is_above_,left, top, w_, h_) = place_around_cursor(
+                                let (is_above_,left, top, w_, h_) = place_around(
                                     (_x, _y),
                                     &mut fonts,
                                     i.as_mut(),
@@ -732,7 +731,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                                 *max = Some(cells.l());
                                 cells.vo = vo;
                                 let cells = cells.displayable(cells.l().min(15));
-                                let (_,left_, top_, _w_, h_) = place_around_cursor((_x, _y),
+                                let (_,left_, top_, _w_, h_) = place_around((_x, _y),
                                     &mut fonts, i.as_mut(), cells, cols, ppem, ls,
                                     0., -(h as f32), if is_above { com.filter(|x| !x.0).map(|(_is, _l, _t, _w, h)| h).unwrap_or_default() as f32 } else { h as f32 });
                                 i.r#box((left_.saturating_sub(1) as _, top_.saturating_sub(1) as _), w as _,h_ as _, BORDER);
@@ -740,10 +739,10 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             }
                         } else if let Some(c) = com {
                             let ppem = 20.0;
-                            let (_x, _y) = text.cursor();
+                            let (_x, _y) = text.cursor_visual();
                             let _x = _x + text.line_number_offset()+1;
                             let _y = _y.wrapping_sub(text.vo);
-                            let (_,left, top, w, h) = place_around_cursor(
+                            let (_,left, top, w, h) = place_around(
                                 (_x, _y),
                                 &mut fonts,
                                 i.as_mut(),
