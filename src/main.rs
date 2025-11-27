@@ -32,6 +32,7 @@
 )]
 #![allow(incomplete_features, redundant_semicolons)]
 use std::borrow::Cow;
+use lsp::Map_;
 use std::iter::{once};
 use std::num::NonZeroU32;
 use std::os::fd::AsFd;
@@ -257,6 +258,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
     let mut diag =
         Rq::<String, Option<String>, (), anyhow::Error>::default();
     let mut inlay: Rq<Vec<InlayHint>, Vec<InlayHint>> = default();
+    let mut def = Rq::<LocationLink, Option<GotoDefinitionResponse>, (usize, usize)>::default();
     // let mut complete = None::<(CompletionResponse, (usize, usize))>;
     // let mut complete_ = None::<(
     //     JoinHandle<
@@ -381,6 +383,12 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                         f.ok().flatten().map(|x| {Complete {r:x,start:c,selection:0,vo:0,}})
                     }, &l.runtime);
                 };
+                def.poll(|x, _| 
+                    x.ok().flatten().and_then(|x| match &x {
+                        GotoDefinitionResponse::Link([x, ..]) => Some(x.clone()),
+                        _ => None,
+                    })
+                , &l.runtime);
                 semantic_tokens.poll(|x, _| x.ok(), &l.runtime);
                 sig_help.poll(|x, ((), y)| x.ok().flatten().map(|x| {                
                 if let Some((old_sig, vo, max)) = y && &sig::active(&old_sig) == &sig::active(&x){
@@ -838,7 +846,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             *state.sel() = x..x;
                         }
                         Some(Do::Hover) if let Some(hover) = text.visual_index_at(cursor_position) &&
-                        let Some((cl, o)) = lsp!() => 'out: {
+                let Some((cl, o)) = lsp!() => 'out: {
                     let l = &mut hovering.result;
                     if let Some(Hovr{ span: Some([(_x, _y), (_x2, _)]),..}) = &*l {
                         let Some(_y) = _y.checked_sub(text.vo) else { break 'out };
@@ -850,26 +858,41 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             window.request_redraw();
                         }
                     }
-                            let text = text.clone();
-                            let mut rang = None;
-                            let z = match hover {
-                                Mapping::Char(_, _, i) => {
-                                    TextDocumentPositionParams { position: text.to_l_position(i).unwrap(), text_document: o.tid() }
-                                },
-                                Mapping::Fake(mark, index, _) => {
-                                    let Some(ref loc) = mark.l[index].1 else {
-                                        break 'out;
-                                    };
-                                    let (x, y) = text.xy(mark.start).unwrap();
-                                    let Some(begin) = text.reverse_source_map(y) else { break 'out };
-                                    let start = begin[x - 1] + 1;
-                                    let left = mark.l[..index].iter().rev().take_while(_.1.as_ref() == Some(loc)).count();
-                                    let start = start + index - left;
-                                    let length = mark.l[index..].iter().take_while(_.1.as_ref() == Some(loc)).count() + left;
-                                    rang = Some([(start, y), (start + length, y)]);
-                                    TextDocumentPositionParams { text_document: TextDocumentIdentifier { uri: loc.uri.clone() }, position: loc.range.start }
-                                }
+                    let text = text.clone();
+                    let mut rang = None;
+                    let z = match hover {
+                        Mapping::Char(_, _, i) => {
+                            TextDocumentPositionParams { position: text.to_l_position(i).unwrap(), text_document: o.tid() }
+                        },
+                        Mapping::Fake(mark, index, _) => {
+                            let Some(ref loc) = mark.l[index].1 else {
+                                break 'out;
                             };
+                            let (x, y) = text.xy(mark.start).unwrap();
+                            let Some(begin) = text.reverse_source_map(y) else { break 'out };
+                            let start = begin[x - 1] + 1;
+                            let left = mark.l[..index].iter().rev().take_while(_.1.as_ref() == Some(loc)).count();
+                            let start = start + index - left;
+                            let length = mark.l[index..].iter().take_while(_.1.as_ref() == Some(loc)).count() + left;
+                            rang = Some([(start, y), (start + length, y)]);
+                            TextDocumentPositionParams { text_document: TextDocumentIdentifier { uri: loc.uri.clone() }, position: loc.range.start }
+                        }
+                    };
+                    if ctrl() {
+                    if def.request.as_ref().is_none_or(|&(_, x)| x != cursor_position) {
+                        let handle = cl.runtime.spawn(window.redraw_after(cl.request::<lsp_request!("textDocument/definition")>(&GotoDefinitionParams {
+                            text_document_position_params: z.clone(),
+                            work_done_progress_params: default(),
+                            partial_result_params: default(),
+                        }).unwrap().0));
+                        def.request = Some((DropH::new(handle), cursor_position));
+                    } else if def.result.as_ref().is_some_and(|em| {
+                        let z = em.origin_selection_range.unwrap();
+                        (z.start.character..z.end.character).contains(&((cursor_position.0 - text.line_number_offset()-1) as _))
+                    }) {
+                        def.result = None;
+                    }
+                    }
 if let Some((_, c)) = hovering.request && c == cursor_position {
     break 'out;
 }
@@ -956,6 +979,9 @@ hovering.request = (DropH::new(handle), cursor_position).into();
                                 text.cursor..text.cursor,
                             );
                         }
+                        Some(Do::GoToDefinition) => {
+                            
+                        }
                         None => {}
                         _ => unreachable!(),
                     }
@@ -1033,7 +1059,7 @@ hovering.request = (DropH::new(handle), cursor_position).into();
                         _ => {}
                     }
                     match o {
-                        Some(Do::Reinsert) => panic!(),
+                        Some(Do::Reinsert | Do::GoToDefinition) => panic!(),
                         Some(Do::Save) => match &origin {
                             Some(x) => {
                                 state.consume(Action::Saved).unwrap();
@@ -1383,6 +1409,7 @@ Default => {
     K(Key::Character(x) if x == "c" && ctrl()) => _,
     K(Key::Named(ArrowUp | ArrowLeft | ArrowDown | ArrowRight | Home | End) if shift()) => Selection(Range<usize> => 0..0) [StartSelection],
     M(MouseButton => MouseButton::Left if shift()) => Selection(Range<usize> => 0..0) [StartSelection],
+    M(MouseButton => MouseButton::Left if ctrl()) => _ [GoToDefinition],
     M(MouseButton => MouseButton::Left) => _ [MoveCursor],
     C(((usize, usize)) => .. if unsafe { CLICKING }) => Selection(0..0) [StartSelection],
     Changed => RequestBoolean(BoolRequest => BoolRequest::ReloadFile),

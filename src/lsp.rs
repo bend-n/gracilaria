@@ -435,6 +435,7 @@ pub fn run(
                     inlay_hint: Some(InlayHintClientCapabilities { dynamic_registration: None, resolve_support: Some(InlayHintResolveClientCapabilities {
                         properties: vec!["textEdits".into(), "tooltip".into(), "label.tooltip".into(), "label.command".into()], })
                     }),
+                    definition: Some(GotoCapability { link_support: Some(true), ..default() }),
                     code_action: Some(
                         CodeActionClientCapabilities {
                             data_support: Some(true),
@@ -825,7 +826,7 @@ impl<T, F: FnMut(T) -> U, U, Fu: Future<Output = T>> Future
     }
 }
 
-trait Map_<T, U, F: FnMut(T) -> U>: Future<Output = T> + Sized {
+pub trait Map_<T, U, F: FnMut(T) -> U>: Future<Output = T> + Sized {
     fn map(self, f: F) -> Map<T, U, F, Self>;
 }
 
