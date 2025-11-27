@@ -980,7 +980,14 @@ hovering.request = (DropH::new(handle), cursor_position).into();
                             );
                         }
                         Some(Do::GoToDefinition) => {
-                            
+                            if let Some(LocationLink {
+                                ref target_uri,
+                                target_range, .. }) = def.result && let Some((l, p)) = lsp!() {
+                                if target_uri == &p.tid().uri {
+                                    text.cursor = text.l_position(target_range.start).unwrap();
+                                    text.scroll_to_cursor();
+                                }
+                            }
                         }
                         None => {}
                         _ => unreachable!(),
