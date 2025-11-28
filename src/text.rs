@@ -1672,6 +1672,17 @@ impl<'a> Output<'a> {
         //     self.output.from_point(b),
         // )
     }
+
+    // oughtnt really be multiline
+    pub fn get_simple(
+        &mut self,
+        s: (usize, usize),
+        e: (usize, usize),
+    ) -> Option<&mut [Cell]> {
+        let s = self.from_point_global(self.translate(s)?);
+        let e = self.from_point_global(self.translate(e)?);
+        self.into.get_mut(s..e)
+    }
     // impl<'a> IndexMut<(usize, usize)> for Output<'a> {
     //     fn index_mut(&mut self, p: (usize, usize)) -> &mut Self::Output {
     //         let x = self.from_point_global(self.translate(p).unwrap());

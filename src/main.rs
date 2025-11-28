@@ -486,6 +486,16 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             (t_ox, 0),
                             x,
                             |(_c, _r), text,  mut x| {
+                                if let Some(LocationLink {
+                                    origin_selection_range: Some(r), ..
+                                }) = def.result { _ = try {
+                                    let (x1, y1) = text.map_to_visual((r.start.character as _, r.start.line as _))?;
+                                    let (x2, y2) = text.map_to_visual((r.end.character as _, r.end.line as _))?;
+                                    x.get_simple((x1, y1), (x2, y2))?.iter_mut().for_each(|x| {
+                                        x.style.flags |= Style::UNDERLINE;
+                                        x.style.color = col!("#FFD173");
+                                    });
+                                } }
                                 if let Some((lsp, p)) = lsp!() && let uri = Url::from_file_path(p).unwrap() && let Some(diag) = lsp.diagnostics.get(&uri, &lsp.diagnostics.guard()) {
                                     #[derive(Copy, Clone, Debug)]
                                     enum EType {
@@ -892,6 +902,8 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                     }) {
                         def.result = None;
                     }
+                    } else {
+                        def.result = None;
                     }
 if let Some((_, c)) = hovering.request && c == cursor_position {
     break 'out;
@@ -943,6 +955,7 @@ hovering.request = (DropH::new(handle), cursor_position).into();
 //                                 });
                         }
                         Some(Do::Hover) => {
+                            def.result = None;
                             hovering.result = None;
                             window.request_redraw();
                         }
