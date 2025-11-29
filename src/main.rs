@@ -1256,7 +1256,7 @@ hovering.request = (DropH::new(handle), cursor_position).into();
                             mtime = modify!();
 
                             lsp!().map(|(x, origin)| {
-                                semantic_tokens = default();
+                                (def, semantic_tokens, inlay, sig_help, complete, hovering) = (default(), default(), default(), default(), default(), default());
                                 x.open(&origin,new).unwrap();
                                 x.rq_semantic_tokens(&mut semantic_tokens, origin, Some(window.clone())).unwrap();
                             });
