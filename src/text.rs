@@ -340,11 +340,13 @@ impl TextArea {
         [(x1, y1), (x2, y2)]
     }
 
-    pub fn map_to_visual(
-        &self,
-        (x, y): (usize, usize),
-    ) -> Option<(usize, usize)> {
-        self.reverse_source_map(y)?.get(x).map(|&x| (x, y))
+    pub fn map_to_visual(&self, (x, y): (usize, usize)) -> (usize, usize) {
+        (
+            self.reverse_source_map(y)
+                .and_then(|v| v.get(x).copied())
+                .unwrap_or(x),
+            y,
+        )
     }
 
     /// number of lines
@@ -1097,8 +1099,8 @@ impl TextArea {
         }
         selection.map(|x| {
             let [a, b] = self.position(x);
-            let a = self.map_to_visual(a).unwrap();
-            let b = self.map_to_visual(b).unwrap();
+            let a = self.map_to_visual(a);
+            let b = self.map_to_visual(b);
             cells
                 .get_range_enumerated(a, b)
                 .filter(|(c, (x, y))| {

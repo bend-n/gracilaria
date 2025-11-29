@@ -489,8 +489,8 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                                 if let Some(LocationLink {
                                     origin_selection_range: Some(r), ..
                                 }) = def.result { _ = try {
-                                    let (x1, y1) = text.map_to_visual((r.start.character as _, r.start.line as _))?;
-                                    let (x2, y2) = text.map_to_visual((r.end.character as _, r.end.line as _))?;
+                                    let (x1, y1) = text.map_to_visual((r.start.character as _, r.start.line as _));
+                                    let (x2, y2) = text.map_to_visual((r.end.character as _, r.end.line as _));
                                     x.get_simple((x1, y1), (x2, y2))?.iter_mut().for_each(|x| {
                                         x.style.flags |= Style::UNDERLINE;
                                         x.style.color = col!("#FFD173");
@@ -513,7 +513,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                                         once((diag.range, &*diag.message, sev_)).chain(diag.related_information.iter().flatten().filter(|sp| sp.location.uri == uri).map(move |x| {
                                             (x.location.range, &*x.message, EType::Related(sev))
                                         }))
-                                    }).for_each(|(mut r, m, sev)| _ = try {
+                                    }).for_each(|(mut r, m, sev)| {
                                             let p = r.start.line;
                                             while occupied.contains(&r.start.line) {
                                                 r.start.line+=1;
@@ -528,10 +528,10 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                                                 });
                                             };
                                             if r.start == r.end {
-                                                x.get(text.map_to_visual((r.start.character as _, p as _))?).map(f);
+                                                x.get(text.map_to_visual((r.start.character as _, p as _))).map(f);
                                             } else {
-                                                x.get_range(text.map_to_visual((r.start.character as _, p as _))?, 
-                                                            text.map_to_visual((r.end.character as usize, r.end.line as _))?)
+                                                x.get_range(text.map_to_visual((r.start.character as _, p as _)),
+                                                            text.map_to_visual((r.end.character as usize, r.end.line as _)))
                                                     .for_each(f)
                                             }
                                             let l = r.start.line as usize;
@@ -560,11 +560,11 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                                         .enumerate()
                                         .for_each(|(i, m)| {
                                             for x in x.get_range(
-                                            text.map_to_visual(text.xy(text.rope.byte_to_char(m.start())).unwrap()).unwrap(),text.map_to_visual(                                             text.xy(text
+                                            text.map_to_visual(text.xy(text.rope.byte_to_char(m.start())).unwrap()),text.map_to_visual(                                             text.xy(text
                                                         .rope
                                                         .byte_to_char(
                                                             m.end(),
-                                                        )).unwrap()).unwrap())
+                                                        )).unwrap()))
                                              {
                                                 x.style.bg = if i == *j {
                                                     [105, 83, 128]
@@ -658,7 +658,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             let dawg = diag.iter().filter(|diag| text.l_range(diag.range).is_some_and(|x| x.contains(&text.mapped_index_at(cursor_position)) && (text.vo..text.vo+r).contains(&(diag.range.start.line as _))));
                             for diag in dawg {
                                 match diag.data.as_ref().unwrap_or_default().get("rendered") {
-                                    Some(x) if let Some(x) = x.as_str() => { _ = try { 
+                                    Some(x) if let Some(x) = x.as_str() => { 
                                         let mut t = pattypan::term::Terminal::new((90, (r.saturating_sub(5)) as _), false);
                                         for b in x.replace('\n', "\r\n").bytes(){ t.rx(b,std::fs::File::open("/dev/null").unwrap().as_fd()); }
                                         let y_lim = t.cells.rows().position(|x| x.iter().all(_.letter.is_none())).unwrap_or(20);
@@ -667,8 +667,8 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                                         c -x).max() else { continue };
                                         let n = t.cells.rows().take(y_lim).flat_map(|x| &x[..x_lim]).copied().collect::<Vec<_>>();
     let (_,left, top, w, h) = place_around(
-    text.map_to_visual((diag.range.start.character as _, diag.range.start.line as usize))
-    .map(|(x, y)| (x + text.line_number_offset() + 1, y - text.vo))?,
+    { let (x, y) =  text.map_to_visual((diag.range.start.character as _, diag.range.start.line as usize));
+      (x + text.line_number_offset() + 1, y - text.vo) },
                                 &mut fonts,
                                 i.as_mut(),
                                 &n, x_lim,
@@ -676,7 +676,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             );
                             pass=false;
                             i.r#box((left .saturating_sub(1) as _, top.saturating_sub(1) as _), w as _,h as _, BORDER);
-                                    } },
+                                     },
                                     _ => {}
                                 }
                             }
