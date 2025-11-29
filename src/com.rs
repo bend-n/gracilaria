@@ -35,6 +35,7 @@ impl Complete {
         score(filter(self, f), f)[self.selection].1
     }
 
+    #[lower::apply(saturating)]
     pub fn back(&mut self, f: &str) {
         let n = filter(self, f).count();
         if self.selection == 0 {
