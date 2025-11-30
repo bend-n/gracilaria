@@ -439,7 +439,7 @@ pub fn run(
                     code_action: Some(
                         CodeActionClientCapabilities {
                             data_support: Some(true),
-                           ..default() 
+                           ..default()
                         }
                     ),
                     hover: Some(HoverClientCapabilities {
@@ -560,7 +560,7 @@ pub fn run(
                     }),
                     ..default()
                 }),
-                
+
                 general: Some(GeneralClientCapabilities {
                     markdown: Some(MarkdownClientCapabilities {
                         version: Some("1.0.0".into()),
@@ -826,7 +826,9 @@ impl<T, F: FnMut(T) -> U, U, Fu: Future<Output = T>> Future
     }
 }
 
-pub trait Map_<T, U, F: FnMut(T) -> U>: Future<Output = T> + Sized {
+pub trait Map_<T, U, F: FnMut(T) -> U>:
+    Future<Output = T> + Sized
+{
     fn map(self, f: F) -> Map<T, U, F, Self>;
 }
 

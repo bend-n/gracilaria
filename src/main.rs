@@ -32,8 +32,7 @@
 )]
 #![allow(incomplete_features, redundant_semicolons)]
 use std::borrow::Cow;
-use lsp::Map_;
-use std::iter::{once};
+use std::iter::once;
 use std::num::NonZeroU32;
 use std::os::fd::AsFd;
 use std::path::{Path, PathBuf};
@@ -60,8 +59,9 @@ use swash::{FontRef, Instance};
 use tokio::task::spawn_blocking;
 use tokio_util::task::AbortOnDropHandle as DropH;
 use url::Url;
+use winit::dpi::{PhysicalPosition, PhysicalSize};
 use winit::event::{
-    ElementState, Event, MouseButton, MouseScrollDelta, WindowEvent,
+    ElementState, Event, Ime, MouseButton, MouseScrollDelta, WindowEvent,
 };
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::keyboard::{Key, ModifiersState, NamedKey, SmolStr};
@@ -258,7 +258,11 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
     let mut diag =
         Rq::<String, Option<String>, (), anyhow::Error>::default();
     let mut inlay: Rq<Vec<InlayHint>, Vec<InlayHint>> = default();
-    let mut def = Rq::<LocationLink, Option<GotoDefinitionResponse>, (usize, usize)>::default();
+    let mut def = Rq::<
+        LocationLink,
+        Option<GotoDefinitionResponse>,
+        (usize, usize),
+    >::default();
     // let mut complete = None::<(CompletionResponse, (usize, usize))>;
     // let mut complete_ = None::<(
     //     JoinHandle<
@@ -314,12 +318,12 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                     .with_decorations(false)
                     .with_name("com.bendn.gracilaria", "")
                     .with_window_icon(Some(Icon::from_rgba(include_bytes!("../dist/icon-32").to_vec(), 32, 32).unwrap()))
-                    
-            }); 
+
+            });
             if let Some(x) = w.take() {
                 x.send(window.clone()).unwrap();
             }
-            
+
             window.set_ime_allowed(true);
             window.set_ime_purpose(winit::window::ImePurpose::Terminal);
             let context =
@@ -365,12 +369,12 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
             }
             if let Some((l, o)) = lsp!() {
                 for rq in l.req_rx.try_iter() {
-                    match rq {                    
+                    match rq {
                         LRq { method: "workspace/diagnostic/refresh", .. } => {
                             let x = l.pull_diag(o.into(), diag.result.clone());
                             diag.request(l.runtime.spawn(x));
                         },
-                        rq => 
+                        rq =>
                             log::debug!("discarding request {rq:?}"),
                     }
                 }
@@ -383,14 +387,14 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                         f.ok().flatten().map(|x| {Complete {r:x,start:c,selection:0,vo:0,}})
                     }, &l.runtime);
                 };
-                def.poll(|x, _| 
+                def.poll(|x, _|
                     x.ok().flatten().and_then(|x| match &x {
                         GotoDefinitionResponse::Link([x, ..]) => Some(x.clone()),
                         _ => None,
                     })
                 , &l.runtime);
                 semantic_tokens.poll(|x, _| x.ok(), &l.runtime);
-                sig_help.poll(|x, ((), y)| x.ok().flatten().map(|x| {                
+                sig_help.poll(|x, ((), y)| x.ok().flatten().map(|x| {
                 if let Some((old_sig, vo, max)) = y && &sig::active(&old_sig) == &sig::active(&x){
                     (x, vo, max)
                 } else {
@@ -431,10 +435,24 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                         ]
                     }
                 }
+                Event::WindowEvent { event: WindowEvent::Ime(Ime::Preedit(x, y)), .. } => {}
+                Event::WindowEvent { event: WindowEvent::Ime(Ime::Commit(x)), .. } => {
+                    text.insert(&x);
+                    window.request_redraw();
+                }
                 Event::WindowEvent {
                     window_id,
                     event: WindowEvent::RedrawRequested,
                 } if window_id == window.id() => {
+                    {let (cx, cy) = text.cursor_visual();
+                    let met = FONT.metrics(&[]);
+                    let fac = ppem / met.units_per_em as f32;
+                    window.set_ime_cursor_area(
+                      PhysicalPosition::new(
+                        ((cx + text.line_number_offset()) as f64 * (fw) as f64).round(),
+                        (cy as f64 * (fh + ls * fac) as f64).floor())
+                        , PhysicalSize::new(fw, fh)
+                    )};
                     let Some(surface) = surface else {
                         eprintln!(
                             "RedrawRequested fired before Resumed or \
@@ -535,7 +553,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                                                     .for_each(f)
                                             }
                                             let l = r.start.line as usize;
-                                            let Some(x_) = text.visual_eol(l).map(_+2) else { 
+                                            let Some(x_) = text.visual_eol(l).map(_+2) else {
                                                 return;
                                             };
                                         let m = m.lines().next().unwrap_or(m);
@@ -628,7 +646,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             let ls = ls_;
                             let mut r = c.len()/columns;
                             assert_eq!(c.len()%columns, 0);
-                            let (w, h) = dsb::size(&fonts.regular, ppem, ls, (columns, r));                           
+                            let (w, h) = dsb::size(&fonts.regular, ppem, ls, (columns, r));
                             assert!(w < window.inner_size().width as _ &&h < window.inner_size().height as _);
                             let is_above = position.1.checked_sub(h).is_some();
                             let top = position.1.checked_sub(h).unwrap_or(((((_y + 1) as f32) * (fh + ls * fac)).round() + toy) as usize);
@@ -658,7 +676,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             let dawg = diag.iter().filter(|diag| text.l_range(diag.range).is_some_and(|x| x.contains(&text.mapped_index_at(cursor_position)) && (text.vo..text.vo+r).contains(&(diag.range.start.line as _))));
                             for diag in dawg {
                                 match diag.data.as_ref().unwrap_or_default().get("rendered") {
-                                    Some(x) if let Some(x) = x.as_str() => { 
+                                    Some(x) if let Some(x) = x.as_str() => {
                                         let mut t = pattypan::term::Terminal::new((90, (r.saturating_sub(5)) as _), false);
                                         for b in x.replace('\n', "\r\n").bytes(){ t.rx(b,std::fs::File::open("/dev/null").unwrap().as_fd()); }
                                         let y_lim = t.cells.rows().position(|x| x.iter().all(_.letter.is_none())).unwrap_or(20);
@@ -692,7 +710,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             let Some(_y) = _y.checked_sub(text.vo) else {
                                 return;
                             };
-                            
+
                             // if !(cursor_position.1 == _y && (_x..=_x2).contains(&cursor_position.0)) {
                                 // return;
                             // }
@@ -724,7 +742,6 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             let Some(_y) = _y.checked_sub(text.vo) else { break 'out };
                             let (is_above,left, top, w, mut h) = place_around((_x, _y), &mut fonts, i.as_mut(), &c, 40, ppem, ls, 0., 0., 0.);
                                 i.r#box((left .saturating_sub(1) as _, top.saturating_sub(1) as _), w as _,h as _, BORDER);
-                            
                             let com = com.map(|c| {
                                 let (is_above_,left, top, w_, h_) = place_around(
                                     (_x, _y),
@@ -806,7 +823,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                         )
                         {
                             draw_at(x, y, &cursor);
-                        }                        
+                        }
                         let buffer = surface.buffer_mut().unwrap();
                         let x = unsafe {
                             std::slice::from_raw_parts_mut(
@@ -1025,16 +1042,15 @@ hovering.request = (DropH::new(handle), cursor_position).into();
                         },
                 } => {
                     let rows = if alt() { rows * 8. } else { rows * 3. };
-                    
                     let (vo, max) = lower::saturating::math! { if let Some(x)= &mut hovering.result && shift() {
                         let n = x.item.l();
                         (&mut x.item.vo, n - 15)
                     } else if let Some((_, ref mut vo, Some(max))) = sig_help.result && shift(){
                         (vo, max - 15)
-                    } else { 
+                    } else {
                         let n = text.l() - 1; (&mut text.vo, n)
                     }};
-                    if rows < 0.0 { 
+                    if rows < 0.0 {
                         let rows = rows.ceil().abs() as usize;
                         *vo = (*vo + rows).min(max);
                     } else {
@@ -1102,11 +1118,10 @@ hovering.request = (DropH::new(handle), cursor_position).into();
                             } else {
                                 handle2(&event.logical_key, &mut text);
                             }
-                        
                             text.scroll_to_cursor();
                             inlay!();
                             if cb4 != text.cursor && let CompletionState::Complete(Rq{ result: Some(c),.. })= &mut complete
-                                && ((text.cursor < c.start) || (!is_word(text.at_())&& (text.at_() != '.' || text.at_() != ':')) ) {                                
+                                && ((text.cursor < c.start) || (!is_word(text.at_())&& (text.at_() != '.' || text.at_() != ':')) ) {
                                 complete = CompletionState::None;
                             }
                             if sig_help.running() && cb4 != text.cursor && let Some((lsp, path)) = lsp!() {
@@ -1147,7 +1162,7 @@ hovering.request = (DropH::new(handle), cursor_position).into();
                 let sel = lsp.runtime.block_on(lsp.resolve(sel.clone()).unwrap()).unwrap();
                 let CompletionItem { text_edit: Some(CompletionTextEdit::Edit(ed)), additional_text_edits, insert_text_format, ..  } = sel else { panic!() };
                 match insert_text_format {
-                    Some(InsertTextFormat::SNIPPET) => 
+                    Some(InsertTextFormat::SNIPPET) =>
                         text.apply_snippet(&ed).unwrap(),
                     _ => {
                         text.apply(&ed).unwrap();
@@ -1171,8 +1186,7 @@ hovering.request = (DropH::new(handle), cursor_position).into();
             }
             None => {return},
         };
-        
-    }); 
+    });
 
                         }
                         Some(Do::Undo) => {
@@ -1572,7 +1586,11 @@ impl Default for CompletionState {
     }
 }
 fn filter(text: &TextArea) -> String {
-    if text.cursor.checked_sub(1).is_none_or(|x| matches!(text.rope.get_char(x), Some('.' | ':'))) {
+    if text
+        .cursor
+        .checked_sub(1)
+        .is_none_or(|x| matches!(text.rope.get_char(x), Some('.' | ':')))
+    {
         "".to_string()
     } else {
         text.rope
