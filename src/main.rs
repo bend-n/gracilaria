@@ -450,7 +450,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                     window.set_ime_cursor_area(
                       PhysicalPosition::new(
                         ((cx + text.line_number_offset()) as f64 * (fw) as f64).round(),
-                        (cy as f64 * (fh + ls * fac) as f64).floor())
+                        ((cy.saturating_sub(text.vo)) as f64 * (fh + ls * fac) as f64).floor())
                         , PhysicalSize::new(fw, fh)
                     )};
                     let Some(surface) = surface else {
