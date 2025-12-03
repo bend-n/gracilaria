@@ -33,6 +33,7 @@
 #![allow(incomplete_features, redundant_semicolons)]
 use std::borrow::Cow;
 use std::iter::once;
+mod act;
 use std::num::NonZeroU32;
 use std::os::fd::AsFd;
 use std::path::{Path, PathBuf};
@@ -532,6 +533,9 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                                             (x.location.range, &*x.message, EType::Related(sev))
                                         }))
                                     }).for_each(|(mut r, m, sev)| {
+                                            if let EType::Related(x) = sev && x != DiagnosticSeverity::ERROR {
+                                                return;
+                                            }
                                             let p = r.start.line;
                                             while occupied.contains(&r.start.line) {
                                                 r.start.line+=1;
