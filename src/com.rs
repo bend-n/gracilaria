@@ -9,7 +9,7 @@ use itertools::Itertools;
 use lsp_types::*;
 
 use crate::FG;
-use crate::text::{col, color, color_, set_a};
+use crate::text::{col, color_, set_a};
 
 #[derive(Debug)]
 pub struct Complete {
@@ -278,8 +278,7 @@ fn t() {
     let (c, r) = dsb::fit(&crate::FONT, ppem, lh, (w, h));
     dbg!(dsb::size(&crate::FONT, ppem, lh, (c, r)));
     let y = serde_json::from_str(include_str!("../complete_")).unwrap();
-    let cells =
-        s(&Complete { r: y, start: 0, selection: 0, vo: 0 }, c, "");
+    let cells = s(&Complete { r: y, selection: 0, vo: 0 }, c, "");
     dbg!(c, r);
     dbg!(w, h);
 

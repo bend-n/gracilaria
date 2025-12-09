@@ -429,6 +429,12 @@ pub fn run(
                 workspace: Some(WorkspaceClientCapabilities {
                     diagnostic: Some(DiagnosticWorkspaceClientCapabilities { refresh_support: Some(true) }),
                     inlay_hint: Some(InlayHintWorkspaceClientCapabilities { refresh_support: Some(true) }),
+                    workspace_edit: Some(
+                      WorkspaceEditClientCapabilities { document_changes: Some(true),
+                        resource_operations: Some(vec![ResourceOperationKind::Create, ResourceOperationKind::Rename, ResourceOperationKind::Delete]),
+                        failure_handling: Some(FailureHandlingKind::Abort), normalizes_line_endings: Some(false),
+                        change_annotation_support: Some(ChangeAnnotationWorkspaceEditClientCapabilities { groups_on_label: Some(false) }) },
+                    ),
                     ..default()
                 }),
                 text_document: Some(TextDocumentClientCapabilities {
@@ -439,9 +445,16 @@ pub fn run(
                     code_action: Some(
                         CodeActionClientCapabilities {
                             data_support: Some(true),
+                            resolve_support: Some(CodeActionCapabilityResolveSupport { properties: vec!["edit".to_string()] }),
+                            code_action_literal_support: Some(CodeActionLiteralSupport { code_action_kind: CodeActionKindLiteralSupport { value_set: [
+                                "", "Empty", "QuickFix", "Refactor", "RefactorExtract", "RefactorInline", "RefactorRewrite", "Source", "SourceOrganizeImports", "quickfix", "refactor", "refactor.extract", "refactor.inline", "refactor.rewrite", "source", "source.organizeImports"
+                            ].map(String::from).into()} }),
                            ..default()
                         }
                     ),
+                    rename: Some(RenameClientCapabilities { prepare_support: Some(true),
+                        prepare_support_default_behavior: Some(PrepareSupportDefaultBehavior::IDENTIFIER), honors_change_annotations: Some(false),
+                    ..default() }),
                     hover: Some(HoverClientCapabilities {
                         dynamic_registration: None,
                         content_format: Some(vec![MarkupKind::PlainText, MarkupKind::Markdown]),
@@ -571,6 +584,7 @@ pub fn run(
                     ..default()
                 }),
                 experimental: Some(json! {{
+                    "snippetTextEdit": true,
                     "colorDiagnosticOutput": true,
                     "codeActionGroup": true,
                     "serverStatusNotification": true,

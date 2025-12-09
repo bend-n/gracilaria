@@ -480,7 +480,7 @@ impl TextArea {
             }
             None => {
                 self.tabstops = None;
-                end
+                begin + x.new_text.chars().count()
             }
         };
         Ok(())
@@ -503,6 +503,10 @@ impl TextArea {
     pub fn x(&self, c: usize) -> usize {
         self.xy(c).unwrap().0
     }
+    pub fn beginning_of_line(&self, c: usize) -> Option<usize> {
+        self.rope.try_line_to_char(self.y(c)).ok()
+    }
+
     // input: char, output: utf8
     pub fn x_bytes(&self, c: usize) -> Option<usize> {
         let y = self.rope.try_char_to_line(c).ok()?;
@@ -528,8 +532,8 @@ impl TextArea {
     }
 
     pub fn setc(&mut self) {
-        self.column = self.cursor
-            - self.rope.line_to_char(self.rope.char_to_line(self.cursor));
+        self.column =
+            self.cursor - self.beginning_of_line(self.cursor).unwrap();
     }
 
     pub fn page_down(&mut self) {
@@ -591,7 +595,7 @@ impl TextArea {
     }
 
     pub fn set_ho(&mut self) {
-        let x = self.cursor().0;
+        let x = self.cursor_visual().0;
         if x < self.ho + 4 {
             self.ho = x.saturating_sub(4);
         } else if x + 4 > (self.ho + self.c) {
