@@ -243,7 +243,8 @@ pub type Decorations = Vec<Vec<Mark>>;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Mark {
-    pub start: usize,
+    // pub start: usize,
+    pub relpos: usize, // to start of line
     pub l: Box<[(char, Option<Location>)]>,
     ty: u8,
 }
@@ -318,15 +319,20 @@ impl TextArea {
                 if i.padding_right == Some(true) {
                     label.push((' ', None));
                 }
-                Mark {
-                    start: self.l_position(i.position).unwrap(),
-                    ty: INLAY,
-                    l: label.into(),
-                }
+                (
+                    Mark {
+                        relpos: i.position.character as _,
+                        ty: INLAY,
+                        l: label.into(),
+                    },
+                    i.position.line,
+                )
             })
-            .chunk_by(|x| self.rope.char_to_line(x.start))
+            .chunk_by(|x| x.1)
             .into_iter()
-            .for_each(|(i, x)| decorations[i] = x.collect());
+            .for_each(|(i, x)| {
+                decorations[i as usize] = x.map(|x| x.0).collect()
+            });
         self.decorations = decorations;
     }
     pub fn position(
@@ -362,13 +368,13 @@ impl TextArea {
         let s = self.rope.try_line_to_char(l).ok()?;
         let lin = self.rope.get_line(l)?;
         Some(gen move {
-            for (char, i) in lin.chars().zip(s..) {
-                if let Some(x) = rel.iter().find(|x| x.start == i) {
+            for (char, i) in lin.chars().zip(0..) {
+                if let Some(x) = rel.iter().find(|x| x.relpos == i) {
                     for (i, (c, _)) in x.l.iter().enumerate() {
-                        yield Mapping::Fake(x, i, *c);
+                        yield Mapping::Fake(x, i, s + x.relpos, *c);
                     }
                 }
-                yield Mapping::Char(char, i - s, i);
+                yield Mapping::Char(char, i, i + s);
             }
         })
     }
@@ -426,7 +432,7 @@ impl TextArea {
     pub fn mapped_index_at(&'_ self, (x, y): (usize, usize)) -> usize {
         match self.visual_index_at((x, y)) {
             Some(Mapping::Char(_, _, index)) => index,
-            Some(Mapping::Fake(mark, ..)) => mark.start,
+            Some(Mapping::Fake(mark, real, ..)) => real,
             None => self.eol(self.vo + y),
         }
     }
@@ -959,7 +965,7 @@ impl TextArea {
                             bg: crate::BG,
                             flags: 0,
                         },
-                        Mapping::Fake(Mark { ty: INLAY, .. }, _, _) =>
+                        Mapping::Fake(Mark { ty: INLAY, .. }, ..) =>
                             Style {
                                 color: const { color_("#536172") },
                                 bg: crate::BG,
@@ -1743,7 +1749,12 @@ impl<I: Iterator<Item = T>, T> CoerceOption<T> for Option<I> {
 pub(crate) use col;
 #[derive(Debug, PartialEq)]
 pub enum Mapping<'a> {
-    Fake(&'a Mark, usize /* label rel */, char),
+    Fake(
+        &'a Mark,
+        usize,
+        /*label rel */ usize, /* true position */
+        char,
+    ),
     Char(char, usize /* line rel */, usize /* true position */),
 }
 impl Mapping<'_> {

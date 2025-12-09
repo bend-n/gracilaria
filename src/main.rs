@@ -926,16 +926,16 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                         Mapping::Char(_, _, i) => {
                             TextDocumentPositionParams { position: text.to_l_position(i).unwrap(), text_document: o.tid() }
                         },
-                        Mapping::Fake(mark, index, _) => {
-                            let Some(ref loc) = mark.l[index].1 else {
+                        Mapping::Fake(mark, relpos, abspos, _) => {
+                            let Some(ref loc) = mark.l[relpos].1 else {
                                 break 'out;
                             };
-                            let (x, y) = text.xy(mark.start).unwrap();
+                            let (x, y) = text.xy(abspos).unwrap();
                             let Some(begin) = text.reverse_source_map(y) else { break 'out };
                             let start = begin[x - 1] + 1;
-                            let left = mark.l[..index].iter().rev().take_while(_.1.as_ref() == Some(loc)).count();
-                            let start = start + index - left;
-                            let length = mark.l[index..].iter().take_while(_.1.as_ref() == Some(loc)).count() + left;
+                            let left = mark.l[..relpos].iter().rev().take_while(_.1.as_ref() == Some(loc)).count();
+                            let start = start + relpos - left;
+                            let length = mark.l[relpos..].iter().take_while(_.1.as_ref() == Some(loc)).count() + left;
                             rang = Some([(start, y), (start + length, y)]);
                             TextDocumentPositionParams { text_document: TextDocumentIdentifier { uri: loc.uri.clone() }, position: loc.range.start }
                         }

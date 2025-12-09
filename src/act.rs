@@ -59,7 +59,6 @@ impl CodeActions {
 }
 fn write(x: &CodeAction, c: usize, selected: bool, to: &mut Vec<Cell>) {
     let bg = if selected { col!("#262d3b") } else { col!("#1c212b") };
-
     let mut into = vec![
         Cell {
             style: Style { bg, color: FG, flags: 0 },
