@@ -117,7 +117,6 @@ impl Hist {
                 (x.cursor, x.column, x.vo),
             ],
         });
-
         println!("push {}", self.history.last().unwrap());
         self.redo_history.clear();
         self.last = x.clone();
@@ -1500,14 +1499,14 @@ fn handle(key: Key, mut text: TextArea) -> TextArea {
 }
 pub static FONT: LazyLock<FontRef<'static>> = LazyLock::new(|| {
     FontRef::from_index(
-        &include_bytes!("/home/os/CascadiaCodeNF.ttf")[..],
+        &include_bytes!("../CascadiaCodeNF.ttf")[..],
         0,
     )
     .unwrap()
 });
 pub static IFONT: LazyLock<FontRef<'static>> = LazyLock::new(|| {
     FontRef::from_index(
-        &include_bytes!("/home/os/CascadiaCodeNFItalic.ttf")[..],
+        &include_bytes!("../CascadiaCodeNFItalic.ttf")[..],
         0,
     )
     .unwrap()
