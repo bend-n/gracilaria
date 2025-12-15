@@ -460,11 +460,26 @@ impl TextArea {
         self.set_ho();
     }
 
-    pub fn apply(&mut self, x: &TextEdit) -> Result<(), ()> {
+    pub fn apply(&mut self, x: &TextEdit) -> Result<(usize, usize), ()> {
         let begin = self.l_position(x.range.start).ok_or(())?;
         let end = self.l_position(x.range.end).ok_or(())?;
         self.rope.try_remove(begin..end).map_err(|_| ())?;
         self.rope.try_insert(begin, &x.new_text).map_err(|_| ())?;
+        Ok((begin, end))
+    }
+    pub fn apply_adjusting(&mut self, x: &TextEdit) -> Result<(), ()> {
+        let (b, e) = self.apply(&x)?;
+        if e < self.cursor {
+            if !self.visible(e) {
+                // line added behind, not visible
+                self.vo +=
+                    x.new_text.chars().filter(|&x| x == '\n').count();
+            }
+            let removed = dbg!(e - b);
+            self.cursor += x.new_text.chars().count();
+            self.cursor -= removed; // compensate
+            // text.cursor += additional.new_text.chars().count(); // compensate
+        }
         Ok(())
     }
     pub fn apply_snippet(&mut self, x: &TextEdit) -> anyhow::Result<()> {
@@ -486,7 +501,9 @@ impl TextArea {
             }
             None => {
                 self.tabstops = None;
-                begin + x.new_text.chars().count()
+                sni.last
+                    .map(|x| x.r().end)
+                    .unwrap_or_else(|| begin + x.new_text.chars().count())
             }
         };
         Ok(())
@@ -709,7 +726,7 @@ impl TextArea {
                     self.cursor = x.r().end;
                 }
                 None => {
-                    self.cursor = x.last.clone().r().end;
+                    self.cursor = x.last.clone().unwrap().r().end;
                     self.tabstops = None;
                 }
             },
@@ -1762,4 +1779,33 @@ impl Mapping<'_> {
         let (Mapping::Char(x, ..) | Mapping::Fake(.., x)) = self;
         *x
     }
+}
+
+#[test]
+fn apply() {
+    let mut t = TextArea::default();
+    t.insert(
+        r#"fn main() {
+    let x = 4;
+}
+"#,
+    );
+
+    t.apply_snippet(&TextEdit {
+        range: lsp_types::Range {
+            start: Position { line: 0, character: 8 },
+            end: Position { line: 0, character: 9 },
+        },
+        new_text: "$0var_name".into(),
+    })
+    .unwrap();
+    t.apply_adjusting(&TextEdit {
+        range: lsp_types::Range {
+            start: Position { line: 1, character: 4 },
+            end: Position { line: 1, character: 4 },
+        },
+        new_text: "let x = var_name;\n    ".to_owned(),
+    })
+    .unwrap();
+    assert_eq!(t.cursor, 8);
 }

@@ -1,6 +1,8 @@
+use std::backtrace::Backtrace;
 use std::collections::HashMap;
 use std::fmt::Display;
-use std::mem::forget;
+use std::marker::PhantomData;
+use std::mem::{MaybeUninit, forget};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicI32;
@@ -14,7 +16,7 @@ use anyhow::bail;
 use crossbeam::channel::{
     Receiver, RecvError, SendError, Sender, unbounded,
 };
-use log::{debug, error};
+use log::{debug, error, trace};
 use lsp_server::{
     ErrorCode, Message, Notification as N, Request as LRq, Response as Re,
     ResponseError,
@@ -49,26 +51,34 @@ impl Drop for Client {
     }
 }
 #[derive(Debug)]
-pub enum RequestError {
-    Rx,
+pub enum RequestError<X> {
+    Rx(PhantomData<X>),
+    Failure(Re, Backtrace),
     Cancelled(Re, DiagnosticServerCancellationData),
 }
-impl From<oneshot::error::RecvError> for RequestError {
+// impl<X> Debug for RequestError<X> {}
+impl<X> From<oneshot::error::RecvError> for RequestError<X> {
     fn from(_: oneshot::error::RecvError) -> Self {
-        Self::Rx
+        Self::Rx(PhantomData)
     }
 }
-impl std::error::Error for RequestError {
+impl<X: Request + std::fmt::Debug> std::error::Error for RequestError<X> {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         None
     }
 }
-impl Display for RequestError {
+impl<X: Request> Display for RequestError<X> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Rx => write!(f, "couldnt get from thingy"),
+            Self::Rx(_) =>
+                write!(f, "{} failed; couldnt get from thingy", X::METHOD),
+            Self::Failure(x, bt) => write!(
+                f,
+                "{} failed; returned badge :( {x:?} ({bt:?})",
+                X::METHOD
+            ),
             Self::Cancelled(x, y) =>
-                write!(f, "server cancelled us. {x:?} {y:?}"),
+                write!(f, "server cancelled {}. {x:?} {y:?}", X::METHOD),
         }
     }
 }
@@ -91,7 +101,8 @@ impl Client {
         y: &X::Params,
     ) -> Result<
         (
-            impl Future<Output = Result<X::Result, RequestError>> + use<'me, X>,
+            impl Future<Output = Result<X::Result, RequestError<X>>>
+            + use<'me, X>,
             i32,
         ),
         SendError<Message>,
@@ -104,7 +115,7 @@ impl Client {
         }))?;
         let (tx, rx) = oneshot::channel();
         if self.initialized.is_some() {
-            debug!("sent request {id}'s handler");
+            debug!("sent request {} ({id})'s handler", X::METHOD);
             self.send_to.send((id, tx)).expect("oughtnt really fail");
         }
         Ok((
@@ -117,12 +128,15 @@ impl Client {
                 forget(g);
                 if let Some(ResponseError { code, ref mut data, .. }) =
                     x.error
-                    && code == ErrorCode::ServerCancelled as i32
                 {
-                    let e = serde_json::from_value(
-                        data.take().unwrap_or_default(),
-                    );
-                    Err(RequestError::Cancelled(x, e.expect("lsp??")))
+                    if code == ErrorCode::ServerCancelled as i32 {
+                        let e = serde_json::from_value(
+                            data.take().unwrap_or_default(),
+                        );
+                        Err(RequestError::Cancelled(x, e.expect("lsp??")))
+                    } else {
+                        Err(RequestError::Failure(x, Backtrace::capture()))
+                    }
                 } else {
                     Ok(serde_json::from_value::<X::Result>(
                         x.result.unwrap_or_default(),
@@ -172,7 +186,12 @@ impl Client {
         &self,
         x: CompletionItem,
     ) -> Result<
-        impl Future<Output = Result<CompletionItem, RequestError>>,
+        impl Future<
+            Output = Result<
+                CompletionItem,
+                RequestError<ResolveCompletionItem>,
+            >,
+        >,
         SendError<Message>,
     > {
         self.request::<ResolveCompletionItem>(&x).map(|x| x.0)
@@ -184,7 +203,10 @@ impl Client {
         (x, y): (usize, usize),
         c: CompletionContext,
     ) -> impl Future<
-        Output = Result<Option<CompletionResponse>, RequestError>,
+        Output = Result<
+            Option<CompletionResponse>,
+            RequestError<Completion>,
+        >,
     > + use<'me> {
         let (rx, _) = self
             .request::<Completion>(&CompletionParams {
@@ -204,8 +226,12 @@ impl Client {
         &'me self,
         f: &Path,
         (x, y): (usize, usize),
-    ) -> impl Future<Output = Result<Option<SignatureHelp>, RequestError>>
-    + use<'me> {
+    ) -> impl Future<
+        Output = Result<
+            Option<SignatureHelp>,
+            RequestError<SignatureHelpRequest>,
+        >,
+    > + use<'me> {
         self.request::<SignatureHelpRequest>(&SignatureHelpParams {
             context: None,
             text_document_position_params: TextDocumentPositionParams {
@@ -332,8 +358,12 @@ impl Client {
         &'static self,
         f: &Path,
         t: &TextArea,
-    ) -> impl Future<Output = Result<Vec<InlayHint>, RequestError>> + use<>
-    {
+    ) -> impl Future<
+        Output = Result<
+            Vec<InlayHint>,
+            RequestError<lsp_request!("textDocument/inlayHint")>,
+        >,
+    > + use<> {
         self.request::<lsp_request!("textDocument/inlayHint")>(&InlayHintParams {
             work_done_progress_params: default(),
             text_document: f.tid(),
@@ -359,7 +389,12 @@ impl Client {
 
     pub fn rq_semantic_tokens(
         &'static self,
-        to: &mut Rq<Box<[SemanticToken]>, Box<[SemanticToken]>>,
+        to: &mut Rq<
+            Box<[SemanticToken]>,
+            Box<[SemanticToken]>,
+            (),
+            RequestError<SemanticTokensFullRequest>,
+        >,
         f: &Path,
         w: Option<Arc<Window>>,
     ) -> anyhow::Result<()> {
@@ -377,7 +412,8 @@ impl Client {
             },
         )?;
         let x = self.runtime.spawn(async move {
-            let y = rx.await?.unwrap();
+            let t = rx.await;
+            let y = t?.unwrap();
             debug!("received semantic tokens");
             let r = match y {
                 SemanticTokensResult::Partial(_) =>
@@ -691,16 +727,20 @@ pub fn run(
                         }
                     }
                     Ok(Message::Response(x)) => {
-                        if let Some(e) =& x.error {
+                        if let Some(e) = &x.error {
                             if e.code == ErrorCode::RequestCanceled as i32 {}
                             else if e.code == ErrorCode::ServerCancelled as i32 {
                                 if let Some((s, _)) = map.remove(&x.id.i32()) {
                                     log::info!("request {} cancelled", x.id);
                                     _ = s.send(x);
                                 }
-                            }
-                            else {
-                                error!("received error from lsp for response {x:?}");
+                            } else {
+                                if let Some((s, _)) = map.remove(&x.id.i32()) {
+                                    _ = s.send(x.clone());
+                                    trace!("received error from lsp for response {x:?}");
+                                } else {
+                                    error!("received error from lsp for response {x:?}");
+                                }
                             }
                         }
                         else if let Some((s, took)) = map.remove(&x.id.i32()) {
@@ -875,11 +915,11 @@ impl<T> OnceOff<T> {
 }
 
 #[derive(Debug)]
-pub struct Rq<T, R, D = (), E = RequestError> {
+pub struct Rq<T, R, D = (), E = RequestError<R>> {
     pub result: Option<T>,
     pub request: Option<(AbortOnDropHandle<Result<R, E>>, D)>,
 }
-pub type RqS<T, R: Request, D = ()> = Rq<T, R::Result, D>;
+pub type RqS<T, R: Request, D = ()> = Rq<T, R::Result, D, RequestError<R>>;
 impl<T, R, D, E> Default for Rq<T, R, D, E> {
     fn default() -> Self {
         Self { result: None, request: None }

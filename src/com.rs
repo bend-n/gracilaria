@@ -278,9 +278,10 @@ fn t() {
     let (c, r) = dsb::fit(&crate::FONT, ppem, lh, (w, h));
     dbg!(dsb::size(&crate::FONT, ppem, lh, (c, r)));
     let y = serde_json::from_str(include_str!("../complete_")).unwrap();
-    let cells = s(&Complete { r: y, selection: 0, vo: 0 }, c, "");
-    dbg!(c, r);
+    let cells =
+        s(&Complete { r: y, selection: 0, vo: 0, start: 0 }, c, "");
     dbg!(w, h);
+    dbg!(c, r);
 
     let mut fonts = dsb::Fonts::new(
         F::FontRef(*crate::FONT, &[(2003265652, 550.0)]),

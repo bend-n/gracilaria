@@ -1,6 +1,7 @@
 // this looks pretty good though
 #![feature(tuple_trait, unboxed_closures, fn_traits)]
 #![feature(
+    vec_try_remove,
     iter_next_chunk,
     iter_array_chunks,
     array_windows,
@@ -32,6 +33,7 @@
 )]
 #![allow(incomplete_features, redundant_semicolons)]
 use std::borrow::Cow;
+use std::collections::HashMap;
 use std::iter::once;
 mod act;
 use std::num::NonZeroU32;
@@ -71,7 +73,7 @@ use winit::window::Icon;
 
 use crate::bar::Bar;
 use crate::hov::Hovr;
-use crate::lsp::{RedrawAfter, RqS};
+use crate::lsp::{RedrawAfter, RequestError, RqS};
 use crate::text::{Diff, Mapping, TextArea, col, is_word};
 mod bar;
 pub mod com;
@@ -82,6 +84,7 @@ mod sni;
 mod text;
 mod winit_app;
 fn main() {
+    let x = 4;
     unsafe { std::env::set_var("CARGO_UNSTABLE_RUSTC_UNICODE", "true") };
     env_logger::init();
     // lsp::x();
@@ -218,7 +221,12 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
             std::thread::Builder::new()
                 .name("Rust Analyzer".into())
                 .stack_size(1024 * 1024 * 8)
-                .spawn(|| rust_analyzer::bin::run_server(b))
+                .spawn(|| {
+                    std::panic::set_hook(Box::new(|info| {
+                        println!("RA panic @ {}", info.location().unwrap());
+                    }));
+                    rust_analyzer::bin::run_server(b)
+                })
                 .unwrap();
             let (c, t2, changed) = lsp::run(
                 (a.sender, a.receiver),
@@ -257,11 +265,12 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
     let mut semantic_tokens = default();
     let mut diag =
         Rq::<String, Option<String>, (), anyhow::Error>::default();
-    let mut inlay: Rq<Vec<InlayHint>, Vec<InlayHint>> = default();
+    let mut inlay: Rq<Vec<InlayHint>, Vec<InlayHint>, (), RequestError<lsp_request!("textDocument/inlayHint")>> = default();
     let mut def = Rq::<
         LocationLink,
         Option<GotoDefinitionResponse>,
         (usize, usize),
+        RequestError<lsp_request!("textDocument/definition")>,
     >::default();
     // let mut complete = None::<(CompletionResponse, (usize, usize))>;
     // let mut complete_ = None::<(
@@ -660,7 +669,8 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             let mut r = c.len()/columns;
                             assert_eq!(c.len()%columns, 0);
                             let (w, h) = dsb::size(&fonts.regular, ppem, ls, (columns, r));
-                            if position.0 + w >= window.inner_size().width as usize || position.1 + h >= window.inner_size().height as usize {
+                            if w >= window.inner_size().width as usize || position.1 + h >= window.inner_size().height as usize {
+                                unsafe { dsb::render_owned(c, (columns, c.len() / columns), 18.0, fonts, 1.1, true).save("fail.png") };
                                 return Err(());
                             }
                             assert!(w < window.inner_size().width as _ &&h < window.inner_size().height as _);
@@ -690,7 +700,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                         let mut pass = true;
                         if let Some((lsp, p)) = lsp!() && let Some(diag) = lsp.diagnostics.get(&Url::from_file_path(p).unwrap(), &lsp.diagnostics.guard()) {
                             let dawg = diag.iter().filter(|diag| text.l_range(diag.range).is_some_and(|x| x.contains(&text.mapped_index_at(cursor_position)) && (text.vo..text.vo+r).contains(&(diag.range.start.line as _))));
-                            for diag in dawg {
+                            for diag in dawg { 
                                 match diag.data.as_ref().unwrap_or_default().get("rendered") {
                                     Some(x) if let Some(x) = x.as_str() => {
                                         let mut t = pattypan::term::Terminal::new((95, (r.saturating_sub(5)) as _), false);
@@ -816,7 +826,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                                 &mut fonts,
                                 i.as_mut(),
                                 &c, 40, ppem, ls, 0., 0., 0.
-                            ) else { return ; };
+                            ) else { break 'out; };
                             i.r#box((left .saturating_sub(1) as _, top.saturating_sub(1) as _), w as _,h as _, BORDER);
                         }
                         }
@@ -1026,6 +1036,9 @@ hovering.request = (DropH::new(handle), cursor_position).into();
                     match state.consume(Action::M(button)).unwrap() {
                         Some(Do::MoveCursor) => {
                             text.cursor = text.mapped_index_at(cursor_position);
+                            if let Some((lsp, path)) = lsp!() {
+                                sig_help.request(lsp.runtime.spawn(window.redraw_after(lsp.request_sig_help(path, text.cursor()))));
+                            }
                             text.setc();
                         }
                         Some(Do::ExtendSelectionToMouse) => {
@@ -1151,21 +1164,33 @@ hovering.request = (DropH::new(handle), cursor_position).into();
                             let act = lsp.runtime.block_on(
                                 lsp.request::<CodeActionResolveRequest>(&act).unwrap().0
                             ).unwrap();
-                            dbg!(&act);
+                            let mut f_ = |edits: &[SnippetTextEdit]|{ 
+                                let mut first = false;
+                                for SnippetTextEdit { text_edit, insert_text_format ,..}in edits {
+                                    match insert_text_format { 
+                                        Some(InsertTextFormat::SNIPPET) => {
+                                            text.apply_snippet(&text_edit).unwrap()
+                                        },
+                                        _ => {
+                                            if first { 
+                                                let (b, e) = text.apply(&text_edit).unwrap();
+                                                log::error!("dont account for this case yet");
+                                            } else {
+                                                text.apply_adjusting(text_edit).unwrap();
+                                            }
+                                        }
+                                    }
+                                    first = false;
+                                }
+                            };
                             match act.edit {
                                 Some(WorkspaceEdit { 
                                     document_changes:Some(DocumentChanges::Edits(x)),
                                     ..
                                 }) => {
-                                    for TextDocumentEdit { edits, text_document } in x {
-                                        if text_document.uri!= f.tid().uri { continue }
-                                        for SnippetTextEdit { text_edit, insert_text_format ,..}in edits {
-                                            match insert_text_format {
-                                                Some(InsertTextFormat::SNIPPET) => 
-                                                    text.apply_snippet(&text_edit).unwrap(),
-                                                _ => text.apply(&text_edit).unwrap()
-                                            }
-                                        }
+                                    for x in x {
+                                        if x.text_document.uri!= f.tid().uri { return }
+                                        f_(&x.edits);
                                     }
                                     
                                 }
@@ -1178,14 +1203,9 @@ hovering.request = (DropH::new(handle), cursor_position).into();
                                             DocumentChangeOperation::Edit(TextDocumentEdit { 
                                                 edits, text_document,..
                                             }) => {
-
-                                                for SnippetTextEdit { text_edit, insert_text_format ,..}in edits {
-                                            match insert_text_format {
-                                                Some(InsertTextFormat::SNIPPET) => 
-                                                    text.apply_snippet(&text_edit).unwrap(),
-                                                _ => text.apply(&text_edit).unwrap()
+                                                if text_document.uri!= f.tid().uri { return }
+                                                f_(&edits);
                                             }
-                                        }}
                                         x=>log::error!("didnt apply {x:?}"),
                                         };
                                         // if text_document.uri!= f.tid().uri { continue }
@@ -1273,27 +1293,19 @@ hovering.request = (DropH::new(handle), cursor_position).into();
             Some(CDo::Finish(x)) => {
                 let sel = x.sel(&filter(&text));
                 let sel = lsp.runtime.block_on(lsp.resolve(sel.clone()).unwrap()).unwrap();
-                let CompletionItem { text_edit: Some(CompletionTextEdit::Edit(ed)), additional_text_edits, insert_text_format, ..  } = sel else { panic!() };
+                let CompletionItem { text_edit: Some(CompletionTextEdit::Edit(ed)), additional_text_edits, insert_text_format, ..  } = sel.clone() else { panic!() };
                 match insert_text_format {
-                    Some(InsertTextFormat::SNIPPET) =>
-                        text.apply_snippet(&ed).unwrap(),
+                    Some(InsertTextFormat::SNIPPET) =>{
+                        text.apply_snippet(&ed).unwrap();
+                    },
                     _ => {
-                        text.apply(&ed).unwrap();
-                        text.cursor = text.l_position(ed.range.start).unwrap() + ed.new_text.chars().count();
+                        let (s, _) = text.apply(&ed).unwrap();
+                        text.cursor = s + ed.new_text.chars().count();
                     }
                 }
                 for additional in additional_text_edits.into_iter().flatten() {
-                    let p = text.l_position(additional.range.end).unwrap();
-                    if p < text.cursor {
-                        if !text.visible(p) {
-                            // line added behind, not visible
-                            text.vo += additional.new_text.chars().filter(|x|x.is_newline()).count();
-                        }
-                        text.apply(&additional).unwrap();
-                        text.cursor += additional.new_text.chars().count(); // compensate
-                    }
+                    text.apply_adjusting(&additional).unwrap();
                 }
-
                 if hist.record(&text) { change!();}
                 sig_help = Rq::new(lsp.runtime.spawn(window.redraw_after(lsp.request_sig_help(o, text.cursor()))));
             }
@@ -1571,7 +1583,7 @@ CodeAction(Rq<act::CodeActions, Option<CodeActionResponse>,()> => Rq { result : 
     K(Key::Named(ArrowUp)) => _ [CASelectPrev],
     K(Key::Named(Enter)) => Default [CASelect(act::CodeActions => act)],
 },
-CodeAction(Rq<act::CodeActions, Option<CodeActionResponse>,()> => rq) => {
+CodeAction(Rq<act::CodeActions, Option<CodeActionResponse>,(), RequestError<lsp_request!("textDocument/codeAction")>> => rq) => {
     K(Key::Named(Escape)) => Default,
     C(_) => _,
     M(_) => _,

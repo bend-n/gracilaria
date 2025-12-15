@@ -5,7 +5,7 @@ use helix_core::snippets::parser::SnippetElement;
 #[derive(Debug, Clone)]
 pub struct Snippet {
     pub stops: Vec<(Stop, StopP)>,
-    pub last: StopP,
+    pub last: Option<StopP>,
     pub index: usize,
 }
 
@@ -45,13 +45,12 @@ impl Snippet {
         }
         stops.sort_by_key(|x| x.0);
         stops.iter_mut().for_each(|x| x.1.manipulate(|x| x + at));
-        let last = stops.remove(0);
-        assert_eq!(last.0, 0);
-        Some((Snippet { last: last.1, stops, index: 0 }, o))
+        let last = stops.try_remove(0);
+        Some((Snippet { last: last.map(|x| x.1), stops, index: 0 }, o))
     }
     pub fn manipulate(&mut self, f: impl FnMut(usize) -> usize + Clone) {
         self.stops.iter_mut().for_each(|x| x.1.manipulate(f.clone()));
-        self.last.manipulate(f);
+        self.last.as_mut().map(|x| x.manipulate(f));
     }
     pub fn next(&mut self) -> Option<StopP> {
         self.stops.get(self.index).map(|x| {
@@ -64,7 +63,7 @@ impl Snippet {
             .iter()
             .skip(self.index)
             .map(|x| &x.1)
-            .chain([&self.last])
+            .chain(self.last.iter())
             .cloned()
     }
 
