@@ -448,23 +448,35 @@ impl TextArea {
         Ok(())
     }
 
-    pub fn insert(&mut self, c: &str) {
-        self.rope.insert(self.cursor, c);
+    pub fn insert_at(
+        &mut self,
+        c: usize,
+        with: &str,
+    ) -> Result<(), ropey::Error> {
+        self.rope.try_insert(c, with)?;
         self.tabstops.as_mut().map(|x| {
-            x.manipulate(|x| {
-                if x < self.cursor { x } else { x + c.chars().count() }
-            });
+            x.manipulate(
+                |x| {
+                    if x < c { x } else { x + with.chars().count() }
+                },
+            )
         });
+        Ok(())
+    }
+
+    pub fn insert(&mut self, c: &str) -> Result<(), ropey::Error> {
+        self.insert_at(self.cursor, c)?;
         self.cursor += c.chars().count();
         self.setc();
         self.set_ho();
+        Ok(())
     }
 
     pub fn apply(&mut self, x: &TextEdit) -> Result<(usize, usize), ()> {
         let begin = self.l_position(x.range.start).ok_or(())?;
         let end = self.l_position(x.range.end).ok_or(())?;
-        self.rope.try_remove(begin..end).map_err(|_| ())?;
-        self.rope.try_insert(begin, &x.new_text).map_err(|_| ())?;
+        self.remove(begin..end).map_err(|_| ())?;
+        self.insert_at(begin, &x.new_text).map_err(|_| ())?;
         Ok((begin, end))
     }
     pub fn apply_adjusting(&mut self, x: &TextEdit) -> Result<(), ()> {
@@ -489,11 +501,11 @@ impl TextArea {
         let end = self
             .l_position(x.range.end)
             .ok_or(anyhow!("couldnt get end"))?;
-        self.rope.try_remove(begin..end)?;
+        self.remove(begin..end)?;
         let (mut sni, tex) =
             crate::sni::Snippet::parse(&x.new_text, begin)
                 .ok_or(anyhow!("failed to parse snippet"))?;
-        self.rope.try_insert(begin, &tex)?;
+        self.insert_at(begin, &tex)?;
         self.cursor = match sni.next() {
             Some(x) => {
                 self.tabstops = Some(sni);
@@ -720,7 +732,7 @@ impl TextArea {
     }
     pub fn tab(&mut self) {
         match &mut self.tabstops {
-            None => self.insert("    "),
+            None => self.insert("    ").unwrap(),
             Some(x) => match x.next() {
                 Some(x) => {
                     self.cursor = x.r().end;

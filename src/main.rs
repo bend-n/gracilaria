@@ -1206,7 +1206,7 @@ hovering.request = (DropH::new(handle), cursor_position).into();
                                                 if text_document.uri!= f.tid().uri { return }
                                                 f_(&edits);
                                             }
-                                        x=>log::error!("didnt apply {x:?}"),
+                                        x => log::error!("didnt apply {x:?}"),
                                         };
                                         // if text_document.uri!= f.tid().uri { continue }
                                         // for lsp_types::OneOf::Left(x)| lsp_types::OneOf::Right(AnnotatedTextEdit { text_edit: x, .. }) in edits {
@@ -1470,7 +1470,7 @@ fn handle2<'a>(key: &'a Key, text: &mut TextArea) -> Option<&'a str> {
     use Key::*;
 
     match key {
-        Named(Space) => text.insert(" "),
+        Named(Space) => text.insert(" ").unwrap(),
         Named(Backspace) if ctrl() => text.backspace_word(),
         Named(Backspace) => text.backspace(),
         Named(Home) if ctrl() => {
