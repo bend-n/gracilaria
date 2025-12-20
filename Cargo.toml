@@ -56,6 +56,7 @@ tokio-util = { version = "0.7.17", features = ["rt"] }
 scopeguard = "1.2.0"
 arc-swap = "1.7.1"
 atools = "0.1.10"
+swizzle = "0.1.0"
 
 [profile.dev.package]
 rust-analyzer.opt-level = 3

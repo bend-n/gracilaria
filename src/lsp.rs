@@ -316,6 +316,7 @@ impl Client {
                     },
                     Err(e) => return Err(e.into()),
                 };
+            // dbg!(&x);
             match x.clone() {
                 DocumentDiagnosticReportResult::Report(
                     DocumentDiagnosticReport::Full(
@@ -483,7 +484,10 @@ pub fn run(
                             data_support: Some(true),
                             resolve_support: Some(CodeActionCapabilityResolveSupport { properties: vec!["edit".to_string()] }),
                             code_action_literal_support: Some(CodeActionLiteralSupport { code_action_kind: CodeActionKindLiteralSupport { value_set: [
-                                "", "Empty", "QuickFix", "Refactor", "RefactorExtract", "RefactorInline", "RefactorRewrite", "Source", "SourceOrganizeImports", "quickfix", "refactor", "refactor.extract", "refactor.inline", "refactor.rewrite", "source", "source.organizeImports"
+                                "", "Empty", "QuickFix", "Refactor",
+                                "RefactorExtract", "RefactorInline", "RefactorRewrite", "Source",
+                                "SourceOrganizeImports", "quickfix", "refactor", "refactor.extract",
+                                "refactor.inline", "refactor.rewrite", "source", "source.organizeImports"
                             ].map(String::from).into()} }),
                            ..default()
                         }
@@ -648,6 +652,7 @@ pub fn run(
                     "rangeExclusiveHints": { "enable": true },
                     "closureCaptureHints": { "enable": true },
                 },
+                "assist": { "preferSelf": true },
                 "checkOnSave": true,
                 "diagnostics": { "enable": true },
                 "semanticHighlighting": {

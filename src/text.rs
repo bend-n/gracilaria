@@ -487,7 +487,7 @@ impl TextArea {
                 self.vo +=
                     x.new_text.chars().filter(|&x| x == '\n').count();
             }
-            let removed = dbg!(e - b);
+            let removed = e - b;
             self.cursor += x.new_text.chars().count();
             self.cursor -= removed; // compensate
             // text.cursor += additional.new_text.chars().count(); // compensate

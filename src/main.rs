@@ -1,6 +1,7 @@
 // this looks pretty good though
 #![feature(tuple_trait, unboxed_closures, fn_traits)]
 #![feature(
+    current_thread_id,
     vec_try_remove,
     iter_next_chunk,
     iter_array_chunks,
@@ -33,7 +34,6 @@
 )]
 #![allow(incomplete_features, redundant_semicolons)]
 use std::borrow::Cow;
-use std::collections::HashMap;
 use std::iter::once;
 mod act;
 use std::num::NonZeroU32;
@@ -84,7 +84,8 @@ mod sni;
 mod text;
 mod winit_app;
 fn main() {
-    let x = 4;
+    let _x = 4;
+    // let x = HashMap::new();
     unsafe { std::env::set_var("CARGO_UNSTABLE_RUSTC_UNICODE", "true") };
     env_logger::init();
     // lsp::x();
@@ -211,6 +212,8 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
         .and_then(|x| x.canonicalize().ok());
     let c = workspace.as_ref().zip(origin.clone()).map(
         |(workspace, origin)| {
+            let dh = std::panic::take_hook();
+            let main = std::thread::current_id();
             // let mut c = Command::new("rust-analyzer")
             //     .stdin(Stdio::piped())
             //     .stdout(Stdio::piped())
@@ -221,9 +224,15 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
             std::thread::Builder::new()
                 .name("Rust Analyzer".into())
                 .stack_size(1024 * 1024 * 8)
-                .spawn(|| {
-                    std::panic::set_hook(Box::new(|info| {
-                        println!("RA panic @ {}", info.location().unwrap());
+                .spawn(move || {
+                    let ra = std::thread::current_id();
+                    std::panic::set_hook(Box::new(move |info| {
+                        // iz
+                        if std::thread::current_id() == main {
+                            dh(info);
+                        } else if std::thread::current_id() == ra || std::thread::current().name().is_some_and(|x| x.starts_with("RA")) {
+                            println!("RA panic @ {}", info.location().unwrap());
+                        }
                     }));
                     rust_analyzer::bin::run_server(b)
                 })
@@ -380,8 +389,8 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                 for rq in l.req_rx.try_iter() {
                     match rq {
                         LRq { method: "workspace/diagnostic/refresh", .. } => {
-                            let x = l.pull_diag(o.into(), diag.result.clone());
-                            diag.request(l.runtime.spawn(x));
+                            // let x = l.pull_diag(o.into(), diag.result.clone());
+                            // diag.request(l.runtime.spawn(x));
                         },
                         rq =>
                             log::debug!("discarding request {rq:?}"),
@@ -398,11 +407,17 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                 };
                 if let State::CodeAction(x) = &mut state {
                 x.poll(|x, _| {
-                     Some(act::CodeActions {selection:0, vo:0, inner: x.ok()??.into_iter().map(|x| match x {
+                    let lems: Vec<CodeAction> = x.ok()??.into_iter().map(|x| match x {
                          CodeActionOrCommand::CodeAction(x) => x,
                          _ => panic!("alas we dont like these"),
-                     }).collect(),})
-                },&l.runtime);
+                     }).collect();
+                    if lems.is_empty() {
+                        bar.last_action = "no code actions available".into();
+                        None
+                    } else {
+                        Some(act::CodeActions::new(lems))
+                    }
+                },&l.runtime); 
                 }
                 def.poll(|x, _|
                     x.ok().flatten().and_then(|x| match &x {
@@ -704,7 +719,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                                 match diag.data.as_ref().unwrap_or_default().get("rendered") {
                                     Some(x) if let Some(x) = x.as_str() => {
                                         let mut t = pattypan::term::Terminal::new((95, (r.saturating_sub(5)) as _), false);
-                                        for b in x.replace('\n', "\r\n").bytes(){ t.rx(b,std::fs::File::open("/dev/null").unwrap().as_fd()); }
+                                        for b in x.replace('\n', "\r\n").replace("⸬", ":").replace("/home/os", "").bytes(){ t.rx(b,std::fs::File::open("/dev/null").unwrap().as_fd()); }
                                         let y_lim = t.cells.rows().position(|x| x.iter().all(_.letter.is_none())).unwrap_or(20);
                                         let c =t.cells.c() as usize;
                                         let Some(x_lim) = t.cells.rows().map(_.iter().rev().take_while(_.letter.is_none()).count()).map(|x|
@@ -756,14 +771,12 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             State::CodeAction(Rq{ result :Some(x), ..}) => 'out: {
                                 let m = x.maxc();
                                 let c = x.write(m);
-                                dbg!(&c);
                                 let (_x, _y) = text.cursor_visual();
                                 let _x = _x + text.line_number_offset()+1;
                                 let Some(_y) = _y.checked_sub(text.vo) else { 
                                     println!("rah");
                                     break 'out };
                                 let Ok((is_above,left, top, w, mut h)) = place_around((_x, _y), &mut fonts, i.as_mut(), &c, m, ppem, ls, 0., 0., 0.)else { println!("ra?"); break 'out};
-                                dbg!(c);
                                 i.r#box((left .saturating_sub(1) as _, top.saturating_sub(1) as _), w as _,h as _, BORDER);
                             },
                             _ =>{},
@@ -1039,6 +1052,7 @@ hovering.request = (DropH::new(handle), cursor_position).into();
                             if let Some((lsp, path)) = lsp!() {
                                 sig_help.request(lsp.runtime.spawn(window.redraw_after(lsp.request_sig_help(path, text.cursor()))));
                             }
+                            hist.last.cursor = text.cursor;
                             text.setc();
                         }
                         Some(Do::ExtendSelectionToMouse) => {
@@ -1145,8 +1159,14 @@ hovering.request = (DropH::new(handle), cursor_position).into();
                         Some(Do::CodeAction) => {
                             if let Some((lsp, f)) = lsp!() {
                                 let r = lsp.request::<lsp_request!("textDocument/codeAction")>(&CodeActionParams {
-                                    text_document: f.tid(), range: text.to_l_range(text.beginning_of_line(text.cursor).unwrap()
-                                    ..text.eol(text.cursor)).unwrap(), context: CodeActionContext {  trigger_kind: Some(CodeActionTriggerKind::INVOKED),  ..default() }, work_done_progress_params: default(), partial_result_params: default() }).unwrap();
+                                    text_document: f.tid(), range: text.to_l_range(text.cursor..text.cursor).unwrap(), context: CodeActionContext {
+                                        trigger_kind: Some(CodeActionTriggerKind::INVOKED),
+                                        // diagnostics: if let Some((lsp, p)) = lsp!() && let uri = Url::from_file_path(p).unwrap() && let Some(diag) = lsp.diagnostics.get(&uri, &lsp.diagnostics.guard()) { dbg!(diag.iter().filter(|x| {
+                                        
+                                        //                                             text.l_range(x.range).unwrap().contains(&text.cursor)
+                                        //                                         }).cloned().collect()) } else { vec![] },
+                                        ..default()
+                                    }, work_done_progress_params: default(), partial_result_params: default() }).unwrap();
                                 let mut r2 = Rq::default();
                                 
                                 r2.request(lsp.runtime.spawn(
@@ -1158,29 +1178,32 @@ hovering.request = (DropH::new(handle), cursor_position).into();
                                     );
                             }
                         }
-                        Some(Do::CASelect(act)) if let Some((lsp,f)) = lsp!() => {
+                        Some(Do::CASelectLeft) => {
+                            let State::CodeAction(Rq{ result: Some(c), ..  }) = &mut state else { panic!()};
+                            c.left();
+                        }
+                        Some(Do::CASelectRight) =>'out: {
+                            let Some((lsp,f)) = lsp!() else {unreachable!()};
+                            let State::CodeAction(Rq{ result: Some(c), ..  }) = &mut state else { panic!()};
+                            let Some(act) = c.right() else { break 'out };
+                            let act = act.clone();
+                            state = State::Default;
+                            hist.last.cursor = text.cursor;
                             hist.test_push(&text);
-                            let act = act.sel();
                             let act = lsp.runtime.block_on(
                                 lsp.request::<CodeActionResolveRequest>(&act).unwrap().0
                             ).unwrap();
                             let mut f_ = |edits: &[SnippetTextEdit]|{ 
-                                let mut first = false;
+                                // let mut first = false;
                                 for SnippetTextEdit { text_edit, insert_text_format ,..}in edits {
                                     match insert_text_format { 
                                         Some(InsertTextFormat::SNIPPET) => {
                                             text.apply_snippet(&text_edit).unwrap()
                                         },
                                         _ => {
-                                            if first { 
-                                                let (b, e) = text.apply(&text_edit).unwrap();
-                                                log::error!("dont account for this case yet");
-                                            } else {
-                                                text.apply_adjusting(text_edit).unwrap();
-                                            }
+                                            text.apply_adjusting(text_edit).unwrap();
                                         }
                                     }
-                                    first = false;
                                 }
                             };
                             match act.edit {
@@ -1219,14 +1242,13 @@ hovering.request = (DropH::new(handle), cursor_position).into();
                             change!();
                             hist.record(&text);
                         }
-                        Some(Do::CASelect(_)) => {}
                         Some(Do::CASelectNext) => {
                             let State::CodeAction(Rq{ result: Some(c), ..  }) = &mut state else { panic!()};
-                            c.next();
+                            c.down();
                         }
                         Some(Do::CASelectPrev) => {
                             let State::CodeAction(Rq{ result: Some(c), ..  }) = &mut state else { panic!()};
-                            c.back();
+                            c.up();
                         }
                         Some(Do::Reinsert | Do::GoToDefinition) => panic!(),
                         Some(Do::Save) => match &origin {
@@ -1577,11 +1599,12 @@ Default => {
     K(_) => _ [Edit],
     M(_) => _,
 },
-CodeAction(Rq<act::CodeActions, Option<CodeActionResponse>,()> => Rq { result : Some(act), request: None, }) => {
+CodeAction(Rq<act::CodeActions, Option<CodeActionResponse>,()> => Rq { result : Some(_x), request: None, }) => {
     K(Key::Named(Tab) if shift()) => _ [CASelectPrev],
     K(Key::Named(ArrowDown | Tab)) => _ [CASelectNext],
     K(Key::Named(ArrowUp)) => _ [CASelectPrev],
-    K(Key::Named(Enter)) => Default [CASelect(act::CodeActions => act)],
+    K(Key::Named(Enter | ArrowRight)) => _ [CASelectRight],
+    K(Key::Named(ArrowLeft)) => _ [CASelectLeft],
 },
 CodeAction(Rq<act::CodeActions, Option<CodeActionResponse>,(), RequestError<lsp_request!("textDocument/codeAction")>> => rq) => {
     K(Key::Named(Escape)) => Default,
