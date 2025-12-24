@@ -5,7 +5,6 @@
     vec_try_remove,
     iter_next_chunk,
     iter_array_chunks,
-    array_windows,
     lazy_type_alias,
     const_convert,
     const_result_trait_fn,
@@ -881,6 +880,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                         {
                             draw_at(x, y, &cursor);
                         }
+                        window.pre_present_notify();
                         let buffer = surface.buffer_mut().unwrap();
                         let x = unsafe {
                             std::slice::from_raw_parts_mut(
@@ -1374,12 +1374,14 @@ hovering.request = (DropH::new(handle), cursor_position).into();
                             text.setc();
                             text.insert(&c);
                             hist.push_if_changed(&text);
+                            change!();
                         }
                         Some(Do::Delete(x)) => {
                             hist.push_if_changed(&text);
                             text.cursor = x.start;
                             _ = text.remove(x);
                             hist.push_if_changed(&text);
+                            change!();
                         }
                         Some(Do::Copy(x)) => {
                             clipp::copy(text.rope.slice(x).to_string());
