@@ -1,3 +1,4 @@
+use std::cmp::Reverse;
 use std::iter::repeat;
 use std::mem::MaybeUninit;
 use std::sync::LazyLock;
@@ -18,41 +19,50 @@ pub struct Complete {
     pub selection: usize,
     pub vo: usize,
 }
-impl Complete {
-    pub fn next(&mut self, f: &str) {
-        let n = filter(self, f).count();
-        self.selection += 1;
-        if self.selection == n {
-            self.vo = 0;
-            self.selection = 0;
-        }
-        if self.selection >= self.vo + N {
-            self.vo += 1;
-        }
+#[lower::apply(saturating)]
+pub fn next<const N: usize>(n: usize, sel: &mut usize, vo: &mut usize) {
+    *sel += 1;
+    if *sel == n {
+        *vo = 0;
+        *sel = 0;
     }
-
-    pub fn sel(&self, f: &str) -> &CompletionItem {
-        score(filter(self, f), f)[self.selection].1
+    if *sel >= *vo + N {
+        *vo += 1;
     }
-
-    #[lower::apply(saturating)]
-    pub fn back(&mut self, f: &str) {
-        let n = filter(self, f).count();
-        if self.selection == 0 {
-            self.vo = n - N;
-            self.selection = n - 1;
-        } else {
-            self.selection -= 1;
-            if self.selection < self.vo {
-                self.vo -= 1;
-            }
+}
+#[lower::apply(saturating)]
+pub fn back<const N: usize>(n: usize, sel: &mut usize, vo: &mut usize) {
+    if *sel == 0 {
+        *vo = n - N;
+        *sel = n - 1;
+    } else {
+        *sel -= 1;
+        if *sel < *vo {
+            *vo -= 1;
         }
     }
 }
-fn score<'a>(
-    x: impl Iterator<Item = &'a CompletionItem>,
+impl Complete {
+    pub fn next(&mut self, f: &str) {
+        let n = filter_c(self, f).count();
+        next::<N>(n, &mut self.selection, &mut self.vo);
+    }
+
+    pub fn sel(&self, f: &str) -> &CompletionItem {
+        score_c(filter_c(self, f), f)[self.selection].1
+    }
+
+    pub fn back(&mut self, f: &str) {
+        let n = filter_c(self, f).count();
+        back::<N>(n, &mut self.selection, &mut self.vo);
+    }
+}
+
+pub fn score<'a, T: 'a>(
+    x: impl Iterator<Item = &'a T>,
+    f: impl Fn(&'a T) -> &'a str,
     filter: &'_ str,
-) -> Vec<(u32, &'a CompletionItem, Vec<u32>)> {
+) -> Vec<(u32, &'a T, Vec<u32>)> {
     #[thread_local]
     static mut MATCHER: LazyLock<nucleo::Matcher> =
         LazyLock::new(|| nucleo::Matcher::new(nucleo::Config::DEFAULT));
@@ -66,7 +76,7 @@ fn score<'a>(
         .map(move |y| {
             let mut utf32 = vec![];
             // std::env::args().nth(1).unwrap().as_bytes().fi .fold(0, |acc, x| acc * 10 + x - b'0');
-            let hay = y.filter_text.as_deref().unwrap_or(&y.label);
+            let hay = f(y);
             let mut indices = vec![];
             let score = p
                 .indices(
@@ -85,26 +95,28 @@ fn score<'a>(
     //     "com",
     //     v.iter().map(|x| x.1.label.clone() + "\n").collect::<String>(),
     // );
-    v.sort_by_key(|x| x.0);
-    v.reverse();
+    v.sort_by_key(|x| Reverse(x.0));
     v
 }
-fn filter<'a>(
-    completion: &'a Complete,
+
+fn com_as_str(y: &CompletionItem) -> &str {
+    y.filter_text.as_deref().unwrap_or(&y.label)
+}
+fn score_c<'a>(
+    x: impl Iterator<Item = &'a CompletionItem>,
     filter: &'_ str,
-) -> impl Iterator<Item = &'a CompletionItem> {
-    let x = &completion.r;
-    let y = match x {
-        CompletionResponse::Array(x) => x,
-        CompletionResponse::List(x) => &x.items,
-    };
-    y.iter().filter(|y| {
+) -> Vec<(u32, &'a CompletionItem, Vec<u32>)> {
+    score(x, com_as_str, filter)
+}
+
+pub fn filter<'a, T: 'a>(
+    i: impl Iterator<Item = &'a T>,
+    f: impl Fn(&'a T) -> &'a str,
+    filter: &'_ str,
+) -> impl Iterator<Item = &'a T> {
+    i.filter(move |y| {
         filter.is_empty()
-            || y.filter_text
-                .as_deref()
-                .unwrap_or(&y.label)
-                .chars()
-                .any(|x| filter.chars().contains(&x))
+            || f(y).chars().any(|x| filter.chars().contains(&x))
         // .collect::<HashSet<_>>()
         // .intersection(&filter.chars().collect())
         // .count()
@@ -112,9 +124,21 @@ fn filter<'a>(
     })
 }
 
+fn filter_c<'a>(
+    completion: &'a Complete,
+    f: &'_ str,
+) -> impl Iterator<Item = &'a CompletionItem> {
+    let x = &completion.r;
+    let y = match x {
+        CompletionResponse::Array(x) => x,
+        CompletionResponse::List(x) => &x.items,
+    };
+    filter(y.iter(), com_as_str, f)
+}
+
 pub fn s(completion: &Complete, c: usize, f: &str) -> Vec<Cell> {
     let mut out = vec![];
-    let i = score(filter(completion, f), f)
+    let i = score_c(filter_c(completion, f), f)
         .into_iter()
         .zip(0..)
         .skip(completion.vo)

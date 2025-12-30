@@ -35,6 +35,7 @@
 use std::borrow::Cow;
 use std::iter::once;
 mod act;
+mod sym;
 use std::num::NonZeroU32;
 use std::os::fd::AsFd;
 use std::path::{Path, PathBuf};
@@ -73,6 +74,7 @@ use winit::window::Icon;
 use crate::bar::Bar;
 use crate::hov::Hovr;
 use crate::lsp::{RedrawAfter, RequestError, RqS};
+use crate::sym::Symbols;
 use crate::text::{Diff, Mapping, TextArea, col, is_word};
 mod bar;
 pub mod com;
@@ -222,7 +224,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
             let (a, b) = Connection::memory();
             std::thread::Builder::new()
                 .name("Rust Analyzer".into())
-                .stack_size(1024 * 1024 * 8)
+                .stack_size(1024 * 1024 * 8) 
                 .spawn(move || {
                     let ra = std::thread::current_id();
                     std::panic::set_hook(Box::new(move |info| {
@@ -404,6 +406,15 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                         f.ok().flatten().map(|x| {Complete {r:x,start:c,selection:0,vo:0,}})
                     }, &l.runtime);
                 };
+                
+                if let State::Symbols(x) = &mut state {
+                    x.poll(|x, (_, p)| x.ok().map(|r| {
+                        sym::Symbols {
+                            tedit: p.map(_.tedit).unwrap_or_default(),
+                            r,..default() // dont care about previous selection
+                        }
+                    }), &l.runtime);
+                }
                 if let State::CodeAction(x) = &mut state {
                 x.poll(|x, _| {
                     let lems: Vec<CodeAction> = x.ok()??.into_iter().map(|x| match x {
@@ -683,7 +694,9 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             let mut r = c.len()/columns;
                             assert_eq!(c.len()%columns, 0);
                             let (w, h) = dsb::size(&fonts.regular, ppem, ls, (columns, r));
-                            if w >= window.inner_size().width as usize || position.1 + h >= window.inner_size().height as usize {
+                            if w >= window.inner_size().width as usize
+                            //  || position.1 + h >= window.inner_size().height as usize 
+                             {
                                 unsafe { dsb::render_owned(c, (columns, c.len() / columns), 18.0, fonts, 1.1, true).save("fail.png") };
                                 return Err(());
                             }
@@ -778,6 +791,15 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                                 let Ok((is_above,left, top, w, mut h)) = place_around((_x, _y), &mut fonts, i.as_mut(), &c, m, ppem, ls, 0., 0., 0.)else { println!("ra?"); break 'out};
                                 i.r#box((left .saturating_sub(1) as _, top.saturating_sub(1) as _), w as _,h as _, BORDER);
                             },
+                            State::Symbols(Rq { result: Some(x),..}) => 'out: {
+                                let ws =  workspace.as_deref().unwrap();
+                                let c = x.cells(50,ws);
+                                // let (_x, _y) = text.cursor_visual();
+                                let _x = 0;
+                                let _y = r - 1;
+                                let Ok((is_above,left, top, w, mut h)) = place_around((_x, _y), &mut fonts, i.as_mut(), &c, 50, ppem, ls, 0., 0., 0.)else { println!("ra?"); break 'out};
+                                i.r#box((left .saturating_sub(1) as _, top.saturating_sub(1) as _), w as _,h as _, BORDER);
+                            }
                             _ =>{},
                         }
                         let com = match complete {
@@ -1137,13 +1159,18 @@ hovering.request = (DropH::new(handle), cursor_position).into();
                         },
                     ..
                 } if event.state == ElementState::Pressed => {
+                    // if event.logical_key == Key::Named(NamedKey::F12) {
+                    //     lsp.unwrap().runtime.spawn(async move {
+                    //         lsp.unwrap().symbols().await;
+                    //     });
+                    // }
                     if matches!(
                         event.logical_key,
                         Key::Named(Shift | Alt | Control | Super)
                     ) {
                         return;
                     }
-                    let mut o = state
+                    let mut o: Option<Do> = state
                         .consume(Action::K(event.logical_key.clone()))
                         .unwrap();
                     match o {
@@ -1156,6 +1183,62 @@ hovering.request = (DropH::new(handle), cursor_position).into();
                         _ => {}
                     }
                     match o {
+                        Some(Do::Symbols) => {
+                            if let Some(lsp) = lsp {
+                                state = State::Symbols(Rq::new(lsp.runtime.spawn(window.redraw_after(lsp.symbols("".into())))));
+                            }
+                        }
+                        Some(Do::SymbolsHandleKey) => {
+                            if let Some(lsp) = lsp {
+                            let State::Symbols(Rq { result :Some(x), request}) = &mut state else {unreachable!()};
+                            let ptedit = x.tedit.rope.clone();
+                            if handle2(&event.logical_key, &mut x.tedit).is_some() || ptedit != x.tedit.rope {
+                                *request = Some((DropH::new(lsp.runtime.spawn(window.redraw_after(lsp.symbols(x.tedit.rope.to_string())))), ()));
+                                // state = State::Symbols(Rq::new(lsp.runtime.spawn(lsp.symbols("".into()))));
+                            }
+                            }
+                        }
+                         Some(Do::SymbolsSelectNext)  => {
+                            let State::Symbols(Rq { result :Some(x), ..}) = &mut state else {unreachable!()};
+                            x.next();
+                         },
+                         Some(Do::SymbolsSelectPrev)  => {
+                            let State::Symbols(Rq { result :Some(x), ..}) = &mut state else {unreachable!()};
+                            x.back();
+                         },
+                        Some(Do::SymbolsSelect) 
+                         => {                            let State::Symbols(Rq { result :Some(x), ..}) = &mut state else {unreachable!()};
+                            let x = x.sel(); // TODO dedup 
+                             let _: anyhow::Result<()> = try {
+                                let f = x.location.uri.to_file_path().map_err(|()| anyhow::anyhow!("dammit"))?.canonicalize().map_err(anyhow::Error::from)?;
+                            origin = Some(f.clone());                            
+                            let r = text.r;
+                            text = default();
+                            text.r = r;
+                            let new = std::fs::read_to_string(f).map_err(anyhow::Error::from)?;
+                            text.insert(&new);
+                            text.cursor = text.l_position(x.location.range.start).ok_or(anyhow::anyhow!("dangit"))?;
+                            text.scroll_to_cursor_centering();
+                            hist = Hist {
+                                history: vec![],
+                                redo_history: vec![],
+                                last: text.clone(),
+                                last_edit: Instant::now(),
+                                changed: false,
+                            };
+                            complete = CompletionState::None;
+                            mtime = modify!();
+
+                            lsp!().map(|(x, origin)| {
+                                (def, semantic_tokens, inlay, sig_help, complete, hovering) = (default(), default(), default(), default(), default(), default());
+                                x.open(&origin,new).unwrap();
+                                x.rq_semantic_tokens(&mut semantic_tokens, origin, Some(window.clone())).unwrap();
+                            });
+                            state = State::Default;
+                            bar.last_action = "open".to_string();
+                        };
+                        
+                         },
                         Some(Do::CodeAction) => {
                             if let Some((lsp, f)) = lsp!() {
                                 let r = lsp.request::<lsp_request!("textDocument/codeAction")>(&CodeActionParams {
@@ -1590,6 +1673,7 @@ Default => {
     K(Key::Character(x) if x == "f" && ctrl()) => Procure((default(), InputRequest::Search)),
     K(Key::Character(x) if x == "o" && ctrl()) => Procure((default(), InputRequest::OpenFile)),
     K(Key::Character(x) if x == "c" && ctrl()) => _,
+    K(Key::Character(x) if x == "l" && ctrl()) => _ [Symbols],
     K(Key::Character(x) if x == "." && ctrl()) => _ [CodeAction],
     K(Key::Named(ArrowUp | ArrowLeft | ArrowDown | ArrowRight | Home | End) if shift()) => Selection(Range<usize> => 0..0) [StartSelection],
     M(MouseButton => MouseButton::Left if shift()) => Selection(Range<usize> => 0..0) [StartSelection],
@@ -1601,14 +1685,28 @@ Default => {
     K(_) => _ [Edit],
     M(_) => _,
 },
-CodeAction(Rq<act::CodeActions, Option<CodeActionResponse>,()> => Rq { result : Some(_x), request: None, }) => {
+Symbols(Rq { result: Some(_x), request: None }) => {
+    K(Key::Named(Tab) if shift()) => _ [SymbolsSelectNext],
+    K(Key::Named(ArrowDown)) => _ [SymbolsSelectNext],
+    K(Key::Named(ArrowUp | Tab)) => _ [SymbolsSelectPrev],
+    K(Key::Named(Enter)) => _ [SymbolsSelect],
+    K(Key::Named(Escape)) => Default,
+    K(_) => _ [SymbolsHandleKey],
+},
+Symbols(Rq::<Symbols, Vec<SymbolInformation>, (), RequestError<lsp_request!("workspace/symbol")>> => _rq) => {
+    K(Key::Named(Escape)) => Default,
+    C(_) => _,
+    M(_) => _,
+    K(_) => _,
+},
+CodeAction(Rq { result : Some(_x), request }) => {
     K(Key::Named(Tab) if shift()) => _ [CASelectPrev],
     K(Key::Named(ArrowDown | Tab)) => _ [CASelectNext],
     K(Key::Named(ArrowUp)) => _ [CASelectPrev],
     K(Key::Named(Enter | ArrowRight)) => _ [CASelectRight],
     K(Key::Named(ArrowLeft)) => _ [CASelectLeft],
 },
-CodeAction(Rq<act::CodeActions, Option<CodeActionResponse>,(), RequestError<lsp_request!("textDocument/codeAction")>> => rq) => {
+CodeAction(RqS<act::CodeActions, lsp_request!("textDocument/codeAction")> => rq) => {
     K(Key::Named(Escape)) => Default,
     C(_) => _,
     M(_) => _,

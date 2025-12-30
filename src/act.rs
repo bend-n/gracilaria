@@ -21,6 +21,7 @@ pub struct CodeActions {
     pub vo: usize,
 }
 use crate::FG;
+use crate::com::{back, next};
 use crate::text::{col, set_a};
 
 const N: usize = 13;
@@ -47,31 +48,31 @@ impl CodeActions {
     }
 
     pub fn down(&mut self) {
-        let mut adj = |y: &mut usize, max| {
-            *y += 1;
-            if *y == max {
-                self.vo = 0;
-                *y = 0;
-            }
-            if *y >= self.vo + 13 {
-                self.vo += 1;
-            }
-        };
+        // let mut adj = |y: &mut usize, max| {
+        //     *y += 1;
+        //     if *y == max {
+        //         self.vo = 0;
+        //         *y = 0;
+        //     }
+        //     if *y >= self.vo + 13 {
+        //         self.vo += 1;
+        //     }
+        // };
         match &mut self.inner {
             N::Many(x, Entry::Outside(y), so) => {
                 let n = x.len();
-                adj(y, n);
+                next::<{ N }>(n, y, &mut self.vo);
             }
             N::Many(x, Entry::Inside(g_sel), _) => {
                 let z = &x[*g_sel];
                 let n = z.len();
 
                 // TODO: think about this
-                adj(&mut self.selection, n);
+                next::<{ N }>(n, &mut self.selection, &mut self.vo);
             }
             N::One(x) => {
                 let n = x.len();
-                adj(&mut self.selection, n);
+                next::<{ N }>(n, &mut self.selection, &mut self.vo);
             }
         };
     }
@@ -109,28 +110,12 @@ impl CodeActions {
     pub fn up(&mut self) {
         if let Some(x) = self.innr() {
             let n = x.len();
-            if self.selection == 0 {
-                self.vo = n - N;
-                self.selection = n - 1;
-            } else {
-                self.selection -= 1;
-                if self.selection < self.vo {
-                    self.vo -= 1;
-                }
-            }
+            back::<{ N }>(n, &mut self.selection, &mut self.vo);
         } else {
             match &mut self.inner {
                 N::Many(_, Entry::Outside(y), z) => {
                     let n = z.len();
-                    if *y == 0 {
-                        self.vo = n - N;
-                        *y = n - 1;
-                    } else {
-                        *y = *y - 1;
-                        if *y < self.vo {
-                            self.vo -= 1;
-                        }
-                    }
+                    back::<{ N }>(n, y, &mut self.vo);
                 }
                 _ => unreachable!(),
             }

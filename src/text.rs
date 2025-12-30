@@ -210,7 +210,8 @@ impl Diff {
         let (cu, co, vo) = self.data[redo as usize];
         t.cursor = cu;
         t.column = co;
-        t.vo = vo;
+        t.scroll_to_cursor_centering();
+        // t.vo = vo;
     }
 }
 
@@ -1768,7 +1769,7 @@ impl<'a> Output<'a> {
 pub trait CoerceOption<T> {
     fn coerce(self) -> impl Iterator<Item = T>;
 }
-impl<I: Iterator<Item = T>, T> CoerceOption<T> for Option<I> {
+impl<I: IntoIterator<Item = T>, T> CoerceOption<T> for Option<I> {
     #[allow(refining_impl_trait)]
     fn coerce(self) -> std::iter::Flatten<std::option::IntoIter<I>> {
         self.into_iter().flatten()

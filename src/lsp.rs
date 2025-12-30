@@ -354,7 +354,21 @@ impl Client {
             }
         }
     }
-
+    pub fn symbols(&'static self, f: String) -> impl Future<Output = Result<Vec<SymbolInformation>, RequestError<lsp_request!("workspace/symbol")>>> {
+        self.request::<lsp_request!("workspace/symbol")>(&WorkspaceSymbolParams {
+            query: f,
+            search_scope: Some(WorkspaceSymbolSearchScope::Workspace),
+            search_kind: Some(WorkspaceSymbolSearchKind::AllSymbols),
+            ..Default::default()
+        }).unwrap().0
+          .map(|x| x.map(|x| x.map(|x| {
+            // std::fs::write("syms", serde_json::to_string_pretty(&x).unwrap());
+            match x {
+                WorkspaceSymbolResponse::Flat(x) => x,
+                WorkspaceSymbolResponse::Nested(_) => unreachable!(),
+            }
+        }).unwrap_or_default()))
+    }
     pub fn inlay(
         &'static self,
         f: &Path,
@@ -464,6 +478,14 @@ pub fn run(
                     ..default()
                 }),
                 workspace: Some(WorkspaceClientCapabilities {
+                    symbol: Some(WorkspaceSymbolClientCapabilities { 
+                        symbol_kind: Some(SymbolKindCapability { value_set: Some(SymbolKind::ALL.to_vec()) }),
+                        tag_support: Some(TagSupport { value_set: SymbolTag::ALL.to_vec() }),
+                        resolve_support: Some(WorkspaceSymbolResolveSupportCapability {
+                            properties: vec!["location".into()],
+                        }),
+                        ..default()
+                    }),
                     diagnostic: Some(DiagnosticWorkspaceClientCapabilities { refresh_support: Some(true) }),
                     inlay_hint: Some(InlayHintWorkspaceClientCapabilities { refresh_support: Some(true) }),
                     workspace_edit: Some(
@@ -629,6 +651,7 @@ pub fn run(
                     "codeActionGroup": true,
                     "serverStatusNotification": true,
                     "hoverActions": true,
+                    "workspaceSymbolScopeKindFiltering": true,
                 }}),
                 ..default()
             },
@@ -664,6 +687,11 @@ pub fn run(
                         "enable": true
                     }
                 },
+                "workspace": {
+                    "symbol": {
+                        "search": { "limit": 1024 }
+                    }
+                },
                 "showUnlinkedFileNotification": false,
                 "completion": {
                     "fullFunctionSignatures": { "enable": true, },
@@ -688,7 +716,7 @@ pub fn run(
         x.capabilities.position_encoding,
         Some(PositionEncodingKind::UTF8)
     );
-    c.initialized = Some(x);
+    c.initialized = Some(dbg!(x));
     c.notify::<lsp_types::notification::Initialized>(
         &InitializedParams {},
     )

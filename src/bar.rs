@@ -1,10 +1,11 @@
-use std::iter::repeat;
+use std::iter::{chain, repeat};
 
 use dsb::Cell;
 use dsb::cell::Style;
 use lsp_types::WorkDoneProgress;
 
-use crate::lsp::Client;
+use crate::lsp::{Client, Rq};
+use crate::sym::Symbols;
 use crate::text::TextArea;
 
 pub struct Bar {
@@ -93,6 +94,27 @@ impl Bar {
                             style: Style { flags: z, ..y.style },
                         }
                     });
+            }
+            State::Symbols(Rq {
+                result: Some(Symbols { tedit, .. }),
+                request,
+            }) => {
+                chain(
+                    [match request {
+                        Some(_) => '…',
+                        None => '_',
+                    }],
+                    "filter: ".chars(),
+                )
+                .zip(repeat(Style::BOLD | Style::ITALIC))
+                .chain(s(&tedit.rope.to_string()))
+                .zip(row)
+                .for_each(|((x, z), y)| {
+                    *y = Cell {
+                        letter: Some(x),
+                        style: Style { flags: z, ..y.style },
+                    }
+                });
             }
             State::RequestBoolean(x) => {
                 x.prompt()
