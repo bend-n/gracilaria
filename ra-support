@@ -39,7 +39,7 @@ InitializeResult {
         completion_provider: Some(
             CompletionOptions {
                 resolve_provider: Some(
-                    false,
+                    true,
                 ),
                 trigger_characters: Some(
                     [
@@ -56,7 +56,7 @@ InitializeResult {
                 completion_item: Some(
                     CompletionOptionsCompletionItem {
                         label_details_support: Some(
-                            false,
+                            true,
                         ),
                     },
                 ),
@@ -113,8 +113,37 @@ InitializeResult {
             ),
         ),
         code_action_provider: Some(
-            Simple(
-                true,
+            Options(
+                CodeActionOptions {
+                    code_action_kinds: Some(
+                        [
+                            CodeActionKind(
+                                "",
+                            ),
+                            CodeActionKind(
+                                "quickfix",
+                            ),
+                            CodeActionKind(
+                                "refactor",
+                            ),
+                            CodeActionKind(
+                                "refactor.extract",
+                            ),
+                            CodeActionKind(
+                                "refactor.inline",
+                            ),
+                            CodeActionKind(
+                                "refactor.rewrite",
+                            ),
+                        ],
+                    ),
+                    work_done_progress_options: WorkDoneProgressOptions {
+                        work_done_progress: None,
+                    },
+                    resolve_provider: Some(
+                        true,
+                    ),
+                },
             ),
         ),
         code_lens_provider: Some(
@@ -382,6 +411,9 @@ InitializeResult {
                                 "macroBang",
                             ),
                             SemanticTokenType(
+                                "negation",
+                            ),
+                            SemanticTokenType(
                                 "parenthesis",
                             ),
                             SemanticTokenType(
@@ -430,6 +462,9 @@ InitializeResult {
                             ),
                             SemanticTokenModifier(
                                 "defaultLibrary",
+                            ),
+                            SemanticTokenModifier(
+                                "deprecated",
                             ),
                             SemanticTokenModifier(
                                 "associated",
@@ -508,7 +543,7 @@ InitializeResult {
                             work_done_progress: None,
                         },
                         resolve_provider: Some(
-                            false,
+                            true,
                         ),
                     },
                 ),
@@ -530,7 +565,6 @@ InitializeResult {
         ),
         experimental: Some(
             Object {
-                "childModules": Bool(true),
                 "externalDocs": Bool(true),
                 "hoverRange": Bool(true),
                 "joinLines": Bool(true),
@@ -539,6 +573,7 @@ InitializeResult {
                 "onEnter": Bool(true),
                 "openCargoToml": Bool(true),
                 "parentModule": Bool(true),
+                "childModules": Bool(true),
                 "runnables": Object {
                     "kinds": Array [
                         String("cargo"),
@@ -553,7 +588,7 @@ InitializeResult {
         ServerInfo {
             name: "rust-analyzer",
             version: Some(
-                "1.92.0-nightly (f6aa851 2025-10-07)",
+                "0.0.0 (8bffb99c3f 2025-12-15)",
             ),
         },
     ),

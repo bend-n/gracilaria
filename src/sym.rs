@@ -127,7 +127,7 @@ fn r(
     let ds: Style = Style { bg: bg, color: FG, flags: 0 };
     let d: Cell = Cell { letter: None, style: ds };
     let mut b = vec![d; c];
-    const MAP: [([u8; 3], [u8; 3], &str); 51] = {
+    const MAP: [([u8; 3], [u8; 3], &str); 70] = {
         car::map!(
             amap::amap! {
             const { SymbolKind::FILE.0 as usize } => ("#9a9b9a", " "),
@@ -148,6 +148,9 @@ fn r(
             const { SymbolKind::OPERATOR.0 as usize } => ("#F29E74", "+ "),
             const { SymbolKind::TYPE_PARAMETER.0 as usize } => ("#9a9b9a", "T "),
             // const { SymbolKind::KEYWORD.0 as usize } => ("#FFAD66", "as"),
+
+            const { SymbolKind::MACRO.0 as usize } => ("#f28f74", "! "),
+            const { SymbolKind::PROC_MACRO.0 as usize } => ("#f28f74", "r!"),
             _ => ("#9a9b9a", " ")
                     },
             |(x, y)| (set_a(color_(x), 0.5), color_(x), y)
