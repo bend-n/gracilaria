@@ -53,7 +53,9 @@ use fimg::pixels::Blend;
 use fimg::{Image, OverlayAt};
 use lsp::{PathURI, Rq};
 use lsp_server::{Connection, Request as LRq};
-use lsp_types::request::{CodeActionResolveRequest, HoverRequest, SignatureHelpRequest};
+use lsp_types::request::{
+    CodeActionResolveRequest, HoverRequest, SignatureHelpRequest,
+};
 use lsp_types::*;
 use regex::Regex;
 use ropey::Rope;
@@ -140,7 +142,7 @@ impl Hist {
             x.apply(t, false);
             self.last = t.clone();
         });
-    } 
+    }
     pub fn redo(&mut self, t: &mut TextArea) {
         self.redo_().map(|x| {
             x.apply(t, true);
@@ -166,7 +168,7 @@ impl Hist {
         new.rope != self.last.rope
     }
 }
- 
+
 static mut MODIFIERS: ModifiersState = ModifiersState::empty();
 static mut CLICKING: bool = false;
 
@@ -224,15 +226,22 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
             let (a, b) = Connection::memory();
             std::thread::Builder::new()
                 .name("Rust Analyzer".into())
-                .stack_size(1024 * 1024 * 8) 
+                .stack_size(1024 * 1024 * 8)
                 .spawn(move || {
                     let ra = std::thread::current_id();
                     std::panic::set_hook(Box::new(move |info| {
                         // iz
                         if std::thread::current_id() == main {
                             dh(info);
-                        } else if std::thread::current_id() == ra || std::thread::current().name().is_some_and(|x| x.starts_with("RA")) {
-                            println!("RA panic @ {}", info.location().unwrap());
+                        } else if std::thread::current_id() == ra
+                            || std::thread::current()
+                                .name()
+                                .is_some_and(|x| x.starts_with("RA"))
+                        {
+                            println!(
+                                "RA panic @ {}",
+                                info.location().unwrap()
+                            );
                         }
                     }));
                     rust_analyzer::bin::run_server(b)
@@ -275,7 +284,12 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
     let mut semantic_tokens = default();
     let mut diag =
         Rq::<String, Option<String>, (), anyhow::Error>::default();
-    let mut inlay: Rq<Vec<InlayHint>, Vec<InlayHint>, (), RequestError<lsp_request!("textDocument/inlayHint")>> = default();
+    let mut inlay: Rq<
+        Vec<InlayHint>,
+        Vec<InlayHint>,
+        (),
+        RequestError<lsp_request!("textDocument/inlayHint")>,
+    > = default();
     let mut def = Rq::<
         LocationLink,
         Option<GotoDefinitionResponse>,
@@ -1617,11 +1631,8 @@ fn handle(key: Key, mut text: TextArea) -> TextArea {
     text
 }
 pub static FONT: LazyLock<FontRef<'static>> = LazyLock::new(|| {
-    FontRef::from_index(
-        &include_bytes!("../CascadiaCodeNF.ttf")[..],
-        0,
-    )
-    .unwrap()
+    FontRef::from_index(&include_bytes!("../CascadiaCodeNF.ttf")[..], 0)
+        .unwrap()
 });
 pub static IFONT: LazyLock<FontRef<'static>> = LazyLock::new(|| {
     FontRef::from_index(

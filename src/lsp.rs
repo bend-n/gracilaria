@@ -354,20 +354,38 @@ impl Client {
             }
         }
     }
-    pub fn symbols(&'static self, f: String) -> impl Future<Output = Result<Vec<SymbolInformation>, RequestError<lsp_request!("workspace/symbol")>>> {
-        self.request::<lsp_request!("workspace/symbol")>(&WorkspaceSymbolParams {
-            query: f,
-            search_scope: Some(WorkspaceSymbolSearchScope::Workspace),
-            search_kind: Some(WorkspaceSymbolSearchKind::AllSymbols),
-            ..Default::default()
-        }).unwrap().0
-          .map(|x| x.map(|x| x.map(|x| {
-            // std::fs::write("syms", serde_json::to_string_pretty(&x).unwrap());
-            match x {
-                WorkspaceSymbolResponse::Flat(x) => x,
-                WorkspaceSymbolResponse::Nested(_) => unreachable!(),
-            }
-        }).unwrap_or_default()))
+    pub fn symbols(
+        &'static self,
+        f: String,
+    ) -> impl Future<
+        Output = Result<
+            Vec<SymbolInformation>,
+            RequestError<lsp_request!("workspace/symbol")>,
+        >,
+    > {
+        self.request::<lsp_request!("workspace/symbol")>(
+            &WorkspaceSymbolParams {
+                query: f,
+                search_scope: Some(WorkspaceSymbolSearchScope::Workspace),
+                search_kind: Some(WorkspaceSymbolSearchKind::AllSymbols),
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .0
+        .map(|x| {
+            x.map(|x| {
+                x.map(|x| {
+                    // std::fs::write("syms", serde_json::to_string_pretty(&x).unwrap());
+                    match x {
+                        WorkspaceSymbolResponse::Flat(x) => x,
+                        WorkspaceSymbolResponse::Nested(_) =>
+                            unreachable!(),
+                    }
+                })
+                .unwrap_or_default()
+            })
+        })
     }
     pub fn inlay(
         &'static self,
