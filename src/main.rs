@@ -103,6 +103,30 @@ struct Hist {
     pub last_edit: std::time::Instant,
     pub changed: bool,
 }
+#[derive(Debug, Default)]
+struct ClickHistory {
+    pub his: Vec<(usize, usize)>,
+    pub red: Vec<(usize, usize)>,
+}
+
+impl ClickHistory {
+    fn push(&mut self, x: (usize, usize)) {
+        if self.his.last() != Some(&x) {
+            self.his.push(x);
+            self.red.clear();
+        }
+    }
+    fn back(&mut self) -> Option<(usize, usize)> {
+        self.his.pop().inspect(|x| {
+            self.red.push(*x);
+        })
+    }
+    fn forth(&mut self) -> Option<(usize, usize)> {
+        self.red.pop().inspect(|x| {
+            self.his.push(*x);
+        })
+    }
+}
 impl Hist {
     fn push(&mut self, x: &TextArea) {
         let d = diff_match_patch_rs::DiffMatchPatch::new();
@@ -307,7 +331,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
     //     (usize, usize),
     // )>;
     // let mut hl_result = None;
-
+    let mut chist = ClickHistory::default();
     let mut hist = Hist {
         history: vec![],
         redo_history: vec![],
@@ -1089,10 +1113,22 @@ hovering.request = (DropH::new(handle), cursor_position).into();
                                 sig_help.request(lsp.runtime.spawn(window.redraw_after(lsp.request_sig_help(path, text.cursor()))));
                             }
                             hist.last.cursor = text.cursor;
+                            chist.push(text.cursor());
                             text.setc();
                         }
+                        Some(Do::NavForward) => {
+                            chist.forth().map(|x| {
+                                text.cursor = text.rope.line_to_char(x.1) + x.0;
+                                text.scroll_to_cursor();
+                            });
+                        }
+                        Some(Do::NavBack) => {
+                            chist.back().map(|x| {
+                                text.cursor = text.rope.line_to_char(x.1) + x.0;
+                                text.scroll_to_cursor();
+                            });
+                        }
                         Some(Do::ExtendSelectionToMouse) => {
-                            println!("ext2");
                             *state.sel() = text.extend_selection_to(
                                 text.mapped_index_at(cursor_position),
                                 state.sel().clone(),
@@ -1347,7 +1383,7 @@ hovering.request = (DropH::new(handle), cursor_position).into();
                             let State::CodeAction(Rq{ result: Some(c), ..  }) = &mut state else { panic!()};
                             c.up();
                         }
-                        Some(Do::Reinsert | Do::GoToDefinition) => panic!(),
+                        Some(Do::Reinsert | Do::GoToDefinition | Do::NavBack | Do::NavForward) => panic!(),
                         Some(Do::Save) => match &origin {
                             Some(x) => {
                                 state.consume(Action::Saved).unwrap();
@@ -1687,9 +1723,11 @@ Default => {
     K(Key::Character(x) if x == "l" && ctrl()) => _ [Symbols],
     K(Key::Character(x) if x == "." && ctrl()) => _ [CodeAction],
     K(Key::Named(ArrowUp | ArrowLeft | ArrowDown | ArrowRight | Home | End) if shift()) => Selection(Range<usize> => 0..0) [StartSelection],
-    M(MouseButton => MouseButton::Left if shift()) => Selection(Range<usize> => 0..0) [StartSelection],
-    M(MouseButton => MouseButton::Left if ctrl()) => _ [GoToDefinition],
-    M(MouseButton => MouseButton::Left) => _ [MoveCursor],
+    M(MouseButton::Left if shift()) => Selection(Range<usize> => 0..0) [StartSelection],
+    M(MouseButton::Left if ctrl()) => _ [GoToDefinition],
+    M(MouseButton::Left) => _ [MoveCursor],
+    M(MouseButton::Back) => _ [NavBack],
+    M(MouseButton::Forward) => _ [NavForward],
     C(((usize, usize)) => .. if unsafe { CLICKING }) => Selection(0..0) [StartSelection],
     Changed => RequestBoolean(BoolRequest => BoolRequest::ReloadFile),
     C(_) => _ [Hover],
@@ -1756,7 +1794,7 @@ RequestBoolean(t) => {
     M(_) => _,
 },
 Search((x, y, m)) => {
-    M(MouseButton => MouseButton::Left) => Default [MoveCursor],
+    M(MouseButton::Left) => Default [MoveCursor],
     C(_) => Search((x, y, m)),
     K(Key::Named(Enter) if shift()) => Search((x, y.checked_sub(1).unwrap_or(m-1), m)) [SearchChanged],
     K(Key::Named(Enter)) => Search((Regex, usize, usize) => (x,   (y+ 1) % m, m)) [SearchChanged],
