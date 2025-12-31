@@ -237,6 +237,11 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
         .as_ref()
         .and_then(|x| rooter(&x.parent().unwrap()))
         .and_then(|x| x.canonicalize().ok());
+    let tree = workspace.as_ref().map(|x| {
+        walkdir::WalkDir::new(x).into_iter().flatten().filter(|x| x.path().extension().is_some_and(_ == "rs") ).map(|x| {
+            x.path().to_owned()
+        }).collect::<Vec<_>>()
+    });
     let c = workspace.as_ref().zip(origin.clone()).map(
         |(workspace, origin)| {
             let dh = std::panic::take_hook();
@@ -447,9 +452,18 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                 
                 if let State::Symbols(x) = &mut state {
                     x.poll(|x, (_, p)| x.ok().map(|r| {
+                        let tree = tree.as_deref().unwrap().iter().map(|x| {
+                            SymbolInformation{ name: x.file_name().unwrap().to_str().unwrap().to_string()
+                                ,kind: SymbolKind::FILE,location: Location {
+                                range: lsp_types::Range{end:Position::default(), start:Position::default()},
+                                uri: Url::from_file_path(&x).unwrap(),
+                                
+                            }, container_name: None,deprecated: None,
+                                tags: None, }
+                        });
                         sym::Symbols {
                             tedit: p.map(_.tedit).unwrap_or_default(),
-                            r,..default() // dont care about previous selection
+                            r: tree.chain(r).collect(),..default() // dont care about previous selection
                         }
                     }), &l.runtime);
                 }
@@ -732,10 +746,12 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             let mut r = c.len()/columns;
                             assert_eq!(c.len()%columns, 0);
                             let (w, h) = dsb::size(&fonts.regular, ppem, ls, (columns, r));
+                            // std::fs::write("cells", Cell::store(c));
+
                             if w >= window.inner_size().width as usize
                             //  || position.1 + h >= window.inner_size().height as usize 
-                             {
-                                unsafe { dsb::render_owned(c, (columns, c.len() / columns), 18.0, fonts, 1.1, true).save("fail.png") };
+                            {
+                                unsafe { dsb::render_owned(c, (columns, c.len() / columns), ppem, fonts, ls, true).save("fail.png") };
                                 return Err(());
                             }
                             assert!(w < window.inner_size().width as _ &&h < window.inner_size().height as _);

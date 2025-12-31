@@ -130,7 +130,7 @@ fn r(
     const MAP: [([u8; 3], [u8; 3], &str); 70] = {
         car::map!(
             amap::amap! {
-            const { SymbolKind::FILE.0 as usize } => ("#9a9b9a", " "),
+            const { SymbolKind::FILE.0 as usize } => ("#9a9b9a", "󰈙 "),
             const { SymbolKind::METHOD.0 as usize } | const { SymbolKind::FUNCTION.0 as usize } => ("#FFD173", "λ "),
             const { SymbolKind::CONSTRUCTOR.0 as usize } => ("#FFAD66", "->"),
             const { SymbolKind::FIELD.0 as usize } => ("#E06C75", "x."),
