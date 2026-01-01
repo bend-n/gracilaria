@@ -419,7 +419,13 @@ impl Client {
         //     }
         // }
     }
-
+    pub fn format(&'static self, f: &Path)  -> impl Future<Output = Result<<Formatting as Request>::Result, RequestError<Formatting>>> {
+        self.request::<lsp_request!("textDocument/formatting")>(&DocumentFormattingParams {
+            text_document: f.tid(),
+            options: FormattingOptions { tab_size: 4, insert_spaces: false, properties: default(), trim_trailing_whitespace: Some(true), insert_final_newline: Some(true), trim_final_newlines: Some(false), },
+            work_done_progress_params: default(),
+        }).unwrap().0
+    }
     pub fn rq_semantic_tokens(
         &'static self,
         to: &mut Rq<
@@ -515,6 +521,7 @@ pub fn run(
                     ..default()
                 }),
                 text_document: Some(TextDocumentClientCapabilities {
+                    formatting: Some(DynamicRegistrationClientCapabilities { dynamic_registration: Some(false) }),
                     inlay_hint: Some(InlayHintClientCapabilities { dynamic_registration: None, resolve_support: Some(InlayHintResolveClientCapabilities {
                         properties: vec!["textEdits".into(), "tooltip".into(), "label.tooltip".into(), "label.command".into()], })
                     }),

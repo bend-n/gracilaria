@@ -41,7 +41,7 @@ use std::os::fd::AsFd;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 use std::time::Instant;
-
+use crate::text::CoerceOption;
 use Default::default;
 use NamedKey::*;
 use atools::prelude::AASAdd;
@@ -356,23 +356,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
         x.rq_semantic_tokens(&mut semantic_tokens, origin, None).unwrap()
     });
     let mut mtime: Option<std::time::SystemTime> = modify!();
-    macro_rules! save {
-        () => {{
-            let t = text.rope.to_string();
-            std::fs::write(origin.as_ref().unwrap(), &t).unwrap();
-            bar.last_action = "saved".into();
-            lsp!().map(|(l, o)| {
-                l.notify::<lsp_notification!("textDocument/didSave")>(
-                    &DidSaveTextDocumentParams {
-                        text_document: o.tid(),
-                        text: Some(t),
-                    },
-                )
-                .unwrap();
-            });
-            mtime = modify!();
-        }};
-    }
+
     let app = winit_app::WinitAppBuilder::with_init(
         move |elwt| {
             let window = winit_app::make_window(elwt, |x| {
@@ -413,6 +397,29 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
             });
         };
     }
+    macro_rules! save {
+        () => {{
+            let t = text.rope.to_string();
+            std::fs::write(origin.as_ref().unwrap(), &t).unwrap();
+            bar.last_action = "saved".into();
+            lsp!().map(|(l, o)| {
+                let v = l.runtime.block_on(l.format(o)).unwrap();
+                for v in v.coerce() {
+                    text.apply_adjusting(&v);
+                }
+                change!();
+                hist.push(&text);
+                l.notify::<lsp_notification!("textDocument/didSave")>(
+                    &DidSaveTextDocumentParams {
+                        text_document: o.tid(),
+                        text: Some(t),
+                    },
+                )
+                .unwrap();
+            });
+            mtime = modify!();
+        }};
+    }
             elwt.set_control_flow(ControlFlow::Wait);
             let (fw, fh) = dsb::dims(&FONT, ppem);
             let (c, r) = dsb::fit(
@@ -439,7 +446,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                         rq =>
                             log::debug!("discarding request {rq:?}"),
                     }
-                }
+                } 
                 inlay.poll(|x, p| x.ok().or(p.1).inspect(|x| {
                     text.set_inlay(x);
                 }), &l.runtime);
