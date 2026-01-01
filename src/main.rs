@@ -75,7 +75,7 @@ use winit::window::Icon;
 
 use crate::bar::Bar;
 use crate::hov::Hovr;
-use crate::lsp::{RedrawAfter, RequestError, RqS};
+use crate::lsp::{Client, RedrawAfter, RequestError, RqS};
 use crate::sym::Symbols;
 use crate::text::{Diff, Mapping, TextArea, col, is_word};
 mod bar;
@@ -1265,7 +1265,7 @@ hovering.request = (DropH::new(handle), cursor_position).into();
                             if let Some(lsp) = lsp {
                             let State::Symbols(Rq { result :Some(x), request}) = &mut state else {unreachable!()};
                             let ptedit = x.tedit.rope.clone();
-                            if handle2(&event.logical_key, &mut x.tedit).is_some() || ptedit != x.tedit.rope {
+                            if handle2(&event.logical_key, &mut x.tedit, lsp!()).is_some() || ptedit != x.tedit.rope {
                                 *request = Some((DropH::new(lsp.runtime.spawn(window.redraw_after(lsp.symbols(x.tedit.rope.to_string())))), ()));
                                 // state = State::Symbols(Rq::new(lsp.runtime.spawn(lsp.symbols("".into()))));
                             }
@@ -1351,15 +1351,8 @@ hovering.request = (DropH::new(handle), cursor_position).into();
                             ).unwrap();
                             let mut f_ = |edits: &[SnippetTextEdit]|{ 
                                 // let mut first = false;
-                                for SnippetTextEdit { text_edit, insert_text_format ,..}in edits {
-                                    match insert_text_format { 
-                                        Some(InsertTextFormat::SNIPPET) => {
-                                            text.apply_snippet(&text_edit).unwrap()
-                                        },
-                                        _ => {
-                                            text.apply_adjusting(text_edit).unwrap();
-                                        }
-                                    }
+                                for edit in edits {
+                                    text.apply_snippet_tedit(edit).unwrap();
                                 }
                             };
                             match act.edit {
@@ -1427,7 +1420,7 @@ hovering.request = (DropH::new(handle), cursor_position).into();
                             let cb4 = text.cursor;
                             if let Key::Named(Enter | ArrowUp | ArrowDown | Tab) = event.logical_key && let CompletionState::Complete(..) = complete{
                             } else {
-                                handle2(&event.logical_key, &mut text);
+                                handle2(&event.logical_key, &mut text, lsp!());
                             }
                             text.scroll_to_cursor();
                             inlay!();
@@ -1646,7 +1639,7 @@ hovering.request = (DropH::new(handle), cursor_position).into();
     winit_app::run_app(event_loop, app);
 }
 
-fn handle2<'a>(key: &'a Key, text: &mut TextArea) -> Option<&'a str> {
+fn handle2<'a>(key: &'a Key, text: &mut TextArea, l: Option<(&Client, &Path)>) -> Option<&'a str> {
     use Key::*;
 
     match key {
@@ -1676,6 +1669,7 @@ fn handle2<'a>(key: &'a Key, text: &mut TextArea) -> Option<&'a str> {
         Named(ArrowDown) => text.down(),
         Named(PageDown) => text.page_down(),
         Named(PageUp) => text.page_up(),
+        Named(Enter) if let Some((l, p)) = l => l.enter(p, text),
         Named(Enter) => text.enter(),
         Character(x) => {
             text.insert(&x);
@@ -1685,8 +1679,8 @@ fn handle2<'a>(key: &'a Key, text: &mut TextArea) -> Option<&'a str> {
     };
     None
 }
-fn handle(key: Key, mut text: TextArea) -> TextArea {
-    handle2(&key, &mut text);
+fn handle(key: Key, mut text: TextArea,) -> TextArea {
+    handle2(&key, &mut text,None);
     text
 }
 pub static FONT: LazyLock<FontRef<'static>> = LazyLock::new(|| {

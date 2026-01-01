@@ -50,7 +50,6 @@ impl Drop for Client {
         panic!("please dont")
     }
 }
-#[derive(Debug)]
 pub enum RequestError<X> {
     Rx(PhantomData<X>),
     Failure(Re, Backtrace),
@@ -139,9 +138,11 @@ impl Client {
                     }
                 } else {
                     Ok(serde_json::from_value::<X::Result>(
-                        x.result.unwrap_or_default(),
+                        x.result.clone().unwrap_or_default(),
                     )
-                    .expect("lsp badg"))
+                    .unwrap_or_else(|_| {
+                        panic!("lsp failure for {x:?}\ndidnt follow spec for {}\npossibly spec issue", X::METHOD)
+                    }))
                 }
             },
             id,
@@ -467,6 +468,21 @@ impl Client {
 
         Ok(())
     }
+
+    pub fn enter<'a>(&self, f: &Path, t: &'a mut TextArea) {
+        let r = self.runtime.block_on(self.request::<lsp_request!("experimental/onEnter")>(&TextDocumentPositionParams {
+            text_document: f.tid(), 
+            position: t.to_l_position(t.cursor).unwrap(),
+        }).unwrap().0).unwrap();
+        match r {
+            None => t.enter(),
+            Some(r) => {
+                for f in r {
+                    t.apply_snippet_tedit(&f).unwrap();
+                }
+            }
+        }        
+    }
 }
 pub fn run(
     (tx, rx): (Sender<Message>, Receiver<Message>),
@@ -677,6 +693,7 @@ pub fn run(
                     "serverStatusNotification": true,
                     "hoverActions": true,
                     "workspaceSymbolScopeKindFiltering": true,
+                    "onEnter": true,
                 }}),
                 ..default()
             },
@@ -951,7 +968,7 @@ impl<T, U, F: FnMut(T) -> U, Fu: Future<Output = T>> Map_<T, U, F> for Fu {
 }
 use tokio::task;
 
-use crate::text::TextArea;
+use crate::text::{CoerceOption, TextArea};
 #[derive(Debug)]
 pub enum OnceOff<T> {
     Waiting(task::JoinHandle<Result<T, oneshot::error::RecvError>>),
@@ -969,6 +986,12 @@ impl<T> OnceOff<T> {
             _ => {}
         }
         Ok(())
+    }
+}
+
+impl<R:Request> std::fmt::Debug for RequestError<R> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(&self, f)
     }
 }
 

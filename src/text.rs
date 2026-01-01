@@ -18,7 +18,7 @@ use itertools::Itertools;
 use log::error;
 use lsp_types::{
     InlayHint, InlayHintLabel, Location, Position, SemanticToken,
-    SemanticTokensLegend, TextEdit,
+    SemanticTokensLegend, SnippetTextEdit, TextEdit,
 };
 use ropey::{Rope, RopeSlice};
 use tree_house::Language;
@@ -492,6 +492,19 @@ impl TextArea {
             self.cursor += x.new_text.chars().count();
             self.cursor -= removed; // compensate
             // text.cursor += additional.new_text.chars().count(); // compensate
+        }
+        Ok(())
+    }
+    pub fn apply_snippet_tedit(
+        &mut self,
+        SnippetTextEdit { text_edit, insert_text_format, .. }: &SnippetTextEdit,
+    ) -> anyhow::Result<()> {
+        match insert_text_format {
+            Some(lsp_types::InsertTextFormat::SNIPPET) =>
+                self.apply_snippet(&text_edit).unwrap(),
+            _ => {
+                self.apply_adjusting(text_edit).unwrap();
+            }
         }
         Ok(())
     }
