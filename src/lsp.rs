@@ -388,6 +388,14 @@ impl Client {
             })
         })
     }
+    pub fn matching_brace<'a>(&'static self, f: &Path, t: &'a mut TextArea) {
+        if let Ok(Some([x])) = self.runtime.block_on(self.request::<lsp_request!("experimental/matchingBrace")>(&MatchingBraceParams {
+            text_document: f.tid(),
+            positions: vec![t.to_l_position(t.cursor).unwrap()],
+        }).unwrap().0) {
+            t.cursor = t.l_position(x).unwrap();
+        }
+    }
     pub fn inlay(
         &'static self,
         f: &Path,
@@ -687,6 +695,7 @@ pub fn run(
                     ..default()
                 }),
                 experimental: Some(json! {{
+                    "matchingBrace": true,
                     "snippetTextEdit": true,
                     "colorDiagnosticOutput": true,
                     "codeActionGroup": true,

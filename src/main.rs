@@ -1256,6 +1256,11 @@ hovering.request = (DropH::new(handle), cursor_position).into();
                         _ => {}
                     }
                     match o {
+                        Some(Do::MatchingBrace) => {
+                            if let Some((l, f)) = lsp!() {
+                                l.matching_brace(f, &mut text);
+                            }
+                        }
                         Some(Do::Symbols) => {
                             if let Some(lsp) = lsp {
                                 state = State::Symbols(Rq::new(lsp.runtime.spawn(window.redraw_after(lsp.symbols("".into())))));
@@ -1739,6 +1744,7 @@ Default => {
     K(Key::Character(x) if x == "c" && ctrl()) => _,
     K(Key::Character(x) if x == "l" && ctrl()) => _ [Symbols],
     K(Key::Character(x) if x == "." && ctrl()) => _ [CodeAction],
+    K(Key::Character(x) if x == "0" && ctrl()) => _ [MatchingBrace],
     K(Key::Named(ArrowUp | ArrowLeft | ArrowDown | ArrowRight | Home | End) if shift()) => Selection(Range<usize> => 0..0) [StartSelection],
     M(MouseButton::Left if shift()) => Selection(Range<usize> => 0..0) [StartSelection],
     M(MouseButton::Left if ctrl()) => _ [GoToDefinition],
