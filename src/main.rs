@@ -1,6 +1,7 @@
 // this looks pretty good though
 #![feature(tuple_trait, unboxed_closures, fn_traits)]
 #![feature(
+    try_blocks_heterogeneous,
     current_thread_id,
     vec_try_remove,
     iter_next_chunk,
@@ -36,6 +37,7 @@ use std::borrow::Cow;
 use std::iter::once;
 mod act;
 mod sym;
+mod trm;
 use std::num::NonZeroU32;
 use std::os::fd::AsFd;
 use std::path::{Path, PathBuf};
@@ -1256,6 +1258,9 @@ hovering.request = (DropH::new(handle), cursor_position).into();
                         _ => {}
                     }
                     match o {
+                        Some(Do::SpawnTerminal) => {
+                            trm::toggle(workspace.as_deref().unwrap_or(Path::new("/home/os/")));
+                        }
                         Some(Do::MatchingBrace) => {
                             if let Some((l, f)) = lsp!() {
                                 l.matching_brace(f, &mut text);
@@ -1745,6 +1750,7 @@ Default => {
     K(Key::Character(x) if x == "l" && ctrl()) => _ [Symbols],
     K(Key::Character(x) if x == "." && ctrl()) => _ [CodeAction],
     K(Key::Character(x) if x == "0" && ctrl()) => _ [MatchingBrace],
+    K(Key::Character(x) if x == "`" && ctrl()) => _ [SpawnTerminal],
     K(Key::Named(ArrowUp | ArrowLeft | ArrowDown | ArrowRight | Home | End) if shift()) => Selection(Range<usize> => 0..0) [StartSelection],
     M(MouseButton::Left if shift()) => Selection(Range<usize> => 0..0) [StartSelection],
     M(MouseButton::Left if ctrl()) => _ [GoToDefinition],

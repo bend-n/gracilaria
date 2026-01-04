@@ -62,6 +62,7 @@ arc-swap = "1.7.1"
 atools = "0.1.10"
 swizzle = "0.1.0"
 walkdir = "2.5.0"
+niri = { package = "niri-ipc", version = "25.11.0" }
 
 [profile.dev.package]
 rust-analyzer.opt-level = 3
