@@ -1,6 +1,7 @@
 // this looks pretty good though
 #![feature(tuple_trait, unboxed_closures, fn_traits)]
 #![feature(
+    anonymous_lifetime_in_impl_trait,
     try_blocks_heterogeneous,
     current_thread_id,
     vec_try_remove,
@@ -757,8 +758,10 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             let (w, h) = dsb::size(&fonts.regular, ppem, ls, (columns, r));
                             // std::fs::write("cells", Cell::store(c));
 
-                            if w >= window.inner_size().width as usize
-                            //  || position.1 + h >= window.inner_size().height as usize 
+                            if w >= size.width as usize
+                              || (position.1 + h >= size.height as usize  && !position.1.checked_sub(h).is_some())
+                              || position.1 >= size.height as usize
+                              || position.0 >= size.width as usize
                             {
                                 unsafe { dsb::render_owned(c, (columns, c.len() / columns), ppem, fonts, ls, true).save("fail.png") };
                                 return Err(());
@@ -1038,8 +1041,8 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                                 break 'out;
                             };
                             let (x, y) = text.xy(abspos).unwrap();
-                            let Some(begin) = text.reverse_source_map(y) else { break 'out };
-                            let start = begin[x - 1] + 1;
+                            let Some(mut begin) = text.reverse_source_map(y) else { break 'out };
+                            let start = begin.nth(x - 1).unwrap() + 1;
                             let left = mark.l[..relpos].iter().rev().take_while(_.1.as_ref() == Some(loc)).count();
                             let start = start + relpos - left;
                             let length = mark.l[relpos..].iter().take_while(_.1.as_ref() == Some(loc)).count() + left;
@@ -1100,8 +1103,8 @@ let handle: tokio::task::JoinHandle<Result<Option<Hovr>, anyhow::Error>> = cl.ru
     let span = rang.or_else(|| x.range.and_then(|range| try {
         let (startx, starty) = text.l_pos_to_char(range.start)?;
         let (endx, endy) = text.l_pos_to_char(range.end)?;
-        let x1 = text.reverse_source_map(starty)?[startx];
-        let x2 = text.reverse_source_map(endy)?[endx];
+        let x1 = text.reverse_source_map(starty)?.nth(startx)?;
+        let x2 = text.reverse_source_map(endy)?.nth(endx)?;
         [(x1, range.start.line as _), (x2, range.start.line as _)]
     }));
     anyhow::Ok(Some( hov::Hovr { span, item: text::CellBuffer { c: w, vo: 0, cells: cells.into() }}.into()))

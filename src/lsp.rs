@@ -355,6 +355,14 @@ impl Client {
             }
         }
     }
+    pub fn document_highlights(&'static self, f: &Path, cursor: Position) {
+        self.request::<lsp_request!("textDocument/documentHighlight")>(&DocumentHighlightParams {
+            text_document_position_params: TextDocumentPositionParams { text_document: f.tid(), position: cursor },
+            
+            work_done_progress_params: default(),
+            partial_result_params: default(),
+        }).unwrap();
+    }
     pub fn symbols(
         &'static self,
         f: String,
@@ -545,6 +553,7 @@ pub fn run(
                     ..default()
                 }),
                 text_document: Some(TextDocumentClientCapabilities {
+                    document_highlight: Some(default()),
                     formatting: Some(DynamicRegistrationClientCapabilities { dynamic_registration: Some(false) }),
                     inlay_hint: Some(InlayHintClientCapabilities { dynamic_registration: None, resolve_support: Some(InlayHintResolveClientCapabilities {
                         properties: vec!["textEdits".into(), "tooltip".into(), "label.tooltip".into(), "label.command".into()], })

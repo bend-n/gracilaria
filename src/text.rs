@@ -350,7 +350,7 @@ impl TextArea {
     pub fn map_to_visual(&self, (x, y): (usize, usize)) -> (usize, usize) {
         (
             self.reverse_source_map(y)
-                .and_then(|v| v.get(x).copied())
+                .and_then(|mut v| v.nth(x))
                 .unwrap_or(x),
             y,
         )
@@ -379,16 +379,25 @@ impl TextArea {
             }
         })
     }
-    pub fn reverse_source_map(&'_ self, l: usize) -> Option<Vec<usize>> {
-        let mut to = vec![];
-        let mut off = 0;
-        for elem in self.source_map(l)? {
-            match elem {
-                Mapping::Fake(..) => off += 1,
-                Mapping::Char(_, i, _) => to.push(i + off),
+    pub fn reverse_source_map_w(
+        &'_ self,
+        w: impl Iterator<Item = Mapping<'_>>,
+    ) -> Option<impl Iterator<Item = usize>> {
+        w.scan(0, |off, x| match x {
+            Mapping::Fake(..) => {
+                *off += 1;
+                Some(None)
             }
-        }
-        Some(to)
+            Mapping::Char(_, i, _) => Some(Some(i + *off)),
+        })
+        .flatten()
+        .into()
+    }
+    pub fn reverse_source_map(
+        &'_ self,
+        l: usize,
+    ) -> Option<impl Iterator<Item = usize>> {
+        self.reverse_source_map_w(self.source_map(l)?)
     }
 
     pub fn visual_eol(&self, li: usize) -> Option<usize> {
@@ -539,8 +548,8 @@ impl TextArea {
     }
     pub fn cursor_visual(&self) -> (usize, usize) {
         let (x, y) = self.cursor();
-        let z = self.reverse_source_map(y).unwrap();
-        (z.get(x).copied().unwrap_or(x), y)
+        let mut z = self.reverse_source_map(y).unwrap();
+        (z.nth(x).unwrap_or(x), y)
     }
     pub fn visible_(&self) -> Range<usize> {
         self.rope.line_to_char(self.vo)
@@ -1037,12 +1046,27 @@ impl TextArea {
         {
             let mut ln = 0;
             let mut ch = 0;
+            let mut src_map =
+                self.source_map(ln as _).coerce().collect::<Vec<_>>();
+            let mut mapping = self
+                .reverse_source_map(ln as _)
+                .coerce()
+                .collect::<Vec<_>>();
+
             for t in t {
+                let pl = ln;
                 ln += t.delta_line;
-                let src_map =
-                    self.source_map(ln as _).coerce().collect::<Vec<_>>();
-                let mapping =
-                    self.reverse_source_map(ln as _).unwrap_or_default();
+                if pl != ln {
+                    src_map = self
+                        .source_map(ln as _)
+                        .coerce()
+                        .collect::<Vec<_>>();
+                    mapping = self
+                        .reverse_source_map_w(src_map.iter().cloned())
+                        .coerce()
+                        .collect::<Vec<_>>();
+                }
+
                 // dbg!(
                 //     &mapping,
                 //     self.source_map(ln as _).coerce().collect::<Vec<_>>(),
@@ -1790,7 +1814,7 @@ impl<I: IntoIterator<Item = T>, T> CoerceOption<T> for Option<I> {
 }
 // #[test]
 pub(crate) use col;
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Mapping<'a> {
     Fake(
         &'a Mark,
