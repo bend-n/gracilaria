@@ -1,4 +1,3 @@
-// this looks pretty good though
 #![feature(tuple_trait, unboxed_closures, fn_traits)]
 #![feature(
     anonymous_lifetime_in_impl_trait,
@@ -33,55 +32,39 @@
     try_blocks,
     portable_simd
 )]
-#![allow(incomplete_features, redundant_semicolons)]
-use std::borrow::Cow;
-use std::iter::once;
+#![allow(incomplete_features, irrefutable_let_patterns)]
 mod act;
+mod edi;
+mod rnd;
 mod sym;
 mod trm;
-mod edi;
+
 use std::num::NonZeroU32;
-use std::os::fd::AsFd;
-use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 use std::time::Instant;
-use crate::text::CoerceOption;
+
 use Default::default;
 use NamedKey::*;
-use atools::prelude::AASAdd;
 use diff_match_patch_rs::PatchInput;
-use diff_match_patch_rs::traits::DType;
 use dsb::cell::Style;
-use dsb::{Cell, F, Fonts};
-use fimg::pixels::Blend;
-use fimg::{Image, OverlayAt};
+use dsb::{Cell, F};
+use fimg::Image;
 use lsp::{PathURI, Rq};
-use lsp_server::{Connection, Request as LRq};
-use lsp_types::request::{
-    CodeActionResolveRequest, HoverRequest, SignatureHelpRequest,
-};
 use lsp_types::*;
-use regex::Regex;
-use ropey::Rope;
 use rust_fsm::StateMachine;
 use swash::{FontRef, Instance};
-use tokio::task::spawn_blocking;
-use tokio_util::task::AbortOnDropHandle as DropH;
-use url::Url;
-use winit::dpi::{PhysicalPosition, PhysicalSize};
 use winit::event::{
     ElementState, Event, Ime, MouseButton, MouseScrollDelta, WindowEvent,
 };
 use winit::event_loop::{ControlFlow, EventLoop};
-use winit::keyboard::{Key, ModifiersState, NamedKey, SmolStr};
+use winit::keyboard::{Key, ModifiersState, NamedKey};
 use winit::platform::wayland::WindowAttributesExtWayland;
 use winit::window::Icon;
 
-use crate::bar::Bar;
-use crate::hov::Hovr;
-use crate::lsp::{Client, RedrawAfter, RequestError, RqS};
-use crate::sym::Symbols;
-use crate::text::{Diff, Mapping, TextArea, col, is_word};
+use crate::edi::Editor;
+use crate::edi::st::*;
+use crate::lsp::RqS;
+use crate::text::{Diff, TextArea, col, is_word};
 mod bar;
 pub mod com;
 pub mod hov;
@@ -95,6 +78,7 @@ fn main() {
     // let x = HashMap::new();
     unsafe { std::env::set_var("CARGO_UNSTABLE_RUSTC_UNICODE", "true") };
     env_logger::init();
+
     // lsp::x();
     entry(EventLoop::new().unwrap())
 }
@@ -106,15 +90,17 @@ struct Hist {
     pub last: TextArea,
     pub last_edit: std::time::Instant,
     pub changed: bool,
-}impl Default for Hist{
+}
+impl Default for Hist {
     fn default() -> Self {
-     Self{
-        history: vec![],
-        redo_history: vec![],
-        last: TextArea::default(),
-        last_edit: Instant::now(),
-        changed: false,
-         }    }
+        Self {
+            history: vec![],
+            redo_history: vec![],
+            last: TextArea::default(),
+            last_edit: Instant::now(),
+            changed: false,
+        }
+    }
 }
 #[derive(Debug, Default)]
 struct ClickHistory {
@@ -216,11 +202,9 @@ const BORDER: [u8; 3] = col!("#ffffff");
 pub(crate) fn entry(event_loop: EventLoop<()>) {
     let ppem = 20.0;
     let ls = 20.0;
-    let mut text = TextArea::default();
-    let mut origin = std::env::args()
-        .nth(1)
-        .and_then(|x| PathBuf::try_from(x).ok())
-        .and_then(|x| x.canonicalize().ok());
+    let ed = Editor::new();
+    let ed = Box::leak(Box::new(ed));
+
     let mut fonts = dsb::Fonts::new(
         F::FontRef(*FONT, &[(2003265652, 550.0)]),
         F::instance(*FONT, *BFONT),
@@ -228,148 +212,12 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
         F::instance(*IFONT, *BIFONT),
     );
     let mut cursor_position = (0, 0);
-
-    let mut state = State::Default;
-    let mut bar = Bar { last_action: String::default() };
     let mut i = Image::build(1, 1).fill(BG);
     let mut cells = vec![];
-    std::env::args().nth(1).map(|x| {
-        text.insert(&std::fs::read_to_string(x).unwrap());
-        text.cursor = 0;
-    });
-    fn rooter(x: &Path) -> Option<PathBuf> {
-        for f in std::fs::read_dir(&x).unwrap().filter_map(Result::ok) {
-            if f.file_name() == "Cargo.toml" {
-                return Some(f.path().with_file_name("").to_path_buf());
-            }
-        }
-        x.parent().and_then(rooter)
-    }
-
-    let workspace = origin
-        .as_ref()
-        .and_then(|x| rooter(&x.parent().unwrap()))
-        .and_then(|x| x.canonicalize().ok());
-    let tree = workspace.as_ref().map(|x| {
-        walkdir::WalkDir::new(x).into_iter().flatten().filter(|x| x.path().extension().is_some_and(_ == "rs") ).map(|x| {
-            x.path().to_owned()
-        }).collect::<Vec<_>>()
-    });
-    let c = workspace.as_ref().zip(origin.clone()).map(
-        |(workspace, origin)| {
-            let dh = std::panic::take_hook();
-            let main = std::thread::current_id();
-            // let mut c = Command::new("rust-analyzer")
-            //     .stdin(Stdio::piped())
-            //     .stdout(Stdio::piped())
-            //     .stderr(Stdio::inherit())
-            //     .spawn()
-            //     .unwrap();
-            let (a, b) = Connection::memory();
-            std::thread::Builder::new()
-                .name("Rust Analyzer".into())
-                .stack_size(1024 * 1024 * 8)
-                .spawn(move || {
-                    let ra = std::thread::current_id();
-                    std::panic::set_hook(Box::new(move |info| {
-                        // iz
-                        if std::thread::current_id() == main {
-                            dh(info);
-                        } else if std::thread::current_id() == ra
-                            || std::thread::current()
-                                .name()
-                                .is_some_and(|x| x.starts_with("RA"))
-                        {
-                            println!(
-                                "RA panic @ {}",
-                                info.location().unwrap()
-                            );
-                        }
-                    }));
-                    rust_analyzer::bin::run_server(b)
-                })
-                .unwrap();
-            let (c, t2, changed) = lsp::run(
-                (a.sender, a.receiver),
-                //    lsp_server::stdio::stdio_transport(
-                //         BufReader::new(c.stdout.take().unwrap()),
-                //         c.stdin.take().unwrap(),
-                //     ),
-                WorkspaceFolder {
-                    uri: Url::from_file_path(&workspace).unwrap(),
-                    name: workspace
-                        .file_name()
-                        .unwrap()
-                        .to_string_lossy()
-                        .into_owned(),
-                },
-            );
-            c.open(&origin, std::fs::read_to_string(&origin).unwrap())
-                .unwrap();
-            (&*Box::leak(Box::new(c)), (t2), changed)
-        },
-    );
-    let (lsp, _t, mut w) = match c {
-        Some((a, b, c)) => (Some(a), Some(b), Some(c)),
-        None => (None, None, None),
+    let mut w = match &mut ed.lsp {
+        Some((.., c)) => c.take(),
+        None => None,
     };
-    macro_rules! lsp {
-        () => {
-            lsp.zip(origin.as_deref())
-        };
-    }
-    let mut hovering =
-        Rq::<Hovr, Option<Hovr>, (usize, usize), anyhow::Error>::default();
-    let mut document_highlights: Rq<Vec<DocumentHighlight>, _, _, _> = Rq::default();
-    let mut complete = CompletionState::None;
-    let mut sig_help = // vo, lines
-        RqS::<(SignatureHelp, usize, Option<usize>), SignatureHelpRequest, ()>::default();
-    let mut semantic_tokens = default();
-    let mut diag =
-        Rq::<String, Option<String>, (), anyhow::Error>::default();
-    let mut inlay: Rq<
-        Vec<InlayHint>,
-        Vec<InlayHint>,
-        (),
-        RequestError<lsp_request!("textDocument/inlayHint")>,
-    > = default();
-    let mut def = Rq::<
-        LocationLink,
-        Option<GotoDefinitionResponse>,
-        (usize, usize),
-        RequestError<lsp_request!("textDocument/definition")>,
-    >::default();
-    // let mut complete = None::<(CompletionResponse, (usize, usize))>;
-    // let mut complete_ = None::<(
-    //     JoinHandle<
-    //         Result<
-    //             Option<CompletionResponse>,
-    //             tokio::sync::oneshot::error::RecvError,
-    //         >,
-    //     >,
-    //     (usize, usize),
-    // )>;
-    // let mut hl_result = None;
-    let mut chist = ClickHistory::default();
-    let mut hist = Hist {
-        history: vec![],
-        redo_history: vec![],
-        last: text.clone(),
-        last_edit: Instant::now(),
-        changed: false,
-    };
-    macro_rules! modify {
-        () => {
-            origin
-                .as_ref()
-                .map(|x| x.metadata().unwrap().modified().unwrap())
-        };
-    }
-
-    lsp!().map(|(x, origin)| {
-        x.rq_semantic_tokens(&mut semantic_tokens, origin, None).unwrap()
-    });
-    let mut mtime: Option<std::time::SystemTime> = modify!();
 
     let app = winit_app::WinitAppBuilder::with_init(
         move |elwt| {
@@ -377,8 +225,14 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                 x.with_title("gracilaria")
                     .with_decorations(false)
                     .with_name("com.bendn.gracilaria", "")
-                    .with_window_icon(Some(Icon::from_rgba(include_bytes!("../dist/icon-32").to_vec(), 32, 32).unwrap()))
-
+                    .with_window_icon(Some(
+                        Icon::from_rgba(
+                            include_bytes!("../dist/icon-32").to_vec(),
+                            32,
+                            32,
+                        )
+                        .unwrap(),
+                    ))
             });
             if let Some(x) = w.take() {
                 x.send(window.clone()).unwrap();
@@ -397,43 +251,6 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
     )
     .with_event_handler(
         move |(window, _context), surface, event, elwt| {
-        macro_rules! inlay {
-            () => {
-                lsp!().map(|(lsp, path)| inlay.request(lsp.runtime.spawn(window.redraw_after(lsp.inlay(path, &text)))));
-            };
-        }
-                macro_rules! change {
-        () => {
-            lsp!().map(|(x, origin)| {
-                x.edit(&origin, text.rope.to_string()).unwrap();
-                x.rq_semantic_tokens(&mut semantic_tokens, origin, Some(window.clone())).unwrap();
-                inlay!();
-            });
-        };
-    }
-    macro_rules! save {
-        () => {{
-            let t = text.rope.to_string();
-            std::fs::write(origin.as_ref().unwrap(), &t).unwrap();
-            bar.last_action = "saved".into();
-            lsp!().map(|(l, o)| {
-                let v = l.runtime.block_on(l.format(o)).unwrap();
-                for v in v.coerce() {
-                    text.apply_adjusting(&v);
-                }
-                change!();
-                hist.push(&text);
-                l.notify::<lsp_notification!("textDocument/didSave")>(
-                    &DidSaveTextDocumentParams {
-                        text_document: o.tid(),
-                        text: Some(t),
-                    },
-                )
-                .unwrap();
-            });
-            mtime = modify!();
-        }};
-    }
             elwt.set_control_flow(ControlFlow::Wait);
             let (fw, fh) = dsb::dims(&FONT, ppem);
             let (c, r) = dsb::fit(
@@ -445,83 +262,16 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                     window.inner_size().height as _,
                 ),
             );
-            if modify!() != mtime {
-                mtime = modify!();
-                state.consume(Action::Changed).unwrap();
+            if let t = Editor::modify(ed.origin.as_deref())
+                && t != ed.mtime
+            {
+                ed.mtime = t;
+                ed.state.consume(Action::Changed).unwrap();
                 window.request_redraw();
             }
-            if let Some((l, o)) = lsp!() {
-                for rq in l.req_rx.try_iter() {
-                    match rq {
-                        LRq { method: "workspace/diagnostic/refresh", .. } => {
-                            // let x = l.pull_diag(o.into(), diag.result.clone());
-                            // diag.request(l.runtime.spawn(x));
-                        },
-                        rq =>
-                            log::debug!("discarding request {rq:?}"),
-                    }
-                }
-                let r = &l.runtime; 
-                inlay.poll(|x, p| x.ok().or(p.1).inspect(|x| {
-                    text.set_inlay(x);
-                }), r);
-                document_highlights.poll(|x, _| {
-                    x.ok()
-                }, r);
-                diag.poll(|x, _|x.ok().flatten(), r);
-                if let CompletionState::Complete(rq)= &mut complete {
-                    rq.poll(|f, (c,_)| {
-                        f.ok().flatten().map(|x| {Complete {r:x,start:c,selection:0,vo:0,}})
-                    }, r);
-                };
-                
-                if let State::Symbols(x) = &mut state {
-                    x.poll(|x, (_, p)| x.ok().map(|r| {
-                        let tree = tree.as_deref().unwrap().iter().map(|x| {
-                            SymbolInformation{ name: x.file_name().unwrap().to_str().unwrap().to_string()
-                                ,kind: SymbolKind::FILE,location: Location {
-                                range: lsp_types::Range{end:Position::default(), start:Position::default()},
-                                uri: Url::from_file_path(&x).unwrap(),
-                                
-                            }, container_name: None,deprecated: None,
-                                tags: None, }
-                        });
-                        sym::Symbols {
-                            tedit: p.map(_.tedit).unwrap_or_default(),
-                            r: tree.chain(r).collect(),..default() // dont care about previous selection
-                        }
-                    }), &l.runtime);
-                }
-                if let State::CodeAction(x) = &mut state {
-                x.poll(|x, _| {
-                    let lems: Vec<CodeAction> = x.ok()??.into_iter().map(|x| match x {
-                         CodeActionOrCommand::CodeAction(x) => x,
-                         _ => panic!("alas we dont like these"),
-                     }).collect();
-                    if lems.is_empty() {
-                        bar.last_action = "no code actions available".into();
-                        None
-                    } else {
-                        Some(act::CodeActions::new(lems))
-                    }
-                },&l.runtime); 
-                }
-                def.poll(|x, _|
-                    x.ok().flatten().and_then(|x| match &x {
-                        GotoDefinitionResponse::Link([x, ..]) => Some(x.clone()),
-                        _ => None,
-                    })
-                , &l.runtime);
-                semantic_tokens.poll(|x, _| x.ok(), &l.runtime);
-                sig_help.poll(|x, ((), y)| x.ok().flatten().map(|x| {
-                if let Some((old_sig, vo, max)) = y && &sig::active(&old_sig) == &sig::active(&x){
-                    (x, vo, max)
-                } else {
-                    (x, 0, None)
-                }
-            }), &l.runtime);
-            hovering.poll(|x, _| x.ok().flatten(), &l.runtime);
-            }            match event {
+            ed.poll();
+
+            match event {
                 Event::AboutToWait => {}
                 Event::WindowEvent {
                     window_id,
@@ -555,462 +305,36 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                         ]
                     }
                 }
-                Event::WindowEvent { event: WindowEvent::Ime(Ime::Preedit(x, y)), .. } => {}
-                Event::WindowEvent { event: WindowEvent::Ime(Ime::Commit(x)), .. } => {
-                    text.insert(&x);
+                Event::WindowEvent {
+                    event: WindowEvent::Ime(Ime::Preedit(..)),
+                    ..
+                } => {}
+                Event::WindowEvent {
+                    event: WindowEvent::Ime(Ime::Commit(x)),
+                    ..
+                } => {
+                    ed.text.insert(&x);
                     window.request_redraw();
                 }
                 Event::WindowEvent {
                     window_id,
                     event: WindowEvent::RedrawRequested,
                 } if window_id == window.id() => {
-                    {let (cx, cy) = text.cursor_visual();
-                    let met = FONT.metrics(&[]);
-                    let fac = ppem / met.units_per_em as f32;
-                    window.set_ime_cursor_area(
-                      PhysicalPosition::new(
-                        ((cx + text.line_number_offset()) as f64 * (fw) as f64).round(),
-                        ((cy.saturating_sub(text.vo)) as f64 * (fh + ls * fac) as f64).floor())
-                        , PhysicalSize::new(fw, fh)
-                    )};
-                    let Some(surface) = surface else {
-                        eprintln!(
-                            "RedrawRequested fired before Resumed or \
-                             after Suspended"
-                        );
-                        return;
-                    };
-                    let size = window.inner_size();
-
-                    if size.height != 0 && size.width != 0 {
-                        let now = Instant::now();
-                        if c*r!=cells.len(){
-                            return;
-                        }
-                        cells.fill(Cell {
-                            style: Style { fg: BG, secondary_color: BG, bg: BG, flags: 0 },
-                            letter: None,
-                        });
-                        let x = match &state {
-                            State::Selection(x) => Some(x.clone()),
-                            _ => None,
-                        };
-                        text.line_numbers(
-                            (c, r - 1),
-                            [67, 76, 87],
-                            BG,
-                            (&mut cells, (c, r)),
-                            (1, 0),
-                        );
-                        let t_ox = text.line_number_offset() + 1;
-                        text.c = c - t_ox;
-                        text.r = r - 1;
-                        // let mut text = text.clone();
-                        // for (_, inlay) in inlay.result.as_ref().into_iter().flatten().chunk_by(|x| x.position.line).into_iter() {
-                        //     let mut off = 0;
-                        //     for inlay in inlay {
-                        //     let label = match &inlay.label {
-                        //         InlayHintLabel::String(x) => x.clone(),
-                        //         InlayHintLabel::LabelParts(v) => {
-                        //             v.iter().map(_.value.clone()).collect::<String>()
-                        //         },
-                        //     };
-                        //     text.rope.insert(text.l_position(inlay.position).unwrap() + off, &label);
-                        //     off += label.chars().count();
-                        //     }
-                        // }
-                        
-                        text.write_to(
-                            (&mut cells, (c, r)),
-                            (t_ox, 0),
-                            x,
-                            |(_c, _r), text,  mut x| {
-                                if let Some(hl) = &document_highlights.result {
-                                    for DocumentHighlight { range: r, .. } in hl {
-                                        // let s = match kind {
-                                        //     Some(DocumentHighlightKind::READ) => Style::UNDERLINE,
-                                        //     Some(DocumentHighlightKind::WRITE) => Style::UNDERLINE,
-                                        //     _ => Style::UNDERCURL,
-                                        // };
-                                        let (x1, y1) = text.map_to_visual((r.start.character as _, r.start.line as _));
-                                        let (x2, y2) = text.map_to_visual((r.end.character as _, r.end.line as _));
-                                        x.get_simple((x1, y1), (x2, y2)).coerce().for_each(|x| {
-                                            x.style.bg = col!("#3a4358");
-                                        }); 
-                                    }
-                                }
-                                if let Some(LocationLink {
-                                    origin_selection_range: Some(r), ..
-                                }) = def.result { _ = try {
-                                    let (x1, y1) = text.map_to_visual((r.start.character as _, r.start.line as _));
-                                    let (x2, y2) = text.map_to_visual((r.end.character as _, r.end.line as _));
-                                    x.get_simple((x1, y1), (x2, y2))?.iter_mut().for_each(|x| {
-                                        x.style.flags |= Style::UNDERLINE;
-                                        x.style.fg = col!("#FFD173");
-                                    });
-                                } }
-                                if let Some((lsp, p)) = lsp!() && let uri = Url::from_file_path(p).unwrap() && let Some(diag) = lsp.diagnostics.get(&uri, &lsp.diagnostics.guard()) {
-                                    #[derive(Copy, Clone, Debug)]
-                                    enum EType {
-                                        Hint, Info, Error,Warning,Related(DiagnosticSeverity),
-                                    }
-                                    let mut occupied = vec![];
-                                    diag.iter().flat_map(|diag| {
-                                        let sev =  diag.severity.unwrap_or(DiagnosticSeverity::ERROR);
-                                        let sev_ = match sev {
-                                        
-                                            DiagnosticSeverity::ERROR => EType::Error,
-                                            DiagnosticSeverity::WARNING => EType::Warning,
-                                            DiagnosticSeverity::HINT => EType::Hint,
-                                            _ => EType::Info,
-                                        };
-                                        once((diag.range, &*diag.message, sev_)).chain(diag.related_information.iter().flatten().filter(|sp| sp.location.uri == uri).map(move |x| {
-                                            (x.location.range, &*x.message, EType::Related(sev))
-                                        }))
-                                    }).for_each(|(mut r, m, sev)| {
-                                            if let EType::Related(x) = sev && x != DiagnosticSeverity::ERROR {
-                                                return;
-                                            }
-                                            let p = r.start.line;
-                                            while occupied.contains(&r.start.line) {
-                                                r.start.line+=1;
-                                            };
-                                            occupied.push(r.start.line);
-                                            let f = |cell:&mut Cell| {
-                                                cell.style.bg.blend(match sev {
-                                                    EType::Error => col!("#ff66662c"),
-                                                    EType::Warning | EType::Hint | EType::Info => col!("#9469242c"),
-                                                    EType::Related(DiagnosticSeverity::ERROR) => col!("#dfbfff26"),
-                                                    EType::Related(_) => col!("#ffad6625"),
-                                                });
-                                            };
-                                            if r.start == r.end {
-                                                x.get(text.map_to_visual((r.start.character as _, p as _))).map(f);
-                                            } else {
-                                                x.get_range(text.map_to_visual((r.start.character as _, p as _)),
-                                                            text.map_to_visual((r.end.character as usize, r.end.line as _)))
-                                                    .for_each(f)
-                                            }
-                                            let l = r.start.line as usize;
-                                            let Some(x_) = text.visual_eol(l).map(_+2) else {
-                                                return;
-                                            };
-                                        let m = m.lines().next().unwrap_or(m);
-                                        x.get_range(
-                                            (x_, l),
-                                            (x_ + m.chars().count(), l),
-                                        ).zip(m.chars()).for_each(|(x, ch)| {
-                                            let (bg, fg) = match sev {
-                                                EType::Warning => {  col!("#ff942f1b", "#fa973a") },
-                                                EType::Error => { col!("#ff942f1b", "#f26462") },
-                                                EType::Related(DiagnosticSeverity::WARNING) => { col!("#dfbfff26", "#DFBFFF") }
-                                                _ => return
-                                            };
-                                            x.style.bg.blend(bg);
-                                            x.style.fg = fg;
-                                            x.letter = Some(ch);
-                                        })
-                                    });
-                                }
-                                if let State::Search(re, j, _) = &state {
-                                    re.find_iter(&text.rope.to_string())
-                                        .enumerate()
-                                        .for_each(|(i, m)| {
-                                            for x in x.get_range(
-                                            text.map_to_visual(text.xy(text.rope.byte_to_char(m.start())).unwrap()),text.map_to_visual(                                             text.xy(text
-                                                        .rope
-                                                        .byte_to_char(
-                                                            m.end(),
-                                                        )).unwrap()))
-                                             {
-                                                x.style.bg = if i == *j {
-                                                    [105, 83, 128]
-                                                } else {
-                                                    [65, 62, 83]
-                                                }
-                                            }
-                                        });
-                                }
-                            },
-                            origin.as_deref(),
-                            semantic_tokens.result.as_deref().zip(
-                                match lsp {
-                                    Some(lsp::Client { initialized: Some(lsp_types::InitializeResult {
-                                        capabilities: ServerCapabilities {
-                                            semantic_tokens_provider:
-                                            Some(SemanticTokensServerCapabilities::SemanticTokensOptions(SemanticTokensOptions{
-                                                legend,..
-                                            })),..
-                                        }, ..
-                                    }), ..
-                                }) => Some(legend),
-                                _ => None,
-                            }),
-                        );
-
-                        bar.write_to(
-                            BG,
-                            FG,
-                            (&mut cells, (c, r)),
-                            r - 1,
-                            origin
-                                .as_ref()
-                                .map(|x| workspace.as_ref().and_then(|w| x.strip_prefix(w).ok()).unwrap_or(&x).to_str().unwrap())
-                                .unwrap_or("new buffer"),
-                            &state,
-                            &text,
-                            lsp
-                        );
-                        unsafe {
-                            dsb::render(
-                                &cells,
-                                (c, r),
-                                ppem,
-                                &mut fonts,
-                                ls,
-                                true,
-                                i.as_mut(),(0,0)
-                        )
-                        };
-
-                        let place_around = |(_x, _y): (usize, usize), fonts: &mut Fonts,mut i:Image<&mut [u8], 3> ,c: &[Cell],columns:usize, ppem_:f32,ls_:f32, ox:f32, oy: f32, toy: f32| {
-                            let met = FONT.metrics(&[]);
-                            let fac = ppem / met.units_per_em as f32;
-                            let position = (
-                                (((_x) as f32 * fw).round() + ox) as usize,
-                                (((_y) as f32 * (fh + ls * fac)).round() + oy) as usize,
-                            );
-
-                            let ppem = ppem_;
-                            let ls = ls_;
-                            let mut r = c.len()/columns;
-                            assert_eq!(c.len()%columns, 0);
-                            let (w, h) = dsb::size(&fonts.regular, ppem, ls, (columns, r));
-                            // std::fs::write("cells", Cell::store(c));
-
-                            if w >= size.width as usize
-                              || (position.1 + h >= size.height as usize  && !position.1.checked_sub(h).is_some())
-                              || position.1 >= size.height as usize
-                              || position.0 >= size.width as usize
-                            {
-                                unsafe { dsb::render_owned(c, (columns, c.len() / columns), ppem, fonts, ls, true).save("fail.png") };
-                                return Err(());
-                            }
-                            assert!(w < window.inner_size().width as _ &&h < window.inner_size().height as _);
-                            let is_above = position.1.checked_sub(h).is_some();
-                            let top = position.1.checked_sub(h).unwrap_or(((((_y + 1) as f32) * (fh + ls * fac)).round() + toy) as usize);
-                            let (_, y) = dsb::fit(&fonts.regular, ppem, ls, (window.inner_size().width as _ /* - left */,((window.inner_size().height as usize).saturating_sub( top)) )); /* suspicious saturation */
-                            r = r.min(y);
-
-                            let left =
-                            if position.0 + w as usize > window.inner_size().width as usize {
-                                window.inner_size().width as usize- w as usize
-                            } else { position.0 };
-
-                            let (w, h) = dsb::size(&fonts.regular, ppem, ls, (columns, r));
-                            unsafe{ dsb::render(
-                                &c,
-                                (columns, 0),
-                                ppem,
-                                fonts,
-                                ls,
-                                true,
-                                i.copy(),
-                                (left as _, top as _)
-                            )};
-                            Ok((is_above, left, top, w, h))
-                        };
-                        let mut pass = true;
-                        if let Some((lsp, p)) = lsp!() && let Some(diag) = lsp.diagnostics.get(&Url::from_file_path(p).unwrap(), &lsp.diagnostics.guard()) {
-                            let dawg = diag.iter().filter(|diag| text.l_range(diag.range).is_some_and(|x| x.contains(&text.mapped_index_at(cursor_position)) && (text.vo..text.vo+r).contains(&(diag.range.start.line as _))));
-                            for diag in dawg { 
-                                match diag.data.as_ref().unwrap_or_default().get("rendered") {
-                                    Some(x) if let Some(x) = x.as_str() => {
-                                        let mut t = pattypan::term::Terminal::new((95, (r.saturating_sub(5)) as _), false);
-                                        for b in x.replace('\n', "\r\n").replace("⸬", ":").replace("/home/os", "").bytes(){ t.rx(b,std::fs::File::open("/dev/null").unwrap().as_fd()); }
-                                        let y_lim = t.cells.rows().position(|x| x.iter().all(_.letter.is_none())).unwrap_or(20);
-                                        let c =t.cells.c() as usize;
-                                        let Some(x_lim) = t.cells.rows().map(_.iter().rev().take_while(_.letter.is_none()).count()).map(|x|
-                                        c -x).max() else { continue };
-                                        let n = t.cells.rows().take(y_lim).flat_map(|x| &x[..x_lim]).copied().collect::<Vec<_>>();
-    let Ok((_,left, top, w, h)) = place_around(
-    { let (x, y) =  text.map_to_visual((diag.range.start.character as _, diag.range.start.line as usize));
-      (x + text.line_number_offset() + 1, y - text.vo) },
-                                &mut fonts,
-                                i.as_mut(),
-                                &n, x_lim,
-                                17.0, 0., 0., 0., 0.
-                            ) else { continue };
-                            pass=false;
-                            i.r#box((left .saturating_sub(1) as _, top.saturating_sub(1) as _), w as _,h as _, BORDER);
-                                     },
-                                    _ => {}
-                                }
-                            }
-                        };
-                        hovering.result.as_ref().filter(|_|pass).map(|x| x.span.clone().map(|[(_x, _y),(_x2, _)]| {
-                            // let [(_x, _y), (_x2, _)] = text.position(sp);
-                            // dbg!(x..=x2, cursor_position.0)
-                        // if !(_x..=_x2).contains(&&(cursor_position.0 .wrapping_sub( text.line_number_offset()+1))) {
-                        //     return
-                        // }
-
-                            let [_x, _x2] = [_x, _x2].add(text.line_number_offset()+1);
-                            let Some(_y) = _y.checked_sub(text.vo) else {
-                                return;
-                            };
-
-                            // if !(cursor_position.1 == _y && (_x..=_x2).contains(&cursor_position.0)) {
-                                // return;
-                            // }
-
-                            let r = x.item.l().min(15);
-                            let c = x.item.displayable(r);
-                            let Ok((_,left, top, w, h)) = place_around(
-                                (_x, _y),
-                                &mut fonts,
-                                i.as_mut(),
-                                c, x.item.c,
-                                18.0, 10.0, 0., 0., 0.
-                            ) else { return };
-                            i.r#box((left .saturating_sub(1) as _, top.saturating_sub(1) as _), w as _,h as _, BORDER);
-                        }));
-                        match &state {
-                            State::CodeAction(Rq{ result :Some(x), ..}) => 'out: {
-                                let m = x.maxc();
-                                let c = x.write(m);
-                                let (_x, _y) = text.cursor_visual();
-                                let _x = _x + text.line_number_offset()+1;
-                                let Some(_y) = _y.checked_sub(text.vo) else { 
-                                    println!("rah");
-                                    break 'out };
-                                let Ok((is_above,left, top, w, mut h)) = place_around((_x, _y), &mut fonts, i.as_mut(), &c, m, ppem, ls, 0., 0., 0.)else { println!("ra?"); break 'out};
-                                i.r#box((left .saturating_sub(1) as _, top.saturating_sub(1) as _), w as _,h as _, BORDER);
-                            },
-                            State::Symbols(Rq { result: Some(x),..}) => 'out: {
-                                let ws =  workspace.as_deref().unwrap();
-                                let c = x.cells(50,ws);
-                                // let (_x, _y) = text.cursor_visual();
-                                let _x = 0;
-                                let _y = r - 1;
-                                let Ok((is_above,left, top, w, mut h)) = place_around((_x, _y), &mut fonts, i.as_mut(), &c, 50, ppem, ls, 0., 0., 0.)else { println!("ra?"); break 'out};
-                                i.r#box((left .saturating_sub(1) as _, top.saturating_sub(1) as _), w as _,h as _, BORDER);
-                            }
-                            _ =>{},
-                        }
-                        let com = match complete {
-                            CompletionState::Complete(Rq{ result: Some(ref x,),..}) => {
-                                let c = com::s(x, 40,&filter(&text));
-                            if c.len() == 0 {
-                                complete.consume(CompletionAction::NoResult).unwrap(); None
-                            } else { Some(c) }},
-                            _ => None,
-                        };
-                        'out: {if let Rq{result: Some((ref x, vo, ref mut max)), .. } = sig_help {
-                            let (sig, p) = sig::active(x);
-                            let c = sig::sig((sig, p), 40);
-                            let (_x, _y) = text.cursor_visual();
-                            let _x = _x + text.line_number_offset()+1;
-                            let Some(_y) = _y.checked_sub(text.vo) else { break 'out };
-                            let Ok((is_above,left, top, w, mut h)) = place_around((_x, _y), &mut fonts, i.as_mut(), &c, 40, ppem, ls, 0., 0., 0.) else { break 'out };
-                                i.r#box((left .saturating_sub(1) as _, top.saturating_sub(1) as _), w as _,h as _, BORDER);
-                            let com = com.and_then(|c| {
-                                let Ok((is_above_,left, top, w_, h_)) = place_around(
-                                    (_x, _y),
-                                    &mut fonts,
-                                    i.as_mut(),
-                                    &c, 40, ppem, ls, 0., -(h as f32), if is_above { 0.0 } else { h as f32 }
-                                ) else { return None};
-                                i.r#box((left .saturating_sub(1) as _, top.saturating_sub(1) as _), w_ as _,h_ as _, BORDER);
-                                if is_above { // completion below, we need to push the docs, if any, below only below us, if the sig help is still above.
-                                    h = h_;
-                                } else {
-                                    h+=h_;
-                                }
-                                Some((is_above_, left, top, w_, h_))
-                            });
-                            {
-                            let ppem = 15.0;
-                            let ls = 10.0;
-                            let (fw, _) = dsb::dims(&FONT, ppem);
-                            let cols = (w as f32 / fw).floor() as usize;
-                            sig::doc(sig, cols) .map(|mut cells| {
-                                *max = Some(cells.l());
-                                cells.vo = vo;
-                                let cells = cells.displayable(cells.l().min(15));
-                                let Ok((_,left_, top_, _w_, h_)) = place_around((_x, _y),
-                                    &mut fonts, i.as_mut(), cells, cols, ppem, ls,
-                                    0., -(h as f32), if is_above { com.filter(|x| !x.0).map(|(_is, _l, _t, _w, h)| h).unwrap_or_default() as f32 } else { h as f32 }) else {
-                                    return
-                                    };
-                                i.r#box((left_.saturating_sub(1) as _, top_.saturating_sub(1) as _), w as _,h_ as _, BORDER);
-                            });
-                            }
-                        } else if let Some(c) = com {
-                            let ppem = 20.0;
-                            let (_x, _y) = text.cursor_visual();
-                            let _x = _x + text.line_number_offset()+1;
-                            let _y = _y.wrapping_sub(text.vo);
-                            let Ok((_,left, top, w, h)) = place_around(
-                                (_x, _y),
-                                &mut fonts,
-                                i.as_mut(),
-                                &c, 40, ppem, ls, 0., 0., 0.
-                            ) else { break 'out; };
-                            i.r#box((left .saturating_sub(1) as _, top.saturating_sub(1) as _), w as _,h as _, BORDER);
-                        }
-                        }
-                        let met = FONT.metrics(&[]);
-                        let fac = ppem / met.units_per_em as f32;
-                        // if x.view_o == Some(x.cells.row) || x.view_o.is_none() {
-                        let (fw, fh) = dsb::dims(&FONT, ppem);
-                        let cursor =
-                            Image::<_, 4>::build(3, (fh).ceil() as u32)
-                                .fill([0xFF, 0xCC, 0x66, 255]);
-                        let mut draw_at = |x: usize, y:usize, w| unsafe {
-                            let x = (x + t_ox).saturating_sub(text.ho)%c;
-
-                            if (text.vo..text.vo + r).contains(&y) {
-                                i.as_mut().overlay_at(
-                                    w,
-                                    (x as f32 * fw).floor() as u32,
-                                    ((y - text.vo) as f32
-                                        * (fh + ls * fac))
-                                        .floor()
-                                        as u32,
-                                    // 4 + ((x - 1) as f32 * sz) as u32,
-                                    // (x as f32 * (ppem * 1.25)) as u32 - 20,
-                                );
-                            }
-                        };
-                        let (x, y) = text.cursor_visual();
-                        let image =
-                            Image::<_, 4>::build(2, (fh).ceil() as u32)
-                                .fill([82,82,82, 255]);
-                        for stop in text.tabstops.as_ref().into_iter().flat_map(|x|x.list()) {
-                            let Some((x, y)) = text.xy(stop.clone().r().end) else { continue };
-                            draw_at(x, y, &image);
-                        }
-                        if matches!(
-                            state,
-                            State::Default | State::Selection(_)
-                        )
-                        {
-                            draw_at(x, y, &cursor);
-                        }
-                        window.pre_present_notify();
-                        let buffer = surface.buffer_mut().unwrap();
-                        let x = unsafe {
-                            std::slice::from_raw_parts_mut(
-                                buffer.as_ptr() as *mut u8,
-                                buffer.len() * 4,
-                            )
-                            .as_chunks_unchecked_mut::<4>()
-                        };
-                        fimg::overlay::copy_rgb_bgr_(i.flatten(), x);
-                        dbg!(now.elapsed());
-                        buffer.present().unwrap();
-                    }
+                    rnd::render(
+                        ed,
+                        &mut cells,
+                        ppem,
+                        window,
+                        fw,
+                        fh,
+                        ls,
+                        c,
+                        r,
+                        surface,
+                        cursor_position,
+                        &mut fonts,
+                        i.as_mut(),
+                    );
                 }
 
                 Event::WindowEvent {
@@ -1030,130 +354,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                         (position.y / (fh + ls * fac) as f64).floor()
                             as usize,
                     );
-                    match state
-                        .consume(Action::C(cursor_position))
-                        .unwrap()
-                    {
-                        Some(Do::ExtendSelectionToMouse) => {
-                            *state.sel() = text.extend_selection_to(
-                                text.mapped_index_at(cursor_position),
-                                state.sel().clone(),
-                            );
-                            window.request_redraw();
-                        }
-                        Some(Do::StartSelection) => {
-                            let x = text.mapped_index_at(cursor_position);
-                            hist.last.cursor = x;
-                            text.cursor = x;
-                            *state.sel() = x..x;
-                        }
-                        Some(Do::Hover) if let Some(hover) = text.visual_index_at(cursor_position) &&
-                let Some((cl, o)) = lsp!() => 'out: {
-                    let l = &mut hovering.result;
-                    if let Some(Hovr{ span: Some([(_x, _y), (_x2, _)]),..}) = &*l {
-                        let Some(_y) = _y.checked_sub(text.vo) else { break 'out };
-                        if cursor_position.1 == _y && (_x..=_x2).contains(&&(cursor_position.0 - text.line_number_offset()-1)) {
-                            break 'out;
-                        } else {
-                            // println!("span no longer below cursor; cancel hover {_x}..{_x2} {}", cursor_position.0 - text.line_number_offset() - 1);
-                            *l = None;
-                            window.request_redraw();
-                        }
-                    }
-                    let text = text.clone();
-                    let mut rang = None;
-                    let z = match hover {
-                        Mapping::Char(_, _, i) => {
-                            TextDocumentPositionParams { position: text.to_l_position(i).unwrap(), text_document: o.tid() }
-                        },
-                        Mapping::Fake(mark, relpos, abspos, _) => {
-                            let Some(ref loc) = mark.l[relpos].1 else {
-                                break 'out;
-                            };
-                            let (x, y) = text.xy(abspos).unwrap();
-                            let Some(mut begin) = text.reverse_source_map(y) else { break 'out };
-                            let start = begin.nth(x - 1).unwrap() + 1;
-                            let left = mark.l[..relpos].iter().rev().take_while(_.1.as_ref() == Some(loc)).count();
-                            let start = start + relpos - left;
-                            let length = mark.l[relpos..].iter().take_while(_.1.as_ref() == Some(loc)).count() + left;
-                            rang = Some([(start, y), (start + length, y)]);
-                            TextDocumentPositionParams { text_document: TextDocumentIdentifier { uri: loc.uri.clone() }, position: loc.range.start }
-                        }
-                    };
-                    if ctrl() {
-                    if def.request.as_ref().is_none_or(|&(_, x)| x != cursor_position) {
-                        let handle = cl.runtime.spawn(window.redraw_after(cl.request::<lsp_request!("textDocument/definition")>(&GotoDefinitionParams {
-                            text_document_position_params: z.clone(),
-                            work_done_progress_params: default(),
-                            partial_result_params: default(),
-                        }).unwrap().0));
-                        def.request = Some((DropH::new(handle), cursor_position));
-                    } else if def.result.as_ref().is_some_and(|em| {
-                        let z = em.origin_selection_range.unwrap();
-                        (z.start.character..z.end.character).contains(&((cursor_position.0 - text.line_number_offset()-1) as _))
-                    }) {
-                        def.result = None;
-                    }
-                    } else {
-                        def.result = None;
-                    }
-if let Some((_, c)) = hovering.request && c == cursor_position {
-    break 'out;
-}
-                    // if !running.insert(hover) {return}
-let (rx, _) = cl.request::<HoverRequest>(&HoverParams {
-    text_document_position_params: z,
-    work_done_progress_params:default()
-}).unwrap();
-// println!("rq hov of {hover:?} (cur {})", hovering.request.is_some());
-let handle: tokio::task::JoinHandle<Result<Option<Hovr>, anyhow::Error>> = cl.runtime.spawn(window.redraw_after(async move {
-    let Some(x) = rx.await? else {return Ok(None::<Hovr>)};
-    let (w, cells) = spawn_blocking(move || {
-        let x = match &x.contents {
-            lsp_types::HoverContents::Scalar(marked_string) => {
-                match marked_string{
-                    MarkedString::LanguageString(x) =>Cow::Borrowed(&*x.value),
-                    MarkedString::String(x) => Cow::Borrowed(&**x),
-                }
-            },
-            lsp_types::HoverContents::Array(marked_strings) => {
-                Cow::Owned(marked_strings.iter().map(|x| match x{
-                    MarkedString::LanguageString(x) => &*x.value,
-                    MarkedString::String(x) => &*x,
-                }).collect::<String>())
-            },
-            lsp_types::HoverContents::Markup(markup_content) => {
-                Cow::Borrowed(&*markup_content.value)
-            },
-        };
-        let x = hov::p(&x).unwrap();
-        let m = hov::l(&x).into_iter().max().map(_+2).unwrap_or(usize::MAX).min(c-10);
-        (m, hov::markdown2(m, &x))
-    }).await.unwrap();
-    let span = rang.or_else(|| x.range.and_then(|range| try {
-        let (startx, starty) = text.l_pos_to_char(range.start)?;
-        let (endx, endy) = text.l_pos_to_char(range.end)?;
-        let x1 = text.reverse_source_map(starty)?.nth(startx)?;
-        let x2 = text.reverse_source_map(endy)?.nth(endx)?;
-        [(x1, range.start.line as _), (x2, range.start.line as _)]
-    }));
-    anyhow::Ok(Some( hov::Hovr { span, item: text::CellBuffer { c: w, vo: 0, cells: cells.into() }}.into()))
-}));
-hovering.request = (DropH::new(handle), cursor_position).into();
-// hovering.result = None;
-//                             lsp!().map(|(cl, o)| {
-// let window = window.clone();
-// });
-//                                 });
-                        }
-                        Some(Do::Hover) => {
-                            def.result = None;
-                            hovering.result = None;
-                            window.request_redraw();
-                        }
-                        None => {}
-                        x => unreachable!("{x:?}"),
-                    }
+                    ed.cursor_moved(cursor_position, window.clone(), c);
                 }
                 Event::WindowEvent {
                     event:
@@ -1163,57 +364,7 @@ hovering.request = (DropH::new(handle), cursor_position).into();
                     if button == MouseButton::Left {
                         unsafe { CLICKING = true };
                     }
-                    _ = complete.consume(CompletionAction::Click).unwrap();
-                    match state.consume(Action::M(button)).unwrap() {
-                        Some(Do::MoveCursor) => {
-                            text.cursor = text.mapped_index_at(cursor_position);
-                            if let Some((lsp, path)) = lsp!() {
-                                sig_help.request(lsp.runtime.spawn(window.redraw_after(lsp.request_sig_help(path, text.cursor()))));
-                                document_highlights.request(lsp.runtime.spawn(window.redraw_after(lsp.document_highlights(path, text.to_l_position(text.cursor).unwrap()))));
-                            }
-                            hist.last.cursor = text.cursor;
-                            chist.push(text.cursor());
-                            text.setc();
-                        }
-                        Some(Do::NavForward) => {
-                            chist.forth().map(|x| {
-                                text.cursor = text.rope.line_to_char(x.1) + x.0;
-                                text.scroll_to_cursor();
-                            });
-                        }
-                        Some(Do::NavBack) => {
-                            chist.back().map(|x| {
-                                text.cursor = text.rope.line_to_char(x.1) + x.0;
-                                text.scroll_to_cursor();
-                            });
-                        }
-                        Some(Do::ExtendSelectionToMouse) => {
-                            *state.sel() = text.extend_selection_to(
-                                text.mapped_index_at(cursor_position),
-                                state.sel().clone(),
-                            );
-                        }
-                        Some(Do::StartSelection) => {
-                            let x = text.mapped_index_at(cursor_position);
-                            hist.last.cursor = x;
-                            *state.sel() = text.extend_selection_to(
-                                x,
-                                text.cursor..text.cursor,
-                            );
-                        }
-                        Some(Do::GoToDefinition) => {
-                            if let Some(LocationLink {
-                                ref target_uri,
-                                target_range, .. }) = def.result && let Some((l, p)) = lsp!() {
-                                if target_uri == &p.tid().uri {
-                                    text.cursor = text.l_position(target_range.start).unwrap();
-                                    text.scroll_to_cursor();
-                                }
-                            }
-                        }
-                        None => {}
-                        _ => unreachable!(),
-                    }
+                    ed.click(button, cursor_position, window.clone());
                     window.request_redraw();
                 }
                 Event::WindowEvent {
@@ -1233,24 +384,8 @@ hovering.request = (DropH::new(handle), cursor_position).into();
                             phase: _,
                         },
                 } => {
-                    let rows = if alt() { rows * 8. } else { rows * 3. };
-                    let (vo, max) = lower::saturating::math! { if let Some(x)= &mut hovering.result && shift() {
-                        let n = x.item.l();
-                        (&mut x.item.vo, n - 15)
-                    } else if let Some((_, ref mut vo, Some(max))) = sig_help.result && shift(){
-                        (vo, max - 15)
-                    } else {
-                        let n = text.l() - 1; (&mut text.vo, n)
-                    }};
-                    if rows < 0.0 {
-                        let rows = rows.ceil().abs() as usize;
-                        *vo = (*vo + rows).min(max);
-                    } else {
-                        let rows = rows.floor() as usize;
-                        *vo = vo.saturating_sub(rows);
-                    }
+                    ed.scroll(rows);
                     window.request_redraw();
-                    inlay!();
                 }
                 Event::WindowEvent {
                     event: WindowEvent::ModifiersChanged(modifiers),
@@ -1279,400 +414,8 @@ hovering.request = (DropH::new(handle), cursor_position).into();
                     ) {
                         return;
                     }
-                    let mut o: Option<Do> = state
-                        .consume(Action::K(event.logical_key.clone()))
-                        .unwrap();
-                    match o {
-                        Some(Do::Reinsert) =>
-                            o = state
-                                .consume(Action::K(
-                                    event.logical_key.clone(),
-                                ))
-                                .unwrap(),
-                        _ => {}
-                    }
-                    match o {
-                        Some(Do::SpawnTerminal) => {
-                            trm::toggle(workspace.as_deref().unwrap_or(Path::new("/home/os/")));
-                        }
-                        Some(Do::MatchingBrace) => {
-                            if let Some((l, f)) = lsp!() {
-                                l.matching_brace(f, &mut text);
-                            }
-                        }
-                        Some(Do::Symbols) => {
-                            if let Some(lsp) = lsp {
-                                state = State::Symbols(Rq::new(lsp.runtime.spawn(window.redraw_after(lsp.symbols("".into())))));
-                            }
-                        }
-                        Some(Do::SymbolsHandleKey) => {
-                            if let Some(lsp) = lsp {
-                            let State::Symbols(Rq { result :Some(x), request}) = &mut state else {unreachable!()};
-                            let ptedit = x.tedit.rope.clone();
-                            if handle2(&event.logical_key, &mut x.tedit, lsp!()).is_some() || ptedit != x.tedit.rope {
-                                *request = Some((DropH::new(lsp.runtime.spawn(window.redraw_after(lsp.symbols(x.tedit.rope.to_string())))), ()));
-                                // state = State::Symbols(Rq::new(lsp.runtime.spawn(lsp.symbols("".into()))));
-                            }
-                            }
-                        }
-                         Some(Do::SymbolsSelectNext)  => {
-                            let State::Symbols(Rq { result :Some(x), ..}) = &mut state else {unreachable!()};
-                            x.next();
-                         },
-                         Some(Do::SymbolsSelectPrev)  => {
-                            let State::Symbols(Rq { result :Some(x), ..}) = &mut state else {unreachable!()};
-                            x.back();
-                         },
-                        Some(Do::SymbolsSelect) 
-                         => {                            let State::Symbols(Rq { result :Some(x), ..}) = &mut state else {unreachable!()};
-                            let x = x.sel(); // TODO dedup 
-                             let _: anyhow::Result<()> = try {
-                                let f = x.location.uri.to_file_path().map_err(|()| anyhow::anyhow!("dammit"))?.canonicalize().map_err(anyhow::Error::from)?;
-                            origin = Some(f.clone());                            
-                            let r = text.r;
-                            text = default();
-                            text.r = r;
-                            let new = std::fs::read_to_string(f).map_err(anyhow::Error::from)?;
-                            text.insert(&new);
-                            text.cursor = text.l_position(x.location.range.start).ok_or(anyhow::anyhow!("dangit"))?;
-                            text.scroll_to_cursor_centering();
-                            hist = Hist {
-                                history: vec![],
-                                redo_history: vec![],
-                                last: text.clone(),
-                                last_edit: Instant::now(),
-                                changed: false,
-                            };
-                            complete = CompletionState::None;
-                            mtime = modify!();
-
-                            lsp!().map(|(x, origin)| {
-                                (def, semantic_tokens, inlay, sig_help, complete, hovering) = (default(), default(), default(), default(), default(), default());
-                                x.open(&origin,new).unwrap();
-                                x.rq_semantic_tokens(&mut semantic_tokens, origin, Some(window.clone())).unwrap();
-                            });
-                            state = State::Default;
-                            bar.last_action = "open".to_string();
-                        };
-                        
-                         },
-                        Some(Do::CodeAction) => {
-                            if let Some((lsp, f)) = lsp!() {
-                                let r = lsp.request::<lsp_request!("textDocument/codeAction")>(&CodeActionParams {
-                                    text_document: f.tid(), range: text.to_l_range(text.cursor..text.cursor).unwrap(), context: CodeActionContext {
-                                        trigger_kind: Some(CodeActionTriggerKind::INVOKED),
-                                        // diagnostics: if let Some((lsp, p)) = lsp!() && let uri = Url::from_file_path(p).unwrap() && let Some(diag) = lsp.diagnostics.get(&uri, &lsp.diagnostics.guard()) { dbg!(diag.iter().filter(|x| {
-                                        
-                                        //                                             text.l_range(x.range).unwrap().contains(&text.cursor)
-                                        //                                         }).cloned().collect()) } else { vec![] },
-                                        ..default()
-                                    }, work_done_progress_params: default(), partial_result_params: default() }).unwrap();
-                                let mut r2 = Rq::default();
-                                
-                                r2.request(lsp.runtime.spawn(
-                                async {r.0.await}
-                                
-                                ));
-                                state = State::CodeAction(
-                                   r2
-                                    );
-                            }
-                        }
-                        Some(Do::CASelectLeft) => {
-                            let State::CodeAction(Rq{ result: Some(c), ..  }) = &mut state else { panic!()};
-                            c.left();
-                        }
-                        Some(Do::CASelectRight) =>'out: {
-                            let Some((lsp,f)) = lsp!() else {unreachable!()};
-                            let State::CodeAction(Rq{ result: Some(c), ..  }) = &mut state else { panic!()};
-                            let Some(act) = c.right() else { break 'out };
-                            let act = act.clone();
-                            state = State::Default;
-                            hist.last.cursor = text.cursor;
-                            hist.test_push(&text);
-                            let act = lsp.runtime.block_on(
-                                lsp.request::<CodeActionResolveRequest>(&act).unwrap().0
-                            ).unwrap();
-                            let mut f_ = |edits: &[SnippetTextEdit]|{ 
-                                // let mut first = false;
-                                for edit in edits {
-                                    text.apply_snippet_tedit(edit).unwrap();
-                                }
-                            };
-                            match act.edit {
-                                Some(WorkspaceEdit { 
-                                    document_changes:Some(DocumentChanges::Edits(x)),
-                                    ..
-                                }) => {
-                                    for x in x {
-                                        if x.text_document.uri!= f.tid().uri { return }
-                                        f_(&x.edits);
-                                    }
-                                    
-                                }
-                                Some(WorkspaceEdit { 
-                                    document_changes:Some(DocumentChanges::Operations(x)),
-                                    ..
-                                }) => {
-                                    for op in x {
-                                        match op {
-                                            DocumentChangeOperation::Edit(TextDocumentEdit { 
-                                                edits, text_document,..
-                                            }) => {
-                                                if text_document.uri!= f.tid().uri { return }
-                                                f_(&edits);
-                                            }
-                                        x => log::error!("didnt apply {x:?}"),
-                                        };
-                                        // if text_document.uri!= f.tid().uri { continue }
-                                        // for lsp_types::OneOf::Left(x)| lsp_types::OneOf::Right(AnnotatedTextEdit { text_edit: x, .. }) in edits {
-                                        //     text.apply(&x).unwrap();
-                                        // }
-                                    }
-                                },
-                                _ =>{},
-                            }
-                            change!();
-                            hist.record(&text);
-                        }
-                        Some(Do::CASelectNext) => {
-                            let State::CodeAction(Rq{ result: Some(c), ..  }) = &mut state else { panic!()};
-                            c.down();
-                        }
-                        Some(Do::CASelectPrev) => {
-                            let State::CodeAction(Rq{ result: Some(c), ..  }) = &mut state else { panic!()};
-                            c.up();
-                        }
-                        Some(Do::Reinsert | Do::GoToDefinition | Do::NavBack | Do::NavForward) => panic!(),
-                        Some(Do::Save) => match &origin {
-                            Some(x) => {
-                                state.consume(Action::Saved).unwrap();
-                                save!();
-                            }
-                            None => {
-                                state
-                                    .consume(Action::RequireFilename)
-                                    .unwrap();
-                            }
-                        },
-                        Some(Do::SaveTo(x)) => {
-                            origin = Some(PathBuf::try_from(x).unwrap());
-                            save!();
-                        }
-                        Some(Do::Edit) => {
-                            hist.test_push(&text);
-                            let cb4 = text.cursor;
-                            if let Key::Named(Enter | ArrowUp | ArrowDown | Tab) = event.logical_key && let CompletionState::Complete(..) = complete{
-                            } else {
-                                handle2(&event.logical_key, &mut text, lsp!());
-                            }
-                            text.scroll_to_cursor();
-                            inlay!();
-                            if cb4 != text.cursor && let CompletionState::Complete(Rq{ result: Some(c),.. })= &mut complete
-                                && ((text.cursor < c.start) || (!is_word(text.at_())&& (text.at_() != '.' || text.at_() != ':')) ) {
-                                complete = CompletionState::None;
-                            }
-                            if sig_help.running() && cb4 != text.cursor && let Some((lsp, path)) = lsp!() {
-                                sig_help.request(lsp.runtime.spawn(window.redraw_after(lsp.request_sig_help(path, text.cursor()))));
-                            }
-                            if hist.record(&text) && let Some((lsp, path)) = lsp!() {
-                                change!();
-                            }
-    lsp!().map(|(lsp, o)|{
-        let window = window.clone();
-        match event.logical_key.as_ref() {
-            Key::Character(y)
-                if let Some(x) = &lsp.initialized
-                    && let Some(x) = &x.capabilities.signature_help_provider
-                    && let Some(x) = &x.trigger_characters && x.contains(&y.to_string()) => {
-                        sig_help.request(lsp.runtime.spawn(window.redraw_after(lsp.request_sig_help(o, text.cursor()))));
-                    },
-            _ => {}
-        }
-        match complete.consume(CompletionAction::K(event.logical_key.as_ref())).unwrap(){
-            Some(CDo::Request(ctx)) => {
-                let h = DropH::new(lsp.runtime.spawn(
-                    window.redraw_after(lsp.request_complete(o, text.cursor(), ctx))
-                ));
-                let CompletionState::Complete(Rq{ request : x, result: c, }) = &mut complete else { panic!()};
-                *x = Some((h,c.as_ref().map(|x|x.start).or(x.as_ref().map(|x|x.1)).unwrap_or(text.cursor)));
-            }
-            Some(CDo::SelectNext) => {
-                let CompletionState::Complete(Rq{ result: Some(c), ..  }) = &mut complete else { panic!()};
-                c.next(&filter(&text));
-            }
-            Some(CDo::SelectPrevious) => {
-                let CompletionState::Complete(Rq{ result: Some(c), .. }) = &mut complete else { panic!()};
-                c.back(&filter(&text));
-            }
-            Some(CDo::Finish(x)) => {
-                let sel = x.sel(&filter(&text));
-                let sel = lsp.runtime.block_on(lsp.resolve(sel.clone()).unwrap()).unwrap();
-                let CompletionItem { text_edit: Some(CompletionTextEdit::Edit(ed)), additional_text_edits, insert_text_format, ..  } = sel.clone() else { panic!() };
-                match insert_text_format {
-                    Some(InsertTextFormat::SNIPPET) =>{
-                        text.apply_snippet(&ed).unwrap();
-                    },
-                    _ => {
-                        let (s, _) = text.apply(&ed).unwrap();
-                        text.cursor = s + ed.new_text.chars().count();
-                    }
-                }
-                for additional in additional_text_edits.into_iter().flatten() {
-                    text.apply_adjusting(&additional).unwrap();
-                }
-                if hist.record(&text) { change!();}
-                sig_help = Rq::new(lsp.runtime.spawn(window.redraw_after(lsp.request_sig_help(o, text.cursor()))));
-            }
-            None => {return},
-        };
-    });
-
-                        }
-                        Some(Do::Undo) => {
-                            hist.test_push(&text);
-                            hist.undo(&mut text);
-                            bar.last_action = "undid".to_string();
-                            change!();
-                        }
-                        Some(Do::Redo) => {
-                            hist.test_push(&text);
-                            hist.redo(&mut text);
-                            bar.last_action = "redid".to_string();
-                            change!();
-                        }
-                        Some(Do::Quit) => elwt.exit(),
-                        Some(Do::StartSelection) => {
-                            let Key::Named(y) = event.logical_key else {
-                                panic!()
-                            };
-                            *state.sel() = text.extend_selection(
-                                y,
-                                text.cursor..text.cursor,
-                            );
-                        }
-                        Some(Do::UpdateSelection) => {
-                            let Key::Named(y) = event.logical_key else {
-                                panic!()
-                            };
-                            *state.sel() = text
-                                .extend_selection(y, state.sel().clone());
-                            text.scroll_to_cursor();
-                            inlay!();
-                        }
-                        Some(Do::Insert(x, c)) => {
-                            hist.push_if_changed(&text);
-                            _ = text.remove(x.clone());
-                            text.cursor = x.start;
-                            text.setc();
-                            text.insert(&c);
-                            hist.push_if_changed(&text);
-                            change!();
-                        }
-                        Some(Do::Delete(x)) => {
-                            hist.push_if_changed(&text);
-                            text.cursor = x.start;
-                            _ = text.remove(x);
-                            hist.push_if_changed(&text);
-                            change!();
-                        }
-                        Some(Do::Copy(x)) => {
-                            clipp::copy(text.rope.slice(x).to_string());
-                        }
-                        Some(Do::Cut(x)) => {
-                            hist.push_if_changed(&text);
-                            clipp::copy(
-                                text.rope.slice(x.clone()).to_string(),
-                            );
-                            text.rope.remove(x.clone());
-                            text.cursor = x.start;
-                            hist.push_if_changed(&text);
-                            change!();
-                        }
-                        Some(Do::Paste) => {
-                            hist.push_if_changed(&text);
-                            text.insert(&clipp::paste());
-                            hist.push_if_changed(&text);
-                            change!();
-                        }
-                        Some(Do::OpenFile(x)) => { let _ = try {
-                            origin = Some(PathBuf::from(&x).canonicalize()?);
-                            text = TextArea::default();
-                            let new = std::fs::read_to_string(x)?;
-                            text.insert(&new);
-                            text.cursor = 0;
-                            hist = Hist {
-                                history: vec![],
-                                redo_history: vec![],
-                                last: text.clone(),
-                                last_edit: Instant::now(),
-                                changed: false,
-                            };
-                            complete = CompletionState::None;
-                            mtime = modify!();
-
-                            lsp!().map(|(x, origin)| {
-                                (def, semantic_tokens, inlay, sig_help, complete, hovering) = (default(), default(), default(), default(), default(), default());
-                                x.open(&origin,new).unwrap();
-                                x.rq_semantic_tokens(&mut semantic_tokens, origin, Some(window.clone())).unwrap();
-                            });
-                            bar.last_action = "open".to_string();
-                        };
-                        }
-                        Some(
-                            Do::MoveCursor | Do::ExtendSelectionToMouse | Do::Hover,
-                        ) => {
-                            unreachable!()
-                        }
-                        Some(Do::StartSearch(x)) => {
-                            let s = Regex::new(&x).unwrap();
-                            let n = s
-                                .find_iter(&text.rope.to_string())
-                                .enumerate()
-                                .count();
-                            s.clone()
-                                .find_iter(&text.rope.to_string())
-                                .enumerate()
-                                .find(|(_, x)| x.start() > text.cursor)
-                                .map(|(x, m)| {
-                                    state = State::Search(s, x, n);
-                                    text.cursor =
-                                        text.rope.byte_to_char(m.end());
-                                    text.scroll_to_cursor_centering();
-                                    inlay!();
-                                })
-                                .unwrap_or_else(|| {
-                                    bar.last_action = "no matches".into()
-                                });
-                        }
-                        Some(Do::SearchChanged) => {
-                            let (re, index, _) = state.search();
-                            let s = text.rope.to_string();
-                            let m = re.find_iter(&s).nth(*index).unwrap();
-                            text.cursor = text.rope.byte_to_char(m.end());
-                            text.scroll_to_cursor_centering();
-                            inlay!();
-                        }
-                        Some(Do::Boolean(
-                            BoolRequest::ReloadFile,
-                            true,
-                        )) => {
-                            text.rope = Rope::from_str(
-                                &std::fs::read_to_string(
-                                    origin.as_ref().unwrap(),
-                                )
-                                .unwrap(),
-                            );
-                            text.cursor =
-                                text.cursor.min(text.rope.len_chars());
-                            mtime = modify!();
-                            bar.last_action = "reloaded".into();
-                        }
-                        Some(Do::Boolean(
-                            BoolRequest::ReloadFile,
-                            false,
-                        )) => {}
-                        None => {}
+                    if ed.keyboard(event, window).is_break() {
+                        elwt.exit();
                     }
                     window.request_redraw();
                 }
@@ -1683,48 +426,8 @@ hovering.request = (DropH::new(handle), cursor_position).into();
     winit_app::run_app(event_loop, app);
 }
 
-fn handle2<'a>(key: &'a Key, text: &mut TextArea, l: Option<(&Client, &Path)>) -> Option<&'a str> {
-    use Key::*;
-
-    match key {
-        Named(Space) => text.insert(" ").unwrap(),
-        Named(Backspace) if ctrl() => text.backspace_word(),
-        Named(Backspace) => text.backspace(),
-        Named(Home) if ctrl() => {
-            text.cursor = 0;
-            text.vo = 0;
-        }
-        Named(End) if ctrl() => {
-            text.cursor = text.rope.len_chars();
-            text.vo = text.l().saturating_sub(text.r);
-        }
-        Named(Home) => text.home(),
-        Named(End) => text.end(),
-        Named(Tab) => text.tab(),
-        Named(Delete) => {
-            text.right();
-            text.backspace()
-        }
-        Named(ArrowLeft) if ctrl() => text.word_left(),
-        Named(ArrowRight) if ctrl() => text.word_right(),
-        Named(ArrowLeft) => text.left(),
-        Named(ArrowRight) => text.right(),
-        Named(ArrowUp) => text.up(),
-        Named(ArrowDown) => text.down(),
-        Named(PageDown) => text.page_down(),
-        Named(PageUp) => text.page_up(),
-        Named(Enter) if let Some((l, p)) = l => l.enter(p, text),
-        Named(Enter) => text.enter(),
-        Character(x) => {
-            text.insert(&x);
-            return Some(x);
-        }
-        _ => {}
-    };
-    None
-}
-fn handle(key: Key, mut text: TextArea,) -> TextArea {
-    handle2(&key, &mut text,None);
+fn handle(key: Key, mut text: TextArea) -> TextArea {
+    edi::handle2(&key, &mut text, None);
     text
 }
 pub static FONT: LazyLock<FontRef<'static>> = LazyLock::new(|| {
@@ -1754,121 +457,6 @@ fn alt() -> bool {
 fn ctrl() -> bool {
     unsafe { MODIFIERS }.control_key()
 }
-impl State {
-    fn sel(&mut self) -> &mut Range<usize> {
-        let State::Selection(x) = self else { panic!() };
-        x
-    }
-    fn search(&mut self) -> (&mut Regex, &mut usize, &mut usize) {
-        let State::Search(x, y, z) = self else { panic!() };
-        (x, y, z)
-    }
-}
-
-use std::ops::Range;
-impl Default for State {
-    fn default() -> Self {
-        Self::Default
-    }
-}
-rust_fsm::state_machine! {
-#[derive(Debug)]
-pub(crate) State => Action => Do
-
-Dead => K(Key => _) => Dead,
-Default => {
-    K(Key::Character(x) if x == "s" && ctrl()) => Save [Save],
-    K(Key::Character(x) if x == "q" && ctrl()) => Dead [Quit],
-    K(Key::Character(x) if x == "v" && ctrl()) => _ [Paste],
-    K(Key::Character(x) if x == "z" && ctrl()) => _ [Undo],
-    K(Key::Character(x) if x == "y" && ctrl()) => _ [Redo],
-    K(Key::Character(x) if x == "f" && ctrl()) => Procure((default(), InputRequest::Search)),
-    K(Key::Character(x) if x == "o" && ctrl()) => Procure((default(), InputRequest::OpenFile)),
-    K(Key::Character(x) if x == "c" && ctrl()) => _,
-    K(Key::Character(x) if x == "l" && ctrl()) => _ [Symbols],
-    K(Key::Character(x) if x == "." && ctrl()) => _ [CodeAction],
-    K(Key::Character(x) if x == "0" && ctrl()) => _ [MatchingBrace],
-    K(Key::Character(x) if x == "`" && ctrl()) => _ [SpawnTerminal],
-    K(Key::Named(ArrowUp | ArrowLeft | ArrowDown | ArrowRight | Home | End) if shift()) => Selection(Range<usize> => 0..0) [StartSelection],
-    M(MouseButton::Left if shift()) => Selection(Range<usize> => 0..0) [StartSelection],
-    M(MouseButton::Left if ctrl()) => _ [GoToDefinition],
-    M(MouseButton::Left) => _ [MoveCursor],
-    M(MouseButton::Back) => _ [NavBack],
-    M(MouseButton::Forward) => _ [NavForward],
-    C(((usize, usize)) => .. if unsafe { CLICKING }) => Selection(0..0) [StartSelection],
-    Changed => RequestBoolean(BoolRequest => BoolRequest::ReloadFile),
-    C(_) => _ [Hover],
-    K(_) => _ [Edit],
-    M(_) => _,
-},
-Symbols(Rq { result: Some(_x), request: None }) => {
-    K(Key::Named(Tab) if shift()) => _ [SymbolsSelectNext],
-    K(Key::Named(ArrowDown)) => _ [SymbolsSelectNext],
-    K(Key::Named(ArrowUp | Tab)) => _ [SymbolsSelectPrev],
-    K(Key::Named(Enter)) => _ [SymbolsSelect],
-    K(Key::Named(Escape)) => Default,
-    K(_) => _ [SymbolsHandleKey],
-},
-Symbols(Rq::<Symbols, Vec<SymbolInformation>, (), RequestError<lsp_request!("workspace/symbol")>> => _rq) => {
-    K(Key::Named(Escape)) => Default,
-    C(_) => _,
-    M(_) => _,
-    K(_) => _,
-},
-CodeAction(Rq { result : Some(_x), request }) => {
-    K(Key::Named(Tab) if shift()) => _ [CASelectPrev],
-    K(Key::Named(ArrowDown | Tab)) => _ [CASelectNext],
-    K(Key::Named(ArrowUp)) => _ [CASelectPrev],
-    K(Key::Named(Enter | ArrowRight)) => _ [CASelectRight],
-    K(Key::Named(ArrowLeft)) => _ [CASelectLeft],
-},
-CodeAction(RqS<act::CodeActions, lsp_request!("textDocument/codeAction")> => rq) => {
-    K(Key::Named(Escape)) => Default,
-    C(_) => _,
-    M(_) => _,
-    K(_) => _,
-},
-Selection(x if shift()) => {
-    K(Key::Named(ArrowUp | ArrowLeft | ArrowDown | ArrowRight | Home | End)) => Selection(x) [UpdateSelection],
-    M(MouseButton => MouseButton::Left) => Selection(x) [ExtendSelectionToMouse],
-}, // note: it does in fact fall through. this syntax is not an arm, merely shorthand.
-Selection(x) => {
-    C(_ if unsafe { CLICKING }) => _ [ExtendSelectionToMouse],
-    C(_) => Selection(x),
-    M(MouseButton => MouseButton::Left) => Default [MoveCursor],
-    K(Key::Named(Backspace)) => Default [Delete(Range<usize> => x)],
-    K(Key::Character(y) if y == "x" && ctrl()) => Default [Cut(Range<usize> => x)],
-    K(Key::Character(y) if y == "c" && ctrl()) => Default [Copy(Range<usize> => x)],
-    K(Key::Character(y)) => Default [Insert((Range<usize>, SmolStr) => (x, y))],
-    K(_) => Default [Edit],
-},
-Save => {
-    RequireFilename => Procure((TextArea, InputRequest) => (default(), InputRequest::SaveFile)),
-    Saved => Default,
-},
-Procure((_, _)) => K(Key::Named(Escape)) => Default,
-Procure((t, InputRequest::Search)) => K(Key::Named(Enter)) => Default [StartSearch(String => t.rope.to_string())],
-Procure((t, InputRequest::SaveFile)) => K(Key::Named(Enter)) => Default [SaveTo(String => t.rope.to_string())],
-Procure((t, InputRequest::OpenFile)) => K(Key::Named(Enter)) => Default [OpenFile(String => t.rope.to_string())],
-Procure((t, a)) => K(k) => Procure((handle(k, t), a)),
-RequestBoolean(t) => {
-    K(Key::Character(x) if x == "y") => Default [Boolean((BoolRequest, bool) => (t, true))],
-    K(Key::Character(x) if x == "n") => Default [Boolean((t, false))],
-    K(Key::Named(Escape)) => Default [Boolean((t, false))],
-    K(_) => RequestBoolean(t),
-    C(_) => _,
-    Changed => _,
-    M(_) => _,
-},
-Search((x, y, m)) => {
-    M(MouseButton::Left) => Default [MoveCursor],
-    C(_) => Search((x, y, m)),
-    K(Key::Named(Enter) if shift()) => Search((x, y.checked_sub(1).unwrap_or(m-1), m)) [SearchChanged],
-    K(Key::Named(Enter)) => Search((Regex, usize, usize) => (x,   (y+ 1) % m, m)) [SearchChanged],
-    K(_) => Default [Reinsert],
-}
-}
-
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 enum InputRequest {
     SaveFile,
@@ -1976,13 +564,4 @@ fn filter(text: &TextArea) -> String {
             .chars()
             .collect::<String>()
     }
-}
-fn frunctinator(
-    parameter1: usize,
-    _parameter2: u8,
-    _paramter4: u16,
-) -> usize {
-    lower::saturating::math! { parameter1  };
-
-    0
 }

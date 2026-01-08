@@ -141,7 +141,11 @@ impl Client {
                         x.result.clone().unwrap_or_default(),
                     )
                     .unwrap_or_else(|_| {
-                        panic!("lsp failure for {x:?}\ndidnt follow spec for {}\npossibly spec issue", X::METHOD)
+                        panic!(
+                            "lsp failure for {x:?}\ndidnt follow spec \
+                             for {}\npossibly spec issue",
+                            X::METHOD
+                        )
                     }))
                 }
             },
@@ -355,15 +359,28 @@ impl Client {
             }
         }
     }
-    pub fn document_highlights<'me>(&'me self, f: &Path, cursor: Position) -> impl Future<Output = Result<Vec<DocumentHighlight>, RequestError<DocumentHighlightRequest>>> + use<'me> {
+    pub fn document_highlights<'me>(
+        &'me self,
+        f: &Path,
+        cursor: Position,
+    ) -> impl Future<
+        Output = Result<
+            Vec<DocumentHighlight>,
+            RequestError<DocumentHighlightRequest>,
+        >,
+    > + use<'me> {
         let p = DocumentHighlightParams {
-            text_document_position_params: TextDocumentPositionParams { text_document: f.tid(), position: cursor },
+            text_document_position_params: TextDocumentPositionParams {
+                text_document: f.tid(),
+                position: cursor,
+            },
             work_done_progress_params: default(),
             partial_result_params: default(),
         };
-        self.request::<lsp_request!("textDocument/documentHighlight")>(&p).unwrap().0.map(|x| {
-            x.map(|x| x.unwrap_or_default())
-        })
+        self.request::<lsp_request!("textDocument/documentHighlight")>(&p)
+            .unwrap()
+            .0
+            .map(|x| x.map(|x| x.unwrap_or_default()))
     }
     pub fn symbols(
         &'static self,
@@ -398,11 +415,21 @@ impl Client {
             })
         })
     }
-    pub fn matching_brace<'a>(&'static self, f: &Path, t: &'a mut TextArea) {
-        if let Ok(Some([x])) = self.runtime.block_on(self.request::<lsp_request!("experimental/matchingBrace")>(&MatchingBraceParams {
-            text_document: f.tid(),
-            positions: vec![t.to_l_position(t.cursor).unwrap()],
-        }).unwrap().0) {
+    pub fn matching_brace<'a>(
+        &'static self,
+        f: &Path,
+        t: &'a mut TextArea,
+    ) {
+        if let Ok(Some([x])) = self.runtime.block_on(
+            self.request::<lsp_request!("experimental/matchingBrace")>(
+                &MatchingBraceParams {
+                    text_document: f.tid(),
+                    positions: vec![t.to_l_position(t.cursor).unwrap()],
+                },
+            )
+            .unwrap()
+            .0,
+        ) {
             t.cursor = t.l_position(x).unwrap();
         }
     }
@@ -438,12 +465,31 @@ impl Client {
         //     }
         // }
     }
-    pub fn format(&'static self, f: &Path)  -> impl Future<Output = Result<<Formatting as Request>::Result, RequestError<Formatting>>> {
-        self.request::<lsp_request!("textDocument/formatting")>(&DocumentFormattingParams {
-            text_document: f.tid(),
-            options: FormattingOptions { tab_size: 4, insert_spaces: false, properties: default(), trim_trailing_whitespace: Some(true), insert_final_newline: Some(true), trim_final_newlines: Some(false), },
-            work_done_progress_params: default(),
-        }).unwrap().0
+    pub fn format(
+        &'static self,
+        f: &Path,
+    ) -> impl Future<
+        Output = Result<
+            <Formatting as Request>::Result,
+            RequestError<Formatting>,
+        >,
+    > {
+        self.request::<lsp_request!("textDocument/formatting")>(
+            &DocumentFormattingParams {
+                text_document: f.tid(),
+                options: FormattingOptions {
+                    tab_size: 4,
+                    insert_spaces: false,
+                    properties: default(),
+                    trim_trailing_whitespace: Some(true),
+                    insert_final_newline: Some(true),
+                    trim_final_newlines: Some(false),
+                },
+                work_done_progress_params: default(),
+            },
+        )
+        .unwrap()
+        .0
     }
     pub fn rq_semantic_tokens(
         &'static self,
@@ -488,18 +534,26 @@ impl Client {
     }
 
     pub fn enter<'a>(&self, f: &Path, t: &'a mut TextArea) {
-        let r = self.runtime.block_on(self.request::<lsp_request!("experimental/onEnter")>(&TextDocumentPositionParams {
-            text_document: f.tid(), 
-            position: t.to_l_position(t.cursor).unwrap(),
-        }).unwrap().0).unwrap();
+        let r = self
+            .runtime
+            .block_on(
+                self.request::<lsp_request!("experimental/onEnter")>(
+                    &TextDocumentPositionParams {
+                        text_document: f.tid(),
+                        position: t.to_l_position(t.cursor).unwrap(),
+                    },
+                )
+                .unwrap()
+                .0,
+            )
+            .unwrap();
         match r {
             None => t.enter(),
-            Some(r) => {
+            Some(r) =>
                 for f in r {
                     t.apply_snippet_tedit(&f).unwrap();
-                }
-            }
-        }        
+                },
+        }
     }
 }
 pub fn run(
@@ -957,7 +1011,10 @@ fn x33() {
     let y = serde_json::from_str::<SemanticTokensParams>(&y).unwrap();
 }
 #[pin_project::pin_project]
-pub struct Map<T, U, F: FnMut(T) -> U, Fu: Future<Output = T>>(#[pin] Fu, F);
+pub struct Map<T, U, F: FnMut(T) -> U, Fu: Future<Output = T>>(
+    #[pin] Fu,
+    F,
+);
 impl<T, F: FnMut(T) -> U, U, Fu: Future<Output = T>> Future
     for Map<T, U, F, Fu>
 {
@@ -1009,7 +1066,7 @@ impl<T> OnceOff<T> {
     }
 }
 
-impl<R:Request> std::fmt::Debug for RequestError<R> {
+impl<R: Request> std::fmt::Debug for RequestError<R> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         std::fmt::Display::fmt(&self, f)
     }
