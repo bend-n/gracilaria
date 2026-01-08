@@ -355,13 +355,15 @@ impl Client {
             }
         }
     }
-    pub fn document_highlights(&'static self, f: &Path, cursor: Position) {
-        self.request::<lsp_request!("textDocument/documentHighlight")>(&DocumentHighlightParams {
+    pub fn document_highlights<'me>(&'me self, f: &Path, cursor: Position) -> impl Future<Output = Result<Vec<DocumentHighlight>, RequestError<DocumentHighlightRequest>>> + use<'me> {
+        let p = DocumentHighlightParams {
             text_document_position_params: TextDocumentPositionParams { text_document: f.tid(), position: cursor },
-            
             work_done_progress_params: default(),
             partial_result_params: default(),
-        }).unwrap();
+        };
+        self.request::<lsp_request!("textDocument/documentHighlight")>(&p).unwrap().0.map(|x| {
+            x.map(|x| x.unwrap_or_default())
+        })
     }
     pub fn symbols(
         &'static self,
@@ -955,7 +957,7 @@ fn x33() {
     let y = serde_json::from_str::<SemanticTokensParams>(&y).unwrap();
 }
 #[pin_project::pin_project]
-struct Map<T, U, F: FnMut(T) -> U, Fu: Future<Output = T>>(#[pin] Fu, F);
+pub struct Map<T, U, F: FnMut(T) -> U, Fu: Future<Output = T>>(#[pin] Fu, F);
 impl<T, F: FnMut(T) -> U, U, Fu: Future<Output = T>> Future
     for Map<T, U, F, Fu>
 {

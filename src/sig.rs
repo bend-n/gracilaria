@@ -26,7 +26,7 @@ pub fn sig(
     c: usize,
 ) -> Vec<Cell> {
     let bg = color_("#1c212b");
-    let ds: Style = Style { bg: bg, color: FG, flags: 0 };
+    let ds = Style::new(FG, bg);
     let d: Cell = Cell { letter: None, style: ds };
     let sig = y.label.chars().zip(0..).map(|(x, i)| {
         let mut a = ds.basic(x);

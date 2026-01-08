@@ -39,6 +39,7 @@ use std::iter::once;
 mod act;
 mod sym;
 mod trm;
+mod edi;
 use std::num::NonZeroU32;
 use std::os::fd::AsFd;
 use std::path::{Path, PathBuf};
@@ -105,6 +106,15 @@ struct Hist {
     pub last: TextArea,
     pub last_edit: std::time::Instant,
     pub changed: bool,
+}impl Default for Hist{
+    fn default() -> Self {
+     Self{
+        history: vec![],
+        redo_history: vec![],
+        last: TextArea::default(),
+        last_edit: Instant::now(),
+        changed: false,
+         }    }
 }
 #[derive(Debug, Default)]
 struct ClickHistory {
@@ -199,7 +209,7 @@ impl Hist {
 static mut MODIFIERS: ModifiersState = ModifiersState::empty();
 static mut CLICKING: bool = false;
 
-const BG: [u8; 3] = [31, 36, 48];
+const BG: [u8; 3] = col!("#1f2430");
 const FG: [u8; 3] = [204, 202, 194];
 const BORDER: [u8; 3] = col!("#ffffff");
 #[implicit_fn::implicit_fn]
@@ -310,6 +320,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
     }
     let mut hovering =
         Rq::<Hovr, Option<Hovr>, (usize, usize), anyhow::Error>::default();
+    let mut document_highlights: Rq<Vec<DocumentHighlight>, _, _, _> = Rq::default();
     let mut complete = CompletionState::None;
     let mut sig_help = // vo, lines
         RqS::<(SignatureHelp, usize, Option<usize>), SignatureHelpRequest, ()>::default();
@@ -449,15 +460,19 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                         rq =>
                             log::debug!("discarding request {rq:?}"),
                     }
-                } 
+                }
+                let r = &l.runtime; 
                 inlay.poll(|x, p| x.ok().or(p.1).inspect(|x| {
                     text.set_inlay(x);
-                }), &l.runtime);
-                diag.poll(|x, _|x.ok().flatten(), &l.runtime);
+                }), r);
+                document_highlights.poll(|x, _| {
+                    x.ok()
+                }, r);
+                diag.poll(|x, _|x.ok().flatten(), r);
                 if let CompletionState::Complete(rq)= &mut complete {
                     rq.poll(|f, (c,_)| {
                         f.ok().flatten().map(|x| {Complete {r:x,start:c,selection:0,vo:0,}})
-                    }, &l.runtime);
+                    }, r);
                 };
                 
                 if let State::Symbols(x) = &mut state {
@@ -529,7 +544,8 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                         cells = vec![
                             Cell {
                                 style: Style {
-                                    color: BG,
+                                    fg: BG,
+                                    secondary_color: BG,
                                     bg: BG,
                                     flags: 0
                                 },
@@ -572,7 +588,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             return;
                         }
                         cells.fill(Cell {
-                            style: Style { color: BG, bg: BG, flags: 0 },
+                            style: Style { fg: BG, secondary_color: BG, bg: BG, flags: 0 },
                             letter: None,
                         });
                         let x = match &state {
@@ -609,6 +625,20 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                             (t_ox, 0),
                             x,
                             |(_c, _r), text,  mut x| {
+                                if let Some(hl) = &document_highlights.result {
+                                    for DocumentHighlight { range: r, .. } in hl {
+                                        // let s = match kind {
+                                        //     Some(DocumentHighlightKind::READ) => Style::UNDERLINE,
+                                        //     Some(DocumentHighlightKind::WRITE) => Style::UNDERLINE,
+                                        //     _ => Style::UNDERCURL,
+                                        // };
+                                        let (x1, y1) = text.map_to_visual((r.start.character as _, r.start.line as _));
+                                        let (x2, y2) = text.map_to_visual((r.end.character as _, r.end.line as _));
+                                        x.get_simple((x1, y1), (x2, y2)).coerce().for_each(|x| {
+                                            x.style.bg = col!("#3a4358");
+                                        }); 
+                                    }
+                                }
                                 if let Some(LocationLink {
                                     origin_selection_range: Some(r), ..
                                 }) = def.result { _ = try {
@@ -616,7 +646,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                                     let (x2, y2) = text.map_to_visual((r.end.character as _, r.end.line as _));
                                     x.get_simple((x1, y1), (x2, y2))?.iter_mut().for_each(|x| {
                                         x.style.flags |= Style::UNDERLINE;
-                                        x.style.color = col!("#FFD173");
+                                        x.style.fg = col!("#FFD173");
                                     });
                                 } }
                                 if let Some((lsp, p)) = lsp!() && let uri = Url::from_file_path(p).unwrap() && let Some(diag) = lsp.diagnostics.get(&uri, &lsp.diagnostics.guard()) {
@@ -677,7 +707,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                                                 _ => return
                                             };
                                             x.style.bg.blend(bg);
-                                            x.style.color = fg;
+                                            x.style.fg = fg;
                                             x.letter = Some(ch);
                                         })
                                     });
@@ -1139,6 +1169,7 @@ hovering.request = (DropH::new(handle), cursor_position).into();
                             text.cursor = text.mapped_index_at(cursor_position);
                             if let Some((lsp, path)) = lsp!() {
                                 sig_help.request(lsp.runtime.spawn(window.redraw_after(lsp.request_sig_help(path, text.cursor()))));
+                                document_highlights.request(lsp.runtime.spawn(window.redraw_after(lsp.document_highlights(path, text.to_l_position(text.cursor).unwrap()))));
                             }
                             hist.last.cursor = text.cursor;
                             chist.push(text.cursor());
@@ -1735,7 +1766,11 @@ impl State {
 }
 
 use std::ops::Range;
-
+impl Default for State {
+    fn default() -> Self {
+        Self::Default
+    }
+}
 rust_fsm::state_machine! {
 #[derive(Debug)]
 pub(crate) State => Action => Do

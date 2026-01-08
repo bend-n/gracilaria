@@ -8,8 +8,7 @@ use dsb::cell::Style;
 use itertools::Itertools;
 use markdown::mdast::{self, Node};
 use ropey::Rope;
-const D: Cell =
-    Cell { letter: None, style: Style { bg: BG, color: FG, flags: 0 } };
+const D: Cell = Cell { letter: None, style: Style::new(FG, BG) };
 use crate::{FG, text};
 
 struct Builder {
@@ -117,17 +116,17 @@ impl Builder {
             }
             Node::Link(_) => {
                 inherit.flags |= Style::UNDERLINE;
-                inherit.color = [244, 196, 98];
+                inherit.fg = [244, 196, 98];
                 self.extend(node, inherit)
             }
             Node::LinkReference(_) => {
                 inherit.flags |= Style::UNDERLINE;
-                inherit.color = [244, 196, 98];
+                inherit.fg = [244, 196, 98];
                 self.extend(node, inherit)
             }
             Node::Heading(_) => {
                 inherit.flags |= Style::BOLD;
-                inherit.color = [255, 255, 255];
+                inherit.fg = [255, 255, 255];
                 self.extend_(node, [Action::Finish], inherit)
             }
 
@@ -229,7 +228,7 @@ pub fn l(node: &Node) -> Vec<usize> {
 pub fn markdown2(c: usize, x: &Node) -> Vec<Cell> {
     let mut r = Builder { c, to: vec![], scratch: vec![] };
     for (is_put, act) in r
-        .run(&x, Style { bg: BG, color: FG, flags: 0 })
+        .run(&x, Style::new(FG, BG))
         .into_iter()
         .chunk_by(|x| matches!(x, Action::Put(_)))
         .into_iter()

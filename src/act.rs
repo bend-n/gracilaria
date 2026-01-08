@@ -154,7 +154,7 @@ impl CodeActions {
 
                 let mut to = vec![
                     Cell {
-                        style: Style { bg, color: FG, flags: 0 },
+                        style: Style::new(FG, bg),
                         ..Default::default()
                     };
                     c
@@ -171,13 +171,8 @@ impl CodeActions {
 }
 fn write(x: &CodeAction, c: usize, selected: bool, to: &mut Vec<Cell>) {
     let bg = if selected { col!("#262d3b") } else { col!("#1c212b") };
-    let mut into = vec![
-        Cell {
-            style: Style { bg, color: FG, flags: 0 },
-            ..Default::default()
-        };
-        c
-    ];
+    let mut into =
+        vec![Cell { style: Style::new(FG, bg), ..Default::default() }; c];
 
     let t = match &x.kind {
         Some(x) if x == &CodeActionKind::QUICKFIX => '󰁨',
@@ -190,8 +185,8 @@ fn write(x: &CodeAction, c: usize, selected: bool, to: &mut Vec<Cell>) {
         Some(x) if x == &CodeActionKind::SOURCE => '󱇧',
         _ => '', /* 󱢇☭ */
     };
-    into[0].style.color = col!("#E5C07B");
-    into[0].style.bg = set_a(into[0].style.color, 0.5);
+    into[0].style.fg = col!("#E5C07B");
+    into[0].style.bg = set_a(into[0].style.fg, 0.5);
     into[0].letter = Some(t);
     into.iter_mut()
         .skip(1)

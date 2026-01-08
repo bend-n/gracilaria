@@ -7,7 +7,7 @@ use lsp_types::WorkDoneProgress;
 use crate::lsp::{Client, Rq};
 use crate::sym::Symbols;
 use crate::text::TextArea;
-
+#[derive(Default)]
 pub struct Bar {
     pub last_action: String,
 }
@@ -26,7 +26,7 @@ impl Bar {
     ) {
         let row = &mut into[oy * w..oy * w + w];
         row.fill(Cell {
-            style: Style { color, bg, flags: Style::ITALIC },
+            style: Style::new(color, bg) | Style::ITALIC,
             letter: None,
         });
         fn s(s: &str) -> impl Iterator<Item = (char, u8)> {

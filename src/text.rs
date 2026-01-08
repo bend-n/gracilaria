@@ -1012,17 +1012,13 @@ impl TextArea {
                     cells.get((x + self.ho, y)).unwrap().letter =
                         Some(e.c());
                     cells.get((x + self.ho, y)).unwrap().style = match e {
-                        Mapping::Char(..) => Style {
-                            color: crate::FG,
-                            bg: crate::BG,
-                            flags: 0,
-                        },
+                        Mapping::Char(..) =>
+                            Style::new(crate::FG, crate::BG),
                         Mapping::Fake(Mark { ty: INLAY, .. }, ..) =>
-                            Style {
-                                color: const { color_("#536172") },
-                                bg: crate::BG,
-                                flags: 0,
-                            },
+                            Style::new(
+                                const { color_("#536172") },
+                                crate::BG,
+                            ),
                         _ => unreachable!(),
                     };
                 }
@@ -1118,7 +1114,7 @@ impl TextArea {
                             )
                         })
                         .for_each(|(x, _)| {
-                            x.style.color = semantic::COLORS[f];
+                            x.style.fg = semantic::COLORS[f];
                             x.style.flags |= semantic::STYLES[f];
                         });
                 }
@@ -1153,7 +1149,7 @@ impl TextArea {
                                     )
                                 })
                                 .for_each(|(x, _)| {
-                                    x.style.color = MCOLORS[i];
+                                    x.style.fg = MCOLORS[i];
                                     x.style.flags |= MSTYLE[i];
                                 });
                         });
@@ -1194,7 +1190,7 @@ impl TextArea {
                 .for_each(|(x, _)| {
                     if x.letter == Some(' ') {
                         x.letter = Some('·'); // tabs? what are those
-                        x.style.color = [0x4e, 0x62, 0x79];
+                        x.style.fg = [0x4e, 0x62, 0x79];
                     }
                     x.style.bg = [0x27, 0x43, 0x64];
                     // 0x23, 0x34, 0x4B
@@ -1249,7 +1245,7 @@ impl TextArea {
                     .zip(into[(y + oy) * w..].iter_mut().skip(ox))
                     .for_each(|(a, b)| {
                         *b = Cell {
-                            style: Style { color, bg, flags: 0 },
+                            style: Style::new(color, bg),
                             letter: Some(a),
                         }
                     });

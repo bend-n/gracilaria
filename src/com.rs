@@ -205,7 +205,7 @@ fn r(
 ) {
     let bg = if selected { col!("#262d3b") } else { col!("#1c212b") };
 
-    let ds: Style = Style { bg: bg, color: FG, flags: 0 };
+    let ds = Style::new(FG, bg);
     let d: Cell = Cell { letter: None, style: ds };
     let mut b = vec![d; c];
     const MAP: [([u8; 3], [u8; 3], &str); 26] = {
@@ -237,7 +237,7 @@ fn r(
     let (bgt, col, ty) =
         MAP[x.kind.unwrap_or(CompletionItemKind(50)).0 as usize];
     b.iter_mut().zip(ty.chars()).for_each(|(x, c)| {
-        *x = Style { bg: bgt, color: col, flags: Style::BOLD }.basic(c)
+        *x = (Style::new(col, bgt) | Style::BOLD).basic(c)
     });
     let i = &mut b[2..];
 
@@ -267,8 +267,7 @@ fn r(
         i.iter_mut()
             .rev()
             .zip(details.map(|x| {
-                Style { bg, color: color_("#979794"), ..default() }
-                    .basic(x)
+                Style { bg, fg: color_("#979794"), ..default() }.basic(x)
             }))
             .for_each(|(a, b)| *a = b);
     }
@@ -277,7 +276,7 @@ fn r(
             x.label.chars().map(|x| ds.basic(x)).zip(0..).chain(
                 label_details
                     .map(|x| {
-                        Style { bg, color: color_("#858685"), ..default() }
+                        Style { bg, fg: color_("#858685"), ..default() }
                             .basic(x)
                     })
                     .zip(repeat(u32::MAX)),
