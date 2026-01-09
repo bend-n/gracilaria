@@ -20,7 +20,7 @@ use crate::edi::st::State;
 use crate::edi::{Editor, lsp_m};
 use crate::lsp::Rq;
 use crate::text::{CoerceOption, col};
-use crate::{BG, BORDER, CompletionAction, CompletionState, FG, com, filter, lsp, sig};
+use crate::{BG, BORDER, CompletionAction, CompletionState, FG, FONT, com, filter, lsp, sig};
 
 #[implicit_fn::implicit_fn]
 pub fn render(

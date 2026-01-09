@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::collections::HashMap;
 use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -33,6 +34,7 @@ use crate::{
 };
 #[derive(Default)]
 pub struct Editor {
+    pub files: HashMap<PathBuf, Editor>,
     pub text: TextArea,
     pub origin: Option<PathBuf>,
     pub state: State,
