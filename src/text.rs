@@ -1,4 +1,4 @@
-use std::cmp::min;
+use std::cmp::{Reverse, min};
 use std::fmt::{Debug, Display};
 use std::ops::{Deref, Not as _, Range, RangeBounds};
 use std::path::Path;
@@ -489,6 +489,7 @@ impl TextArea {
         self.insert_at(begin, &x.new_text).map_err(|_| ())?;
         Ok((begin, end))
     }
+
     pub fn apply_adjusting(&mut self, x: &TextEdit) -> Result<(), ()> {
         let (b, e) = self.apply(&x)?;
         if e < self.cursor {
@@ -1854,4 +1855,94 @@ fn apply() {
     })
     .unwrap();
     assert_eq!(t.cursor, 8);
+}
+#[test]
+fn apply2() {
+    let mut t = TextArea::default();
+
+    t.insert(
+        "impl Editor { // 0
+        pub fn open(f: &Path) { // 1
+// 2
+                    let new = std::fs::read_to_string(f) // 3
+                        .map_err(anyhow::Error::from)?; // 4
+    }
+}",
+    )
+    .unwrap();
+
+    use lsp_types::Range;
+    let mut th = [
+        TextEdit {
+            range: Range {
+                start: Position { line: 1, character: 0 },
+                end: Position { line: 1, character: 4 },
+            },
+            new_text: "".into(),
+        },
+        TextEdit {
+            range: Range {
+                start: Position { line: 2, character: 0 },
+                end: Position { line: 3, character: 1 },
+            },
+            new_text: "".into(),
+        },
+        TextEdit {
+            range: Range {
+                start: Position { line: 3, character: 9 },
+                end: Position { line: 3, character: 9 },
+            },
+            new_text: "let new =\n".into(),
+        },
+        TextEdit {
+            range: Range {
+                start: Position { line: 3, character: 20 },
+                end: Position { line: 3, character: 29 },
+            },
+            new_text: "".into(),
+        },
+        TextEdit {
+            range: Range {
+                start: Position { line: 3, character: 56 },
+                end: Position { line: 4, character: 24 },
+            },
+            new_text: "".into(),
+        },
+        TextEdit {
+            range: Range {
+                start: Position { line: 6, character: 1 },
+                end: Position { line: 6, character: 1 },
+            },
+            new_text: "\n".into(),
+        },
+    ];
+    th.sort_tedits();
+    for th in th {
+        t.apply(&th).unwrap();
+        println!("=>\n{}", t.rope);
+    }
+    assert_eq!(
+        t.rope.to_string(),
+        "impl Editor { // 0
+    pub fn open(f: &Path) { // 1
+        let new =
+            std::fs::read_to_string(f).map_err(anyhow::Error::from)?; // 4
+    }
+}
+"
+    );
+}
+
+pub trait SortTedits {
+    fn sort_tedits(&mut self);
+}
+impl SortTedits for [TextEdit] {
+    fn sort_tedits(&mut self) {
+        self.as_mut().sort_by_key(|t| Reverse(t.range.start));
+    }
+}
+impl SortTedits for [SnippetTextEdit] {
+    fn sort_tedits(&mut self) {
+        self.as_mut().sort_by_key(|t| Reverse(t.text_edit.range.start));
+    }
 }

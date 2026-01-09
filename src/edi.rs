@@ -27,7 +27,7 @@ use crate::bar::Bar;
 use crate::com::Complete;
 use crate::hov::{self, Hovr};
 use crate::lsp::{self, Client, PathURI, RedrawAfter, RequestError, Rq};
-use crate::text::{self, CoerceOption, Mapping, TextArea};
+use crate::text::{self, CoerceOption, Mapping, SortTedits, TextArea};
 use crate::{
     BoolRequest, CDo, ClickHistory, CompletionAction, CompletionState,
     Hist, act, alt, ctrl, filter, shift, sig, sym, trm,
@@ -36,7 +36,7 @@ use crate::{
 pub struct Editor {
     pub files: HashMap<PathBuf, Editor>,
     pub text: TextArea,
-    pub origin: Option<PathBuf>,
+    pub origin: Option<PathBuf>, // ie active
     pub state: State,
     pub bar: Bar,
     pub workspace: Option<PathBuf>,
@@ -232,24 +232,28 @@ impl Editor {
     // }
 
     pub fn save(&mut self) {
-        let t = self.text.rope.to_string();
-        std::fs::write(self.origin.as_ref().unwrap(), &t).unwrap();
         self.bar.last_action = "saved".into();
         lsp!(self + p).map(|(l, o)| {
             let v = l.runtime.block_on(l.format(o)).unwrap();
             for v in v.coerce() {
-                self.text.apply_adjusting(&v);
+                if let Err(()) = self.text.apply_adjusting(&v) {
+                    eprintln!("unhappy fmt")
+                }
             }
+            self.text.cursor =
+                self.text.cursor.min(self.text.rope.len_chars());
             change!(self);
             self.hist.push(&self.text);
             l.notify::<lsp_notification!("textDocument/didSave")>(
                 &DidSaveTextDocumentParams {
                     text_document: o.tid(),
-                    text: Some(t),
+                    text: Some(self.text.rope.to_string()),
                 },
             )
             .unwrap();
         });
+        let t = self.text.rope.to_string();
+        std::fs::write(self.origin.as_ref().unwrap(), &t).unwrap();
         self.mtime = Self::modify(self.origin.as_deref());
     }
     pub fn poll(&mut self) {
@@ -764,77 +768,58 @@ impl Editor {
             }
             Some(Do::SymbolsSelect) => {
                 let State::Symbols(Rq { result: Some(x), .. }) =
-                    &mut self.state
+                    &self.state
                 else {
                     unreachable!()
                 };
-                let x = x.sel(); // TODO dedup 
-                let _: anyhow::Result<()> = try bikeshed _ {
+                let x = x.sel().clone();
+                if let Err(e) = try bikeshed anyhow::Result<()> {
                     let f = x
                         .location
                         .uri
                         .to_file_path()
                         .map_err(|()| anyhow::anyhow!("dammit"))?
                         .canonicalize()?;
-                    self.origin = Some(f.clone());
-                    let r = self.text.r;
-                    self.text = default();
-                    self.text.r = r;
-                    let new = std::fs::read_to_string(f)
-                        .map_err(anyhow::Error::from)?;
-                    self.text.insert(&new)?;
-                    self.text.cursor = self.text
-                        .l_position(x.location.range.start)
-                        .ok_or(anyhow::anyhow!("dangit"))?;
-                    self.text.scroll_to_cursor_centering();
-                    self.hist = Hist {
-                        history: vec![],
-                        redo_history: vec![],
-                        last: self.text.clone(),
-                        last_edit: Instant::now(),
-                        changed: false,
-                    };
-                    self.complete = CompletionState::None;
-                    self.mtime = Self::modify(self.origin.as_deref());
-
-                    lsp!(self + p).map(|(x, origin)| {
-                        (
-                            self.def,
-                            self.semantic_tokens,
-                            self.inlay,
-                            self.sig_help,
-                            self.complete,
-                            self.hovering,
-                        ) = (
-                            default(),
-                            default(),
-                            default(),
-                            default(),
-                            default(),
-                            default(),
-                        );
-                        x.open(&origin, new).unwrap();
-                        x.rq_semantic_tokens(
-                            &mut self.semantic_tokens,
-                            origin,
-                            Some(window.clone()),
-                        )
-                        .unwrap();
-                    });
+                    if Some(&f) != self.origin.as_ref() {
+                        self.open(&f, window)?;
+                    }
                     self.state = State::Default;
-                    self.bar.last_action = "open".to_string();
-                };
+                    self.complete = CompletionState::None;
+
+                    let p = self.text
+                        .l_position(x.location.range.start).ok_or(anyhow::anyhow!("rah"))?;
+                    self.text.cursor = p;
+                    self.text.scroll_to_cursor_centering();
+                } {
+                    log::error!("alas! {e}");
+                }
             }
             Some(Do::CodeAction) => {
                 if let Some((lsp, f)) = lsp!(self + p) {
-                    let r = lsp.request::<lsp_request!("textDocument/codeAction")>(&CodeActionParams {
-                                    text_document: f.tid(), range: self.text.to_l_range(self.text.cursor..self.text.cursor).unwrap(), context: CodeActionContext {
-                                        trigger_kind: Some(CodeActionTriggerKind::INVOKED),
-                                        // diagnostics: if let Some((lsp, p)) = lsp!() && let uri = Url::from_file_path(p).unwrap() && let Some(diag) = lsp.diagnostics.get(&uri, &lsp.diagnostics.guard()) { dbg!(diag.iter().filter(|x| {
-                                        //                                             self.text.l_range(x.range).unwrap().contains(&self.text.cursor)
-                                        //                                         }).cloned().collect()) } else { vec![] },
-                                        ..default()
-                                    }, work_done_progress_params: default(), partial_result_params: default() }).unwrap();
+                    let r = lsp
+                    .request::<lsp_request!("textDocument/codeAction")>(
+                        &CodeActionParams {
+                            text_document: f.tid(),
+                            range: self
+                                .text
+                                .to_l_range(
+                                    self.text.cursor..self.text.cursor,
+                                )
+                                .unwrap(),
+                            context: CodeActionContext {
+                                trigger_kind: Some(
+                                    CodeActionTriggerKind::INVOKED,
+                                ),
+                                // diagnostics: if let Some((lsp, p)) = lsp!() && let uri = Url::from_file_path(p).unwrap() && let Some(diag) = lsp.diagnostics.get(&uri, &lsp.diagnostics.guard()) { dbg!(diag.iter().filter(|x| {
+                                //                                             self.text.l_range(x.range).unwrap().contains(&self.text.cursor)
+                                //                                         }).cloned().collect()) } else { vec![] },
+                                ..default()
+                            },
+                            work_done_progress_params: default(),
+                            partial_result_params: default(),
+                        },
+                    )
+                    .unwrap();
                     let mut r2 = Rq::default();
 
                     r2.request(lsp.runtime.spawn(async { r.0.await }));
@@ -871,7 +856,8 @@ impl Editor {
                             .0,
                     )
                     .unwrap();
-                let mut f_ = |edits: &[SnippetTextEdit]| {
+                let mut f_ = |edits: &mut [SnippetTextEdit]| {
+                    edits.sort_tedits();
                     // let mut first = false;
                     for edit in edits {
                         self.text.apply_snippet_tedit(edit).unwrap();
@@ -886,7 +872,7 @@ impl Editor {
                             if x.text_document.uri != f.tid().uri {
                                 continue;
                             }
-                            f_(&x.edits);
+                            f_(&mut { x }.edits);
                         },
                     Some(WorkspaceEdit {
                         document_changes:
@@ -905,7 +891,7 @@ impl Editor {
                                     if text_document.uri != f.tid().uri {
                                         continue;
                                     }
-                                    f_(&edits);
+                                    f_(&mut { edits });
                                 }
                                 x => log::error!("didnt apply {x:?}"),
                             };
@@ -1097,12 +1083,15 @@ impl Editor {
                                         s + ed.new_text.chars().count();
                                 }
                             }
-                            for additional in
-                                additional_text_edits.into_iter().flatten()
+                            if let Some(mut additional_tedits) =
+                                additional_text_edits
                             {
-                                self.text
-                                    .apply_adjusting(&additional)
-                                    .unwrap();
+                                additional_tedits.sort_tedits();
+                                for additional in additional_tedits {
+                                    self.text
+                                        .apply_adjusting(&additional)
+                                        .unwrap();
+                                }
                             }
                             if self.hist.record(&self.text) {
                                 change!(self);
@@ -1180,48 +1169,7 @@ impl Editor {
                 change!(self);
             }
             Some(Do::OpenFile(x)) => {
-                let _ = try {
-                    self.origin = Some(PathBuf::from(&x).canonicalize()?);
-                    self.text = TextArea::default();
-                    let new = std::fs::read_to_string(x)?;
-                    self.text.insert(&new);
-                    self.text.cursor = 0;
-                    self.hist = Hist {
-                        history: vec![],
-                        redo_history: vec![],
-                        last: self.text.clone(),
-                        last_edit: Instant::now(),
-                        changed: false,
-                    };
-                    self.complete = CompletionState::None;
-                    self.mtime = Self::modify(self.origin.as_deref());
-
-                    lsp!(self + p).map(|(x, origin)| {
-                        (
-                            self.def,
-                            self.semantic_tokens,
-                            self.inlay,
-                            self.sig_help,
-                            self.complete,
-                            self.hovering,
-                        ) = (
-                            default(),
-                            default(),
-                            default(),
-                            default(),
-                            default(),
-                            default(),
-                        );
-                        x.open(&origin, new).unwrap();
-                        x.rq_semantic_tokens(
-                            &mut self.semantic_tokens,
-                            origin,
-                            Some(window.clone()),
-                        )
-                        .unwrap();
-                    });
-                    self.bar.last_action = "open".to_string();
-                };
+                _ = self.open(Path::new(&x), window);
             }
             Some(
                 Do::MoveCursor | Do::ExtendSelectionToMouse | Do::Hover,
@@ -1273,6 +1221,71 @@ impl Editor {
             None => {}
         }
         ControlFlow::Continue(())
+    }
+
+    pub fn open(
+        &mut self,
+        x: &Path,
+        w: &mut Arc<Window>,
+    ) -> anyhow::Result<()> {
+        self.origin = Some(x.canonicalize()?.to_path_buf());
+        let r = self.text.r;
+        self.text = TextArea::default();
+        let new = std::fs::read_to_string(x)?;
+        self.text.insert(&new)?;
+        self.hist = Hist {
+            history: vec![],
+            redo_history: vec![],
+            last: self.text.clone(),
+            last_edit: Instant::now(),
+            changed: false,
+        };
+
+        (
+            self.text.r,
+            self.text.cursor,
+            self.text.vo,
+            self.chist,
+            self.state,
+            self.complete,
+            self.mtime,
+            self.bar.last_action,
+        ) = (
+            r,
+            0,
+            0,
+            default(),
+            State::Default,
+            CompletionState::None,
+            Self::modify(self.origin.as_deref()),
+            "open".to_string(),
+        );
+
+        lsp!(self + p).map(|(x, origin)| {
+            (
+                self.def,
+                self.semantic_tokens,
+                self.inlay,
+                self.sig_help,
+                self.complete,
+                self.hovering,
+            ) = (
+                default(),
+                default(),
+                default(),
+                default(),
+                default(),
+                default(),
+            );
+            x.open(&origin, new).unwrap();
+            x.rq_semantic_tokens(
+                &mut self.semantic_tokens,
+                origin,
+                Some(w.clone()),
+            )
+            .unwrap();
+        });
+        Ok(())
     }
 }
 use NamedKey::*;

@@ -470,7 +470,7 @@ impl Client {
         f: &Path,
     ) -> impl Future<
         Output = Result<
-            <Formatting as Request>::Result,
+            Option<Vec<TextEdit>>,
             RequestError<Formatting>,
         >,
     > {
@@ -489,7 +489,9 @@ impl Client {
             },
         )
         .unwrap()
-        .0
+        .0.map(|x| {
+            x.map(|x|x.map(|mut x| { x.sort_tedits(); x }))
+        })
     }
     pub fn rq_semantic_tokens(
         &'static self,
@@ -549,10 +551,12 @@ impl Client {
             .unwrap();
         match r {
             None => t.enter(),
-            Some(r) =>
+            Some(mut r) => {
+                r.sort_tedits();
                 for f in r {
                     t.apply_snippet_tedit(&f).unwrap();
-                },
+                }
+            }
         }
     }
 }
@@ -1045,7 +1049,7 @@ impl<T, U, F: FnMut(T) -> U, Fu: Future<Output = T>> Map_<T, U, F> for Fu {
 }
 use tokio::task;
 
-use crate::text::{CoerceOption, TextArea};
+use crate::text::{CoerceOption, SortTedits, TextArea};
 #[derive(Debug)]
 pub enum OnceOff<T> {
     Waiting(task::JoinHandle<Result<T, oneshot::error::RecvError>>),
