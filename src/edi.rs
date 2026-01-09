@@ -33,19 +33,7 @@ use crate::{
     Hist, act, alt, ctrl, filter, shift, sig, sym, trm,
 };
 #[derive(Default)]
-pub struct Editor {
-    pub files: HashMap<PathBuf, Editor>,
-    pub text: TextArea,
-    pub origin: Option<PathBuf>, // ie active
-    pub state: State,
-    pub bar: Bar,
-    pub workspace: Option<PathBuf>,
-    pub lsp: Option<(
-        &'static Client,
-        std::thread::JoinHandle<()>,
-        Option<Sender<Arc<Window>>>,
-    )>,
-    pub tree: Option<Vec<PathBuf>>,
+pub struct Requests {
     pub hovering: Rq<Hovr, Option<Hovr>, (usize, usize), anyhow::Error>,
     pub document_highlights: Rq<
         Vec<DocumentHighlight>,
@@ -79,6 +67,22 @@ pub struct Editor {
         (usize, usize),
         RequestError<lsp_request!("textDocument/definition")>,
     >,
+}
+#[derive(Default)]
+pub struct Editor {
+    pub files: HashMap<PathBuf, Editor>,
+    pub text: TextArea,
+    pub origin: Option<PathBuf>, // ie active
+    pub state: State,
+    pub bar: Bar,
+    pub workspace: Option<PathBuf>,
+    pub lsp: Option<(
+        &'static Client,
+        std::thread::JoinHandle<()>,
+        Option<Sender<Arc<Window>>>,
+    )>,
+    pub requests: Requests,
+    pub tree: Option<Vec<PathBuf>>,
     pub chist: ClickHistory,
     pub hist: Hist,
     pub mtime: Option<std::time::SystemTime>,
@@ -96,6 +100,7 @@ macro_rules! inlay {
     ($self:ident) => {
         lsp!($self + p).map(|(lsp, path)| {
             $self
+                .requests
                 .inlay
                 .request(lsp.runtime.spawn(lsp.inlay(path, &$self.text)))
         })
@@ -105,8 +110,12 @@ macro_rules! change {
     ($self:ident) => {
         lsp!($self + p).map(|(x, origin)| {
             x.edit(&origin, $self.text.rope.to_string()).unwrap();
-            x.rq_semantic_tokens(&mut $self.semantic_tokens, origin, None)
-                .unwrap();
+            x.rq_semantic_tokens(
+                &mut $self.requests.semantic_tokens,
+                origin,
+                None,
+            )
+            .unwrap();
             inlay!($self);
         });
     };
@@ -205,8 +214,12 @@ impl Editor {
         me.hist.last = me.text.clone();
         me.lsp.as_ref().zip(me.origin.as_deref()).map(
             |((x, ..), origin)| {
-                x.rq_semantic_tokens(&mut me.semantic_tokens, origin, None)
-                    .unwrap()
+                x.rq_semantic_tokens(
+                    &mut me.requests.semantic_tokens,
+                    origin,
+                    None,
+                )
+                .unwrap()
             },
         );
 
@@ -227,7 +240,7 @@ impl Editor {
     //     JoinHandle<Result<Vec<InlayHint>, RequestError<InlayHintRequest>>>,
     // > {
     //     lsp!(self + p).map(|(lsp, path)| {
-    //         lsp.runtime.spawn(lsp.inlay(path, &self.text))
+    //         lsp.runtime.spawn(lsp.requests.inlay(path, &self.text))
     //     })
     // }
 
@@ -268,7 +281,7 @@ impl Editor {
             }
         }
         let r = &l.runtime;
-        self.inlay.poll(
+        self.requests.inlay.poll(
             |x, p| {
                 x.ok().or(p.1).inspect(|x| {
                     self.text.set_inlay(x);
@@ -276,9 +289,10 @@ impl Editor {
             },
             r,
         );
-        self.document_highlights.poll(|x, _| x.ok(), r);
-        self.diag.poll(|x, _| x.ok().flatten(), r);
-        if let CompletionState::Complete(rq) = &mut self.complete {
+        self.requests.document_highlights.poll(|x, _| x.ok(), r);
+        self.requests.diag.poll(|x, _| x.ok().flatten(), r);
+        if let CompletionState::Complete(rq) = &mut self.requests.complete
+        {
             rq.poll(
                 |f, (c, _)| {
                     f.ok().flatten().map(|x| Complete {
@@ -351,7 +365,7 @@ impl Editor {
                 &r,
             );
         }
-        self.def.poll(
+        self.requests.def.poll(
             |x, _| {
                 x.ok().flatten().and_then(|x| match &x {
                     GotoDefinitionResponse::Link([x, ..]) =>
@@ -361,8 +375,8 @@ impl Editor {
             },
             &r,
         );
-        self.semantic_tokens.poll(|x, _| x.ok(), &l.runtime);
-        self.sig_help.poll(
+        self.requests.semantic_tokens.poll(|x, _| x.ok(), &l.runtime);
+        self.requests.sig_help.poll(
             |x, ((), y)| {
                 x.ok().flatten().map(|x| {
                     if let Some((old_sig, vo, max)) = y
@@ -376,7 +390,7 @@ impl Editor {
             },
             &r,
         );
-        self.hovering.poll(|x, _| x.ok().flatten(), &r);
+        self.requests.hovering.poll(|x, _| x.ok().flatten(), &r);
     }
     #[implicit_fn]
     pub fn cursor_moved(
@@ -404,7 +418,7 @@ impl Editor {
                     self.text.visual_index_at(cursor_position)
                     && let Some((cl, o)) = lsp!(self + p) =>
             'out: {
-                let l = &mut self.hovering.result;
+                let l = &mut self.requests.hovering.result;
                 if let Some(Hovr {
                     span: Some([(_x, _y), (_x2, _)]),
                     ..
@@ -466,6 +480,7 @@ impl Editor {
                 };
                 if ctrl() {
                     if self
+                        .requests
                         .def
                         .request
                         .as_ref()
@@ -476,22 +491,29 @@ impl Editor {
                             work_done_progress_params: default(),
                             partial_result_params: default(),
                         }).unwrap().0));
-                        self.def.request =
+                        self.requests.def.request =
                             Some((DropH::new(handle), cursor_position));
-                    } else if self.def.result.as_ref().is_some_and(|em| {
-                        let z = em.origin_selection_range.unwrap();
-                        (z.start.character..z.end.character).contains(
-                            &((cursor_position.0
-                                - text.line_number_offset()
-                                - 1) as _),
-                        )
-                    }) {
-                        self.def.result = None;
+                    } else if self
+                        .requests
+                        .def
+                        .result
+                        .as_ref()
+                        .is_some_and(|em| {
+                            let z = em.origin_selection_range.unwrap();
+                            (z.start.character..z.end.character).contains(
+                                &((cursor_position.0
+                                    - text.line_number_offset()
+                                    - 1)
+                                    as _),
+                            )
+                        })
+                    {
+                        self.requests.def.result = None;
                     }
                 } else {
-                    self.def.result = None;
+                    self.requests.def.result = None;
                 }
-                if let Some((_, c)) = self.hovering.request
+                if let Some((_, c)) = self.requests.hovering.request
                     && c == cursor_position
                 {
                     break 'out;
@@ -503,7 +525,7 @@ impl Editor {
                         work_done_progress_params: default(),
                     })
                     .unwrap();
-                // println!("rq hov of {hover:?} (cur {})", hovering.request.is_some());
+                // println!("rq hov of {hover:?} (cur {})", requests.hovering.request.is_some());
                 let handle: tokio::task::JoinHandle<
                     Result<Option<Hovr>, anyhow::Error>,
                 > = cl.runtime.spawn(w.redraw_after(async move {
@@ -578,17 +600,17 @@ impl Editor {
                         .into(),
                     ))
                 }));
-                self.hovering.request =
+                self.requests.hovering.request =
                     (DropH::new(handle), cursor_position).into();
-                // hovering.result = None;
+                // requests.hovering.result = None;
                 //                             lsp!().map(|(cl, o)| {
                 // let window = window.clone();
                 // });
                 //                                 });
             }
             Some(Do::Hover) => {
-                self.def.result = None;
-                self.hovering.result = None;
+                self.requests.def.result = None;
+                self.requests.hovering.result = None;
                 w.request_redraw();
             }
             None => {}
@@ -602,22 +624,28 @@ impl Editor {
         w: Arc<Window>,
     ) {
         let text = &mut self.text;
-        _ = self.complete.consume(CompletionAction::Click).unwrap();
+        _ = self
+            .requests
+            .complete
+            .consume(CompletionAction::Click)
+            .unwrap();
         match self.state.consume(Action::M(bt)).unwrap() {
             Some(Do::MoveCursor) => {
                 text.cursor = text.mapped_index_at(cursor_position);
                 if let Some((lsp, path)) = lsp!(self + p) {
-                    self.sig_help.request(lsp.runtime.spawn(
+                    self.requests.sig_help.request(lsp.runtime.spawn(
                         w.redraw_after(
                             lsp.request_sig_help(path, text.cursor()),
                         ),
                     ));
-                    self.document_highlights.request(lsp.runtime.spawn(
-                        w.redraw_after(lsp.document_highlights(
-                            path,
-                            text.to_l_position(text.cursor).unwrap(),
+                    self.requests.document_highlights.request(
+                        lsp.runtime.spawn(w.redraw_after(
+                            lsp.document_highlights(
+                                path,
+                                text.to_l_position(text.cursor).unwrap(),
+                            ),
                         )),
-                    ));
+                    );
                 }
                 self.hist.last.cursor = text.cursor;
                 self.chist.push(text.cursor());
@@ -652,7 +680,7 @@ impl Editor {
                     ref target_uri,
                     target_range,
                     ..
-                }) = self.def.result
+                }) = self.requests.def.result
                     && let Some(p) = self.origin.as_deref()
                 {
                     if target_uri == &p.tid().uri {
@@ -668,10 +696,10 @@ impl Editor {
     }
     pub fn scroll(&mut self, rows: f32) {
         let rows = if alt() { rows * 8. } else { rows * 3. };
-        let (vo, max) = lower::saturating::math! { if let Some(x)= &mut self.hovering.result && shift() {
+        let (vo, max) = lower::saturating::math! { if let Some(x)= &mut self.requests.hovering.result && shift() {
             let n = x.item.l();
             (&mut x.item.vo, n - 15)
-        } else if let Some((_, ref mut vo, Some(max))) = self.sig_help.result && shift(){
+        } else if let Some((_, ref mut vo, Some(max))) = self.requests.sig_help.result && shift(){
             (vo, max - 15)
         } else {
             let n =self. text.l() - 1; (&mut self.text.vo, n)
@@ -784,7 +812,7 @@ impl Editor {
                         self.open(&f, window)?;
                     }
                     self.state = State::Default;
-                    self.complete = CompletionState::None;
+                    self.requests.complete = CompletionState::None;
 
                     let p = self.text
                         .l_position(x.location.range.start).ok_or(anyhow::anyhow!("rah"))?;
@@ -810,7 +838,7 @@ impl Editor {
                                 trigger_kind: Some(
                                     CodeActionTriggerKind::INVOKED,
                                 ),
-                                // diagnostics: if let Some((lsp, p)) = lsp!() && let uri = Url::from_file_path(p).unwrap() && let Some(diag) = lsp.diagnostics.get(&uri, &lsp.diagnostics.guard()) { dbg!(diag.iter().filter(|x| {
+                                // diagnostics: if let Some((lsp, p)) = lsp!() && let uri = Url::from_file_path(p).unwrap() && let Some(diag) = lsp.requests.diagnostics.get(&uri, &lsp.requests.diagnostics.guard()) { dbg!(diag.iter().filter(|x| {
                                 //                                             self.text.l_range(x.range).unwrap().contains(&self.text.cursor)
                                 //                                         }).cloned().collect()) } else { vec![] },
                                 ..default()
@@ -946,7 +974,8 @@ impl Editor {
                 let cb4 = self.text.cursor;
                 if let Key::Named(Enter | ArrowUp | ArrowDown | Tab) =
                     event.logical_key
-                    && let CompletionState::Complete(..) = self.complete
+                    && let CompletionState::Complete(..) =
+                        self.requests.complete
                 {
                 } else {
                     handle2(
@@ -961,19 +990,19 @@ impl Editor {
                     && let CompletionState::Complete(Rq {
                         result: Some(c),
                         ..
-                    }) = &self.complete
+                    }) = &self.requests.complete
                     && ((self.text.cursor < c.start)
                         || (!super::is_word(self.text.at_())
                             && (self.text.at_() != '.'
                                 || self.text.at_() != ':')))
                 {
-                    self.complete = CompletionState::None;
+                    self.requests.complete = CompletionState::None;
                 }
-                if self.sig_help.running()
+                if self.requests.sig_help.running()
                     && cb4 != self.text.cursor
                     && let Some((lsp, path)) = lsp!(self + p)
                 {
-                    self.sig_help.request(lsp.runtime.spawn(
+                    self.requests.sig_help.request(lsp.runtime.spawn(
                         window.redraw_after(
                             lsp.request_sig_help(path, self.text.cursor()),
                         ),
@@ -995,16 +1024,19 @@ impl Editor {
                                 && let Some(x) = &x.trigger_characters
                                 && x.contains(&y.to_string()) =>
                         {
-                            self.sig_help.request(lsp.runtime.spawn(
-                                window.redraw_after(lsp.request_sig_help(
-                                    o,
-                                    self.text.cursor(),
+                            self.requests.sig_help.request(
+                                lsp.runtime.spawn(window.redraw_after(
+                                    lsp.request_sig_help(
+                                        o,
+                                        self.text.cursor(),
+                                    ),
                                 )),
-                            ));
+                            );
                         }
                         _ => {}
                     }
                     match self
+                        .requests
                         .complete
                         .consume(CompletionAction::K(
                             event.logical_key.as_ref(),
@@ -1022,7 +1054,7 @@ impl Editor {
                             let CompletionState::Complete(Rq {
                                 request: x,
                                 result: c,
-                            }) = &mut self.complete
+                            }) = &mut self.requests.complete
                             else {
                                 panic!()
                             };
@@ -1038,7 +1070,7 @@ impl Editor {
                             let CompletionState::Complete(Rq {
                                 result: Some(c),
                                 ..
-                            }) = &mut self.complete
+                            }) = &mut self.requests.complete
                             else {
                                 panic!()
                             };
@@ -1048,7 +1080,7 @@ impl Editor {
                             let CompletionState::Complete(Rq {
                                 result: Some(c),
                                 ..
-                            }) = &mut self.complete
+                            }) = &mut self.requests.complete
                             else {
                                 panic!()
                             };
@@ -1096,12 +1128,14 @@ impl Editor {
                             if self.hist.record(&self.text) {
                                 change!(self);
                             }
-                            self.sig_help = Rq::new(lsp.runtime.spawn(
-                                window.redraw_after(lsp.request_sig_help(
-                                    o,
-                                    self.text.cursor(),
+                            self.requests.sig_help = Rq::new(
+                                lsp.runtime.spawn(window.redraw_after(
+                                    lsp.request_sig_help(
+                                        o,
+                                        self.text.cursor(),
+                                    ),
                                 )),
-                            ));
+                            );
                         }
                         None => return,
                     };
@@ -1247,7 +1281,6 @@ impl Editor {
             self.text.vo,
             self.chist,
             self.state,
-            self.complete,
             self.mtime,
             self.bar.last_action,
         ) = (
@@ -1256,30 +1289,15 @@ impl Editor {
             0,
             default(),
             State::Default,
-            CompletionState::None,
             Self::modify(self.origin.as_deref()),
             "open".to_string(),
         );
 
         lsp!(self + p).map(|(x, origin)| {
-            (
-                self.def,
-                self.semantic_tokens,
-                self.inlay,
-                self.sig_help,
-                self.complete,
-                self.hovering,
-            ) = (
-                default(),
-                default(),
-                default(),
-                default(),
-                default(),
-                default(),
-            );
+            self.requests = default();
             x.open(&origin, new).unwrap();
             x.rq_semantic_tokens(
-                &mut self.semantic_tokens,
+                &mut self.requests.semantic_tokens,
                 origin,
                 Some(w.clone()),
             )

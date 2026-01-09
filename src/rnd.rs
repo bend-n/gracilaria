@@ -102,7 +102,7 @@ pub fn render(
                         (t_ox, 0),
                         x,
                         |(_c, _r), text,  mut x| {
-                            if let Some(hl) = &ed.document_highlights.result {
+                            if let Some(hl) = &ed.requests.document_highlights.result {
                                 for DocumentHighlight { range: r, .. } in hl {
                                     // let s = match kind {
                                     //     Some(DocumentHighlightKind::READ) => Style::UNDERLINE,
@@ -118,7 +118,7 @@ pub fn render(
                             }
                             if let Some(LocationLink {
                                 origin_selection_range: Some(r), ..
-                            }) = ed.def.result { _ = try {
+                            }) = ed.requests.def.result { _ = try {
                                 let (x1, y1) = text.map_to_visual((r.start.character as _, r.start.line as _));
                                 let (x2, y2) = text.map_to_visual((r.end.character as _, r.end.line as _));
                                 x.get_simple((x1, y1), (x2, y2))?.iter_mut().for_each(|x| {
@@ -210,7 +210,7 @@ pub fn render(
                             }
                         },
                         ed.origin.as_deref(),
-                        ed.semantic_tokens.result.as_deref().zip(
+                        ed.requests.semantic_tokens.result.as_deref().zip(
                             match lsp_m!(ed)  {
                                 Some(lsp::Client { initialized: Some(lsp_types::InitializeResult {
                                     capabilities: ServerCapabilities {
@@ -447,7 +447,7 @@ pub fn render(
                 }
             }
         };
-        ed.hovering.result.as_ref().filter(|_| pass).map(|x| {
+        ed.requests.hovering.result.as_ref().filter(|_| pass).map(|x| {
             x.span.clone().map(|[(_x, _y), (_x2, _)]| {
                 // let [(_x, _y), (_x2, _)] = text.position(sp);
                 // dbg!(x..=x2, cursor_position.0)
@@ -557,13 +557,13 @@ pub fn render(
             }
             _ => {}
         }
-        let com = match ed.complete {
+        let com = match ed.requests.complete {
             CompletionState::Complete(Rq {
                 result: Some(ref x), ..
             }) => {
                 let c = com::s(x, 40, &filter(&text));
                 if c.len() == 0 {
-                    ed.complete
+                    ed.requests.complete
                         .consume(CompletionAction::NoResult)
                         .unwrap();
                     None
@@ -575,7 +575,7 @@ pub fn render(
         };
         'out: {
             if let Rq { result: Some((ref x, vo, ref mut max)), .. } =
-                ed.sig_help
+                ed.requests.sig_help
             {
                 let (sig, p) = sig::active(x);
                 let c = sig::sig((sig, p), 40);
