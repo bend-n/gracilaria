@@ -32,7 +32,7 @@
     try_blocks,
     portable_simd
 )]
-#![allow(incomplete_features, irrefutable_let_patterns)]
+#![allow(incomplete_features, irrefutable_let_patterns, static_mut_refs)]
 mod act;
 mod edi;
 // mod new;
@@ -40,6 +40,8 @@ mod rnd;
 mod sym;
 mod trm;
 
+use std::fmt::{Debug, Display};
+use std::mem::MaybeUninit;
 use std::num::NonZeroU32;
 use std::sync::LazyLock;
 use std::time::Instant;
@@ -50,9 +52,11 @@ use diff_match_patch_rs::PatchInput;
 use dsb::cell::Style;
 use dsb::{Cell, F};
 use fimg::Image;
+use libc::{atexit, signal};
 use lsp::{PathURI, Rq};
 use lsp_types::*;
 use rust_fsm::StateMachine;
+use serde::{Deserialize, Deserializer, Serialize};
 use swash::{FontRef, Instance};
 use winit::event::{
     ElementState, Event, Ime, MouseButton, MouseScrollDelta, WindowEvent,
@@ -83,12 +87,29 @@ fn main() {
     // lsp::x();
     entry(EventLoop::new().unwrap())
 }
+pub fn serialize_debug<S: serde::Serializer, T: Debug>(
+    s: &T,
+    ser: S,
+) -> Result<S::Ok, S::Error> {
+    ser.serialize_str(&format!("{s:?}"))
+}
+pub fn serialize_display<S: serde::Serializer, T: Display>(
+    s: &T,
+    ser: S,
+) -> Result<S::Ok, S::Error> {
+    ser.serialize_str(&format!("{s}"))
+}
 
-#[derive(Debug)]
+#[derive(serde::Deserialize, serde::Serialize, Debug)]
 struct Hist {
     pub history: Vec<Diff>,
     pub redo_history: Vec<Diff>,
     pub last: TextArea,
+    #[serde(
+        skip_deserializing,
+        serialize_with = "serialize_debug",
+        default = "Instant::now"
+    )]
     pub last_edit: std::time::Instant,
     pub changed: bool,
 }
@@ -103,7 +124,7 @@ impl Default for Hist {
         }
     }
 }
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 struct ClickHistory {
     pub his: Vec<(usize, usize)>,
     pub red: Vec<(usize, usize)>,
@@ -131,18 +152,18 @@ impl Hist {
     fn push(&mut self, x: &TextArea) {
         let d = diff_match_patch_rs::DiffMatchPatch::new();
         self.history.push(Diff {
-            changes: (
-                d.patch_make(PatchInput::new_text_text(
+            forth: d
+                .patch_make(PatchInput::new_text_text(
                     &x.rope.to_string(),
                     &self.last.rope.to_string(),
                 ))
                 .unwrap(),
-                d.patch_make(PatchInput::new_text_text(
+            back: d
+                .patch_make(PatchInput::new_text_text(
                     &self.last.rope.to_string(),
                     &x.rope.to_string(),
                 ))
                 .unwrap(),
-            ),
             data: [
                 (self.last.cursor, self.last.column, self.last.vo),
                 (x.cursor, x.column, x.vo),
@@ -199,12 +220,24 @@ static mut CLICKING: bool = false;
 const BG: [u8; 3] = col!("#1f2430");
 const FG: [u8; 3] = [204, 202, 194];
 const BORDER: [u8; 3] = col!("#ffffff");
+
+static mut __ED: MaybeUninit<Editor> = MaybeUninit::uninit();
+extern "C" fn cleanup() {
+    unsafe { __ED.assume_init_mut().store() };
+}
+extern "C" fn sigint(_: i32) {
+    std::process::exit(12);
+}
+
 #[implicit_fn::implicit_fn]
 pub(crate) fn entry(event_loop: EventLoop<()>) {
+    unsafe { __ED.write(Editor::new()) };
+    assert_eq!(unsafe { atexit(cleanup) }, 0);
+    unsafe { signal(libc::SIGINT, sigint as *const () as usize) };
+    let ed = unsafe { __ED.assume_init_mut() };
     let ppem = 20.0;
     let ls = 20.0;
-    let ed = Editor::new();
-    let ed = Box::leak(Box::new(ed));
+    // let ed = Box::leak(Box::new(ed));
 
     let mut fonts = dsb::Fonts::new(
         F::FontRef(*FONT, &[(2003265652, 550.0)]),

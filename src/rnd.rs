@@ -4,10 +4,10 @@ use std::sync::{Arc, LazyLock};
 use std::time::Instant;
 
 use atools::prelude::*;
-use dsb::{Cell, Fonts};
 use dsb::cell::Style;
-use fimg::{Image, OverlayAt};
+use dsb::{Cell, Fonts};
 use fimg::pixels::Blend;
+use fimg::{Image, OverlayAt};
 use lsp_types::*;
 use rust_fsm::StateMachine;
 use softbuffer::Surface;
@@ -20,7 +20,10 @@ use crate::edi::st::State;
 use crate::edi::{Editor, lsp_m};
 use crate::lsp::Rq;
 use crate::text::{CoerceOption, col};
-use crate::{BG, BORDER, CompletionAction, CompletionState, FG, FONT, com, filter, lsp, sig};
+use crate::{
+    BG, BORDER, CompletionAction, CompletionState, FG, FONT, com, filter,
+    lsp, sig,
+};
 
 #[implicit_fn::implicit_fn]
 pub fn render(
@@ -259,14 +262,14 @@ pub fn render(
         };
 
         let mut place_around = |(_x, _y): (usize, usize),
-                            i: Image<&mut [u8], 3>,
-                            c: &[Cell],
-                            columns: usize,
-                            ppem_: f32,
-                            ls_: f32,
-                            ox: f32,
-                            oy: f32,
-                            toy: f32| {
+                                i: Image<&mut [u8], 3>,
+                                c: &[Cell],
+                                columns: usize,
+                                ppem_: f32,
+                                ls_: f32,
+                                ox: f32,
+                                oy: f32,
+                                toy: f32| {
             let met = super::FONT.metrics(&[]);
             let fac = ppem / met.units_per_em as f32;
             let position = (
@@ -563,7 +566,8 @@ pub fn render(
             }) => {
                 let c = com::s(x, 40, &filter(&text));
                 if c.len() == 0 {
-                    ed.requests.complete
+                    ed.requests
+                        .complete
                         .consume(CompletionAction::NoResult)
                         .unwrap();
                     None

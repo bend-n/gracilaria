@@ -21,6 +21,7 @@ use lsp_types::{
     SemanticTokensLegend, SnippetTextEdit, TextEdit,
 };
 use ropey::{Rope, RopeSlice};
+use serde::{Deserialize, Serialize};
 use tree_house::Language;
 use winit::keyboard::{NamedKey, SmolStr};
 
@@ -182,16 +183,47 @@ macro_rules! col {
         ($(crate::text::col!($x),)+)
     }};
 }
-#[derive(Clone, Debug)]
+#[derive(Debug)]
+struct E;
+impl Display for E {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Ok(())
+    }
+}
+
+fn from_t<'de, D>(de: D) -> Result<Patches<u8>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let dmp = DiffMatchPatch::new();
+    let s: &str = serde::de::Deserialize::deserialize(de)?;
+    let p =
+        dmp.patch_from_text(s).map_err(|_| serde::de::Error::custom(E))?;
+    Ok(p)
+}
+fn to_t<S: serde::Serializer>(
+    x: &Patches<u8>,
+    s: S,
+) -> Result<S::Ok, S::Error> {
+    let dmp = DiffMatchPatch::new();
+    s.serialize_str(&dmp.patch_to_text(x))
+}
+
+#[derive(
+    Clone, Debug, serde_derive::Deserialize, serde_derive::Serialize,
+)]
 pub struct Diff {
-    pub changes: (Patches<u8>, Patches<u8>),
+    #[serde(deserialize_with = "from_t", serialize_with = "to_t")]
+    pub forth: Patches<u8>,
+    #[serde(deserialize_with = "from_t", serialize_with = "to_t")]
+    pub back: Patches<u8>,
     pub data: [(usize, usize, usize); 2],
 }
 
 impl Display for Diff {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let d = DiffMatchPatch::new();
-        writeln!(f, "{}", d.patch_to_text(&self.changes.1))
+        writeln!(f, "{}", d.patch_to_text(&self.back))
     }
 }
 
@@ -201,7 +233,7 @@ impl Diff {
         // println!("{}", d.patch_to_text(&self.changes.0));
         t.rope = Rope::from_str(
             &d.patch_apply(
-                &if redo { self.changes.1 } else { self.changes.0 },
+                &if redo { self.back } else { self.forth },
                 &t.rope.to_string(),
             )
             .unwrap()
@@ -215,8 +247,18 @@ impl Diff {
     }
 }
 
-#[derive(Default, Clone)]
+pub fn deserialize_from_string<'de, D: serde::de::Deserializer<'de>>(
+    de: D,
+) -> Result<Rope, D::Error> {
+    let s = serde::de::Deserialize::deserialize(de)?;
+    Ok(Rope::from_str(s))
+}
+#[derive(Default, Clone, Serialize, Deserialize)]
 pub struct TextArea {
+    #[serde(
+        serialize_with = "crate::serialize_display",
+        deserialize_with = "deserialize_from_string"
+    )]
     pub rope: Rope,
     pub cursor: usize,
     pub column: usize,
@@ -233,10 +275,14 @@ pub struct TextArea {
     pub vo: usize,
     pub ho: usize,
 
+    #[serde(skip)]
     pub r: usize,
+    #[serde(skip)]
     pub c: usize,
 
+    #[serde(skip)]
     pub tabstops: Option<Snippet>,
+    #[serde(skip)]
     pub decorations: Decorations,
 }
 
@@ -442,19 +488,24 @@ impl TextArea {
     pub fn mapped_index_at(&'_ self, (x, y): (usize, usize)) -> usize {
         match self.visual_index_at((x, y)) {
             Some(Mapping::Char(_, _, index)) => index,
-            Some(Mapping::Fake(mark, real, ..)) => real,
+            Some(Mapping::Fake(_, real, ..)) => real,
             None => self.eol(self.vo + y),
         }
     }
 
     pub fn remove(&mut self, r: Range<usize>) -> Result<(), ropey::Error> {
         self.rope.try_remove(r.clone())?;
-        self.tabstops.as_mut().map(|x| {
-            x.manipulate(|x| {
-                // if your region gets removed, what happens to your tabstop? big question.
-                if x > r.end { x - r.len() } else { x }
-            });
-        });
+        let manip = |x| {
+            // if your region gets removed, what happens to your tabstop? big question.
+            if r.contains(&x) {
+                // for now, simply move it.
+                r.start
+            } else {
+                if x >= r.end { x - r.len() } else { x }
+            }
+        };
+        self.tabstops.as_mut().map(|x| x.manipulate(manip));
+        self.cursor = manip(self.cursor);
         Ok(())
     }
 
@@ -464,19 +515,19 @@ impl TextArea {
         with: &str,
     ) -> Result<(), ropey::Error> {
         self.rope.try_insert(c, with)?;
-        self.tabstops.as_mut().map(|x| {
-            x.manipulate(
-                |x| {
-                    if x < c { x } else { x + with.chars().count() }
-                },
-            )
-        });
+        let manip = |x| {
+            if x < c { x } else { x + with.chars().count() }
+        };
+        self.tabstops.as_mut().map(|x| x.manipulate(manip));
+        self.cursor = manip(self.cursor);
         Ok(())
     }
 
     pub fn insert(&mut self, c: &str) -> Result<(), ropey::Error> {
+        let oc = self.cursor;
         self.insert_at(self.cursor, c)?;
-        self.cursor += c.chars().count();
+        assert_eq!(self.cursor, oc + c.chars().count());
+        self.cursor = oc + c.chars().count();
         self.setc();
         self.set_ho();
         Ok(())
@@ -617,11 +668,15 @@ impl TextArea {
         self.setc();
         self.set_ho();
     }
+    #[implicit_fn]
+    fn indentation_of(&self, n: usize) -> usize {
+        let Some(l) = self.rope.get_line(n) else { return 0 };
+        l.chars().filter(*_ != '\n').take_while(_.is_whitespace()).count()
+    }
 
     #[implicit_fn]
     fn indentation(&self) -> usize {
-        let l = self.cl();
-        l.chars().filter(*_ != '\n').take_while(_.is_whitespace()).count()
+        self.indentation_of(self.cursor().1)
     }
 
     #[implicit_fn]
@@ -652,7 +707,6 @@ impl TextArea {
         self.setc();
         self.set_ho();
     }
-
     pub fn set_ho(&mut self) {
         let x = self.cursor_visual().0;
         if x < self.ho + 4 {
@@ -1353,6 +1407,29 @@ impl TextArea {
         self.cursor = to;
         self.setc();
         r
+    }
+    pub fn comment(&mut self, selection: std::ops::Range<usize>) {
+        let a = self.rope.char_to_line(selection.start);
+        let b = self.rope.char_to_line(selection.end);
+        let lns = (a..=b)
+            .filter(|l| {
+                !self.rope.line(*l).chars().all(char::is_whitespace)
+            })
+            .collect::<Vec<_>>();
+        let at =
+            lns.iter().map(|l| self.indentation_of(*l)).min().unwrap_or(0);
+        for l in lns {
+            let c = self.rope.line_to_char(l);
+            if let Some(n) = self.rope.line(l).to_string().find("//") {
+                if self.rope.char(n + c + 2).is_whitespace() {
+                    _ = self.remove(c + n..c + n + 3);
+                } else {
+                    _ = self.remove(c + n..c + n + 2);
+                }
+            } else {
+                _ = self.insert_at(c + at, "// ");
+            }
+        }
     }
 }
 

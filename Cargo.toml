@@ -63,6 +63,8 @@ atools = "0.1.10"
 swizzle = "0.1.0"
 walkdir = "2.5.0"
 niri = { package = "niri-ipc", version = "25.11.0" }
+libc = "0.2.180"
+serde_bencode = "0.2.4"
 
 [profile.dev.package]
 rust-analyzer.opt-level = 3

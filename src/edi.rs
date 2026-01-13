@@ -68,20 +68,25 @@ pub struct Requests {
         RequestError<lsp_request!("textDocument/definition")>,
     >,
 }
-#[derive(Default)]
+#[derive(Default, serde_derive::Serialize, serde_derive::Deserialize)]
 pub struct Editor {
     pub files: HashMap<PathBuf, Editor>,
     pub text: TextArea,
     pub origin: Option<PathBuf>, // ie active
+    #[serde(skip)]
     pub state: State,
+    #[serde(skip)]
     pub bar: Bar,
     pub workspace: Option<PathBuf>,
+    #[serde(skip)]
     pub lsp: Option<(
         &'static Client,
         std::thread::JoinHandle<()>,
         Option<Sender<Arc<Window>>>,
     )>,
+    #[serde(skip)]
     pub requests: Requests,
+    #[serde(skip)]
     pub tree: Option<Vec<PathBuf>>,
     pub chist: ClickHistory,
     pub hist: Hist,
@@ -245,6 +250,10 @@ impl Editor {
     // }
 
     pub fn save(&mut self) {
+        // std::fs::write(
+        //     "jayson",
+        //     serde_json::to_string_pretty(&self).unwrap(),
+        // );
         self.bar.last_action = "saved".into();
         lsp!(self + p).map(|(l, o)| {
             let v = l.runtime.block_on(l.format(o)).unwrap();
@@ -731,6 +740,14 @@ impl Editor {
             _ => {}
         }
         match o {
+            Some(Do::Comment(x)) => {
+                if x == (0..0) {
+                    self.text.comment(self.text.cursor..self.text.cursor);
+                } else {
+                    self.text.comment(x);
+                }
+                change!(self);
+            }
             Some(Do::SpawnTerminal) => {
                 trm::toggle(
                     self.workspace
@@ -1262,6 +1279,7 @@ impl Editor {
         x: &Path,
         w: &mut Arc<Window>,
     ) -> anyhow::Result<()> {
+        if let Some(x) = self.files.get(x) {}
         self.origin = Some(x.canonicalize()?.to_path_buf());
         let r = self.text.r;
         self.text = TextArea::default();
@@ -1274,7 +1292,6 @@ impl Editor {
             last_edit: Instant::now(),
             changed: false,
         };
-
         (
             self.text.r,
             self.text.cursor,
@@ -1292,7 +1309,6 @@ impl Editor {
             Self::modify(self.origin.as_deref()),
             "open".to_string(),
         );
-
         lsp!(self + p).map(|(x, origin)| {
             self.requests = default();
             x.open(&origin, new).unwrap();
@@ -1304,6 +1320,9 @@ impl Editor {
             .unwrap();
         });
         Ok(())
+    }
+    pub fn store(&mut self) {
+        // serde_bencode::to_bytes(self);
     }
 }
 use NamedKey::*;

@@ -37,6 +37,7 @@ Default => {
     K(Key::Character(x) if x == "." && ctrl()) => _ [CodeAction],
     K(Key::Character(x) if x == "0" && ctrl()) => _ [MatchingBrace],
     K(Key::Character(x) if x == "`" && ctrl()) => _ [SpawnTerminal],
+    K(Key::Character(y) if y == "/" && ctrl()) => Default [Comment(Range<usize> => 0..0)],
     K(Key::Named(ArrowUp | ArrowLeft | ArrowDown | ArrowRight | Home | End) if shift()) => Selection(Range<usize> => 0..0) [StartSelection],
     M(MouseButton::Left if shift()) => Selection(Range<usize> => 0..0) [StartSelection],
     M(MouseButton::Left if ctrl()) => _ [GoToDefinition],
@@ -87,7 +88,9 @@ Selection(x) => {
     K(Key::Named(Backspace)) => Default [Delete(Range<usize> => x)],
     K(Key::Character(y) if y == "x" && ctrl()) => Default [Cut(Range<usize> => x)],
     K(Key::Character(y) if y == "c" && ctrl()) => Default [Copy(Range<usize> => x)],
-    K(Key::Character(y)) => Default [Insert((Range<usize>, SmolStr) => (x, y))],
+    K(Key::Character(y) if y == "/" && ctrl()) => Default [Comment(Range<usize> => x)],
+
+    K(Key::Character(y) if !ctrl()) => Default [Insert((Range<usize>, SmolStr) => (x, y))],
     K(_) => Default [Edit],
 },
 Save => {

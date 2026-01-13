@@ -2,14 +2,23 @@ use std::ops::Range;
 
 use helix_core::snippets::parser::SnippetElement;
 
-#[derive(Debug, Clone)]
+#[derive(
+    Debug, Clone, serde_derive::Serialize, serde_derive::Deserialize,
+)]
 pub struct Snippet {
     pub stops: Vec<(Stop, StopP)>,
     pub last: Option<StopP>,
     pub index: usize,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    serde_derive::Serialize,
+    serde_derive::Deserialize,
+)]
 pub enum StopP {
     Just(usize),
     Range(Range<usize>),

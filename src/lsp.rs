@@ -469,10 +469,7 @@ impl Client {
         &'static self,
         f: &Path,
     ) -> impl Future<
-        Output = Result<
-            Option<Vec<TextEdit>>,
-            RequestError<Formatting>,
-        >,
+        Output = Result<Option<Vec<TextEdit>>, RequestError<Formatting>>,
     > {
         self.request::<lsp_request!("textDocument/formatting")>(
             &DocumentFormattingParams {
@@ -489,8 +486,14 @@ impl Client {
             },
         )
         .unwrap()
-        .0.map(|x| {
-            x.map(|x|x.map(|mut x| { x.sort_tedits(); x }))
+        .0
+        .map(|x| {
+            x.map(|x| {
+                x.map(|mut x| {
+                    x.sort_tedits();
+                    x
+                })
+            })
         })
     }
     pub fn rq_semantic_tokens(
