@@ -28,6 +28,7 @@ use serde_json::json;
 use tokio::sync::oneshot;
 use tokio_util::task::AbortOnDropHandle;
 use winit::window::Window;
+#[derive(Debug)]
 pub struct Client {
     pub runtime: tokio::runtime::Runtime,
 
@@ -164,6 +165,11 @@ impl Client {
                 version: 0,
                 text,
             },
+        })
+    }
+    pub fn close(&self, f:&Path) ->Result<(), SendError<Message>>{
+        self.notify::<DidCloseTextDocument>(&DidCloseTextDocumentParams {
+            text_document: f.tid(),
         })
     }
     pub fn edit(

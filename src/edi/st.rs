@@ -46,6 +46,7 @@ Default => {
     M(MouseButton::Forward) => _ [NavForward],
     C(((usize, usize)) => .. if unsafe { CLICKING }) => Selection(0..0) [StartSelection],
     Changed => RequestBoolean(BoolRequest => BoolRequest::ReloadFile),
+    K(Key::Named(Escape)) => _ [MaybeRemoveSigHelp],
     C(_) => _ [Hover],
     K(_) => _ [Edit],
     M(_) => _,

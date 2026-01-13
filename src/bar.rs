@@ -7,7 +7,7 @@ use lsp_types::WorkDoneProgress;
 use crate::lsp::{Client, Rq};
 use crate::sym::Symbols;
 use crate::text::TextArea;
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct Bar {
     pub last_action: String,
 }

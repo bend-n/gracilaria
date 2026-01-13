@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::mem::take;
 use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -32,7 +33,7 @@ use crate::{
     BoolRequest, CDo, ClickHistory, CompletionAction, CompletionState,
     Hist, act, alt, ctrl, filter, shift, sig, sym, trm,
 };
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct Requests {
     pub hovering: Rq<Hovr, Option<Hovr>, (usize, usize), anyhow::Error>,
     pub document_highlights: Rq<
@@ -68,7 +69,9 @@ pub struct Requests {
         RequestError<lsp_request!("textDocument/definition")>,
     >,
 }
-#[derive(Default, serde_derive::Serialize, serde_derive::Deserialize)]
+#[derive(
+    Default, Debug, serde_derive::Serialize, serde_derive::Deserialize,
+)]
 pub struct Editor {
     pub files: HashMap<PathBuf, Editor>,
     pub text: TextArea,
@@ -740,6 +743,9 @@ impl Editor {
             _ => {}
         }
         match o {
+            Some(Do::MaybeRemoveSigHelp) => {
+                take(&mut self.requests.sig_help);
+            }
             Some(Do::Comment(x)) => {
                 if x == (0..0) {
                     self.text.comment(self.text.cursor..self.text.cursor);
@@ -825,15 +831,16 @@ impl Editor {
                         .to_file_path()
                         .map_err(|()| anyhow::anyhow!("dammit"))?
                         .canonicalize()?;
+                    self.state = State::Default;
+                    self.requests.complete = CompletionState::None;
                     if Some(&f) != self.origin.as_ref() {
                         self.open(&f, window)?;
                     }
-                    self.state = State::Default;
-                    self.requests.complete = CompletionState::None;
-
                     let p = self.text
                         .l_position(x.location.range.start).ok_or(anyhow::anyhow!("rah"))?;
-                    self.text.cursor = p;
+                    if p != 0 {
+                        self.text.cursor = p;
+                    }
                     self.text.scroll_to_cursor_centering();
                 } {
                     log::error!("alas! {e}");
@@ -1257,6 +1264,7 @@ impl Editor {
                 inlay!(self);
             }
             Some(Do::Boolean(BoolRequest::ReloadFile, true)) => {
+                self.hist.push_if_changed(&self.text);
                 self.text.rope = Rope::from_str(
                     &std::fs::read_to_string(
                         self.origin.as_ref().unwrap(),
@@ -1267,6 +1275,7 @@ impl Editor {
                     self.text.cursor.min(self.text.rope.len_chars());
                 self.mtime = Self::modify(self.origin.as_deref());
                 self.bar.last_action = "reloaded".into();
+                self.hist.push(&self.text)
             }
             Some(Do::Boolean(BoolRequest::ReloadFile, false)) => {}
             None => {}
@@ -1279,46 +1288,78 @@ impl Editor {
         x: &Path,
         w: &mut Arc<Window>,
     ) -> anyhow::Result<()> {
-        if let Some(x) = self.files.get(x) {}
-        self.origin = Some(x.canonicalize()?.to_path_buf());
+        let x = x.canonicalize()?.to_path_buf();
+        if Some(&*x) == self.origin.as_deref() {
+            self.bar.last_action = "didnt open".into();
+            return Ok(());
+        }
         let r = self.text.r;
-        self.text = TextArea::default();
-        let new = std::fs::read_to_string(x)?;
-        self.text.insert(&new)?;
-        self.hist = Hist {
-            history: vec![],
-            redo_history: vec![],
-            last: self.text.clone(),
-            last_edit: Instant::now(),
-            changed: false,
-        };
-        (
-            self.text.r,
-            self.text.cursor,
-            self.text.vo,
-            self.chist,
-            self.state,
-            self.mtime,
-            self.bar.last_action,
-        ) = (
-            r,
-            0,
-            0,
-            default(),
-            State::Default,
-            Self::modify(self.origin.as_deref()),
-            "open".to_string(),
-        );
-        lsp!(self + p).map(|(x, origin)| {
-            self.requests = default();
-            x.open(&origin, new).unwrap();
-            x.rq_semantic_tokens(
-                &mut self.requests.semantic_tokens,
-                origin,
-                Some(w.clone()),
-            )
-            .unwrap();
-        });
+        let ws = self.workspace.clone();
+        let tree = self.tree.clone();
+        let lsp = self.lsp.take();
+
+        let mut me = take(self);
+        let f = take(&mut me.files);
+
+        if let Some(x) = me.origin.clone() {
+            println!("colse {x:?}");
+            lsp.as_ref().map(|l| l.0.close(&x));
+            self.files.insert(x, me);
+            self.files.extend(f);
+            println!("added to files {}", self.files.len());
+            // assert!(f.len() == 0);
+        }
+
+        if let Some(x) = self.files.remove(&x) {
+            let f = take(&mut self.files);
+            *self = x;
+            assert!(self.files.len() == 0);
+            self.files = f;
+            self.bar.last_action = "restored".into();
+            if self.mtime != Self::modify(self.origin.as_deref()) {
+                self.hist.push_if_changed(&self.text);
+                self.text.rope = Rope::from_str(
+                    &std::fs::read_to_string(
+                        self.origin.as_ref().unwrap(),
+                    )
+                    .unwrap(),
+                );
+                self.text.cursor =
+                    self.text.cursor.min(self.text.rope.len_chars());
+                self.mtime = Self::modify(self.origin.as_deref());
+                self.bar.last_action = "restored -> reloaded".into();
+                self.hist.push(&self.text)
+            }
+            self.lsp = lsp;
+
+            lsp!(self + p).map(|(x, origin)| {
+                x.open(&origin, self.text.rope.to_string()).unwrap();
+            });
+        } else {
+            self.tree = tree;
+            self.workspace = ws;
+            self.origin = Some(x.clone());
+
+            let new = std::fs::read_to_string(&x)?;
+            self.text.insert(&new)?;
+            self.text.r = r;
+            self.text.cursor = 0;
+            self.bar.last_action = "open".into();
+            self.mtime = Self::modify(self.origin.as_deref());
+            self.lsp = lsp;
+
+            lsp!(self + p).map(|(x, origin)| {
+                take(&mut self.requests);
+                x.open(&origin, new).unwrap();
+
+                x.rq_semantic_tokens(
+                    &mut self.requests.semantic_tokens,
+                    origin,
+                    Some(w.clone()),
+                )
+                .unwrap();
+            });
+        }
         Ok(())
     }
     pub fn store(&mut self) {
