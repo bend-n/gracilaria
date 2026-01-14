@@ -14,6 +14,7 @@ use lsp_types::*;
 use regex::Regex;
 use ropey::Rope;
 use rust_fsm::StateMachine;
+use serde_derive::{Deserialize, Serialize};
 use tokio::sync::oneshot::Sender;
 use tokio::task::spawn_blocking;
 use tokio_util::task::AbortOnDropHandle as DropH;
@@ -33,7 +34,37 @@ use crate::{
     BoolRequest, CDo, ClickHistory, CompletionAction, CompletionState,
     Hist, act, alt, ctrl, filter, shift, sig, sym, trm,
 };
-#[derive(Default, Debug)]
+pub fn serialize_tokens<S: serde::Serializer>(
+    s: &Rq<
+        Box<[SemanticToken]>,
+        Box<[SemanticToken]>,
+        (),
+        RequestError<SemanticTokensFullRequest>,
+    >,
+    ser: S,
+) -> Result<S::Ok, S::Error> {
+    SemanticToken::serialize_tokens_opt(
+        &s.result.clone().map(|x| x.to_vec()),
+        ser,
+    )
+}
+
+pub fn deserialize_tokens<'de, D: serde::Deserializer<'de>>(
+    ser: D,
+) -> Result<
+    Rq<
+        Box<[SemanticToken]>,
+        Box<[SemanticToken]>,
+        (),
+        RequestError<SemanticTokensFullRequest>,
+    >,
+    D::Error,
+> {
+    SemanticToken::deserialize_tokens_opt(ser)
+        .map(|x| Rq { result: x.map(Into::into), request: None })
+}
+
+#[derive(Default, Debug, Serialize, Deserialize)]
 pub struct Requests {
     pub hovering: Rq<Hovr, Option<Hovr>, (usize, usize), anyhow::Error>,
     pub document_highlights: Rq<
@@ -49,6 +80,8 @@ pub struct Requests {
         (),
         RequestError<SignatureHelpRequest>,
     >, // vo, lines
+    #[serde(serialize_with = "serialize_tokens")]
+    #[serde(deserialize_with = "deserialize_tokens")]
     pub semantic_tokens: Rq<
         Box<[SemanticToken]>,
         Box<[SemanticToken]>,
@@ -1362,8 +1395,26 @@ impl Editor {
         }
         Ok(())
     }
-    pub fn store(&mut self) {
-        // serde_bencode::to_bytes(self);
+    pub fn store(&mut self) -> anyhow::Result<()> {
+        if let Some(w) = &self.workspace {
+            let hash = crate::hash(&w);
+            let cfgdir = std::env::var("XDG_CONFIG_HOME")
+                .map(PathBuf::from)
+                .or_else(|_| {
+                    std::env::var("HOME")
+                        .map(PathBuf::from)
+                        .map(|x| x.join(".config"))
+                })
+                .unwrap_or("/tmp/".into());
+
+            let p = cfgdir.join("gracilaria").join(format!("{hash:x}"));
+            std::fs::create_dir_all(&p)?;
+            std::fs::write(
+                p.join("state.torrent"),
+                serde_bencode::to_bytes(self)?,
+            )?;
+        }
+        Ok(())
     }
 }
 use NamedKey::*;

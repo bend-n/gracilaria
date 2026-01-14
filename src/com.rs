@@ -8,11 +8,12 @@ use dsb::Cell;
 use dsb::cell::Style;
 use itertools::Itertools;
 use lsp_types::*;
+use serde::{Deserialize, Serialize};
 
 use crate::FG;
 use crate::text::{col, color_, set_a};
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Complete {
     pub r: CompletionResponse,
     pub start: usize,

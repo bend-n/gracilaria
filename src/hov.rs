@@ -8,6 +8,7 @@ use dsb::cell::Style;
 use itertools::Itertools;
 use markdown::mdast::{self, Node};
 use ropey::Rope;
+use serde_derive::{Deserialize, Serialize};
 const D: Cell = Cell { letter: None, style: Style::new(FG, BG) };
 use crate::{FG, text};
 
@@ -302,7 +303,7 @@ fn t() {
     println!("{:?}", now.elapsed());
     x.as_ref().save("x");
 }
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Hovr {
     pub(crate) span: Option<[(VisualX, usize); 2]>,
     pub(crate) item: crate::text::CellBuffer,

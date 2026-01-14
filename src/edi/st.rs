@@ -21,7 +21,7 @@ impl Default for State {
 }
 rust_fsm::state_machine! {
 #[derive(Debug)]
-pub(crate) State => Action => Do
+pub(crate) State => #[derive(Debug)] pub(crate) Action => #[derive(Debug)] pub(crate) Do
 
 Dead => K(Key => _) => Dead,
 Default => {
@@ -103,6 +103,7 @@ Procure((t, InputRequest::Search)) => K(Key::Named(Enter)) => Default [StartSear
 Procure((t, InputRequest::SaveFile)) => K(Key::Named(Enter)) => Default [SaveTo(String => t.rope.to_string())],
 Procure((t, InputRequest::OpenFile)) => K(Key::Named(Enter)) => Default [OpenFile(String => t.rope.to_string())],
 Procure((t, a)) => K(k) => Procure((handle(k, t), a)),
+Procure((t, a)) => C(_) => Procure((t, a)),
 RequestBoolean(t) => {
     K(Key::Character(x) if x == "y") => Default [Boolean((BoolRequest, bool) => (t, true))],
     K(Key::Character(x) if x == "n") => Default [Boolean((t, false))],

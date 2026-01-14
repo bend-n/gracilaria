@@ -41,6 +41,7 @@ mod sym;
 mod trm;
 
 use std::fmt::{Debug, Display};
+use std::hash::Hash;
 use std::mem::MaybeUninit;
 use std::num::NonZeroU32;
 use std::sync::LazyLock;
@@ -223,9 +224,10 @@ const BORDER: [u8; 3] = col!("#ffffff");
 
 static mut __ED: MaybeUninit<Editor> = MaybeUninit::uninit();
 extern "C" fn cleanup() {
-    unsafe { __ED.assume_init_mut().store() };
+    unsafe { __ED.assume_init_mut().store().unwrap() };
 }
 extern "C" fn sigint(_: i32) {
+    cleanup();
     std::process::exit(12);
 }
 
@@ -551,8 +553,8 @@ impl<T> M<T> for Option<T> {
 }
 
 rust_fsm::state_machine! {
-    #[derive(Debug)]
-    pub(crate) CompletionState => CompletionAction<'i> => CDo
+    #[derive(Debug,Serialize,Deserialize)]
+    pub(crate) CompletionState => #[derive(Debug)] pub(crate) CompletionAction<'i> => pub(crate) CDo
     None => Click => None,
     None => K(Key<&'i str> => Key::Character(k @ ("." | ":"))) => Complete(
         RqS<Complete, lsp_types::request::Completion, usize> => default()
@@ -598,4 +600,9 @@ fn filter(text: &TextArea) -> String {
             .chars()
             .collect::<String>()
     }
+}
+
+pub fn hash(x: &impl Hash) -> u64 {
+    use std::hash::BuildHasher;
+    rustc_hash::FxBuildHasher::default().hash_one(x)
 }

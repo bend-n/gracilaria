@@ -24,6 +24,7 @@ use lsp_server::{
 use lsp_types::notification::*;
 use lsp_types::request::*;
 use lsp_types::*;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::sync::oneshot;
 use tokio_util::task::AbortOnDropHandle;
@@ -51,9 +52,10 @@ impl Drop for Client {
         panic!("please dont")
     }
 }
+#[derive(Serialize, Deserialize)]
 pub enum RequestError<X> {
     Rx(PhantomData<X>),
-    Failure(Re, Backtrace),
+    Failure(Re, #[serde(skip)] Option<Backtrace>),
     Cancelled(Re, DiagnosticServerCancellationData),
 }
 // impl<X> Debug for RequestError<X> {}
@@ -135,7 +137,7 @@ impl Client {
                         );
                         Err(RequestError::Cancelled(x, e.expect("lsp??")))
                     } else {
-                        Err(RequestError::Failure(x, Backtrace::capture()))
+                        Err(RequestError::Failure(x, Some(Backtrace::capture())))
                     }
                 } else {
                     Ok(serde_json::from_value::<X::Result>(
@@ -1085,9 +1087,13 @@ impl<R: Request> std::fmt::Debug for RequestError<R> {
     }
 }
 
-#[derive(Debug)]
+fn none<T>() ->Option<T> {
+    None
+}
+#[derive(Debug, serde_derive::Serialize, serde_derive::Deserialize)]
 pub struct Rq<T, R, D = (), E = RequestError<R>> {
     pub result: Option<T>,
+    #[serde(skip, default = "none")]
     pub request: Option<(AbortOnDropHandle<Result<R, E>>, D)>,
 }
 pub type RqS<T, R: Request, D = ()> = Rq<T, R::Result, D, RequestError<R>>;

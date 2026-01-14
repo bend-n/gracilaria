@@ -297,6 +297,7 @@ pub struct Mark {
 }
 const INLAY: u8 = 0;
 
+#[derive(Serialize, Deserialize)]
 pub struct CellBuffer {
     pub c: usize,
     pub vo: usize,
