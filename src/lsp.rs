@@ -847,7 +847,7 @@ pub fn run(
         x.capabilities.position_encoding,
         Some(PositionEncodingKind::UTF8)
     );
-    c.initialized = Some(dbg!(x));
+    c.initialized = Some(x);
     c.notify::<lsp_types::notification::Initialized>(
         &InitializedParams {},
     )

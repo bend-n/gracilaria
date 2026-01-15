@@ -32,7 +32,7 @@ use crate::lsp::{self, Client, PathURI, RedrawAfter, RequestError, Rq};
 use crate::text::{self, CoerceOption, Mapping, SortTedits, TextArea};
 use crate::{
     BoolRequest, CDo, ClickHistory, CompletionAction, CompletionState,
-    Hist, act, alt, ctrl, filter, shift, sig, sym, trm,
+    Hist, act, alt, ctrl, filter, hash, shift, sig, sym, trm,
 };
 pub fn serialize_tokens<S: serde::Serializer>(
     s: &Rq<
@@ -188,6 +188,19 @@ impl Editor {
             .as_ref()
             .and_then(|x| rooter(&x.parent().unwrap()))
             .and_then(|x| x.canonicalize().ok());
+        let mut loaded_state = false;
+        if let Some(ws) = me.workspace.as_deref()
+            && let h = hash(&ws)
+            && let at = cfgdir().join(format!("{h:x}")).join(STORE)
+            && at.exists()
+        {
+            let x = std::fs::read(at).unwrap();
+            let x = serde_bencoded::from_bytes::<Editor>(&x).unwrap();
+            me = x;
+            loaded_state = true;
+            println!("loaded previous state");
+        }
+
         me.tree = me.workspace.as_ref().map(|x| {
             walkdir::WalkDir::new(x)
                 .into_iter()
@@ -198,73 +211,94 @@ impl Editor {
                 .map(|x| x.path().to_owned())
                 .collect::<Vec<_>>()
         });
-        me.lsp = me.workspace.as_ref().zip(me.origin.clone()).map(
-            |(workspace, origin)| {
-                let dh = std::panic::take_hook();
-                let main = std::thread::current_id();
-                // let mut c = Command::new("rust-analyzer")
-                //     .stdin(Stdio::piped())
-                //     .stdout(Stdio::piped())
-                //     .stderr(Stdio::inherit())
-                //     .spawn()
-                //     .unwrap();
-                let (a, b) = Connection::memory();
-                std::thread::Builder::new()
-                    .name("Rust Analyzer".into())
-                    .stack_size(1024 * 1024 * 8)
-                    .spawn(move || {
-                        let ra = std::thread::current_id();
-                        std::panic::set_hook(Box::new(move |info| {
-                            // iz
-                            if std::thread::current_id() == main {
-                                dh(info);
-                            } else if std::thread::current_id() == ra
-                                || std::thread::current()
-                                    .name()
-                                    .is_some_and(|x| x.starts_with("RA"))
-                            {
-                                println!(
-                                    "RA panic @ {}",
-                                    info.location().unwrap()
-                                );
-                            }
-                        }));
-                        rust_analyzer::bin::run_server(b)
-                    })
+        let l = me.workspace.as_ref().map(|(workspace)| {
+            let dh = std::panic::take_hook();
+            let main = std::thread::current_id();
+            // let mut c = Command::new("rust-analyzer")
+            //     .stdin(Stdio::piped())
+            //     .stdout(Stdio::piped())
+            //     .stderr(Stdio::inherit())
+            //     .spawn()
+            //     .unwrap();
+            let (a, b) = Connection::memory();
+            std::thread::Builder::new()
+                .name("Rust Analyzer".into())
+                .stack_size(1024 * 1024 * 8)
+                .spawn(move || {
+                    let ra = std::thread::current_id();
+                    std::panic::set_hook(Box::new(move |info| {
+                        // iz
+                        if std::thread::current_id() == main {
+                            dh(info);
+                        } else if std::thread::current_id() == ra
+                            || std::thread::current()
+                                .name()
+                                .is_some_and(|x| x.starts_with("RA"))
+                        {
+                            println!(
+                                "RA panic @ {}",
+                                info.location().unwrap()
+                            );
+                        }
+                    }));
+                    rust_analyzer::bin::run_server(b)
+                })
+                .unwrap();
+            let (c, t2, changed) = lsp::run(
+                (a.sender, a.receiver),
+                //    lsp_server::stdio::stdio_transport(
+                //         BufReader::new(c.stdout.take().unwrap()),
+                //         c.stdin.take().unwrap(),
+                //     ),
+                WorkspaceFolder {
+                    uri: Url::from_file_path(&workspace).unwrap(),
+                    name: workspace
+                        .file_name()
+                        .unwrap()
+                        .to_string_lossy()
+                        .into_owned(),
+                },
+            );
+            (&*Box::leak(Box::new(c)), (t2), Some(changed))
+        });
+        if let Some(o) = me.origin.clone()
+            && loaded_state
+        {
+            let w = me.workspace.clone();
+            me.open_or_restore(&o, l, None, w).unwrap();
+        } else {
+            me.lsp = l;
+            me.hist.last = me.text.clone();
+            me.lsp.as_ref().zip(me.origin.as_deref()).map(
+                |((c, ..), origin)| {
+                    c.open(
+                        &origin,
+                        std::fs::read_to_string(&origin).unwrap(),
+                    )
                     .unwrap();
-                let (c, t2, changed) = lsp::run(
-                    (a.sender, a.receiver),
-                    //    lsp_server::stdio::stdio_transport(
-                    //         BufReader::new(c.stdout.take().unwrap()),
-                    //         c.stdin.take().unwrap(),
-                    //     ),
-                    WorkspaceFolder {
-                        uri: Url::from_file_path(&workspace).unwrap(),
-                        name: workspace
-                            .file_name()
-                            .unwrap()
-                            .to_string_lossy()
-                            .into_owned(),
-                    },
-                );
-                c.open(&origin, std::fs::read_to_string(&origin).unwrap())
-                    .unwrap();
-                (&*Box::leak(Box::new(c)), (t2), Some(changed))
-            },
-        );
-        me.hist.last = me.text.clone();
-        me.lsp.as_ref().zip(me.origin.as_deref()).map(
-            |((x, ..), origin)| {
-                x.rq_semantic_tokens(
-                    &mut me.requests.semantic_tokens,
-                    origin,
-                    None,
-                )
-                .unwrap()
-            },
-        );
+                    c.rq_semantic_tokens(
+                        &mut me.requests.semantic_tokens,
+                        origin,
+                        None,
+                    )
+                    .unwrap()
+                },
+            );
 
-        me.mtime = Self::modify(me.origin.as_deref());
+            me.mtime = Self::modify(me.origin.as_deref());
+
+            // me.hist.last = me.text.clone();
+            // me.lsp.as_ref().zip(me.origin.as_deref()).map(
+            //     |((x, ..), origin)| {
+            //         x.rq_semantic_tokens(
+            //             &mut me.requests.semantic_tokens,
+            //             origin,
+            //             None,
+            //         )
+            //         .unwrap()
+            //     },
+            // );
+        }
 
         me
     }
@@ -1342,8 +1376,24 @@ impl Editor {
             println!("added to files {}", self.files.len());
             // assert!(f.len() == 0);
         }
+        self.open_or_restore(&x, lsp, Some(w), ws);
+        self.text.r = r;
+        self.tree = tree;
 
-        if let Some(x) = self.files.remove(&x) {
+        Ok(())
+    }
+    fn open_or_restore(
+        &mut self,
+        x: &Path,
+        lsp: Option<(
+            &'static Client,
+            std::thread::JoinHandle<()>,
+            Option<Sender<Arc<Window>>>,
+        )>,
+        w: Option<&mut Arc<Window>>,
+        ws: Option<PathBuf>,
+    ) -> anyhow::Result<()> {
+        if let Some(x) = self.files.remove(x) {
             let f = take(&mut self.files);
             *self = x;
             assert!(self.files.len() == 0);
@@ -1369,13 +1419,11 @@ impl Editor {
                 x.open(&origin, self.text.rope.to_string()).unwrap();
             });
         } else {
-            self.tree = tree;
             self.workspace = ws;
-            self.origin = Some(x.clone());
+            self.origin = Some(x.to_path_buf());
 
             let new = std::fs::read_to_string(&x)?;
             self.text.insert(&new)?;
-            self.text.r = r;
             self.text.cursor = 0;
             self.bar.last_action = "open".into();
             self.mtime = Self::modify(self.origin.as_deref());
@@ -1388,7 +1436,7 @@ impl Editor {
                 x.rq_semantic_tokens(
                     &mut self.requests.semantic_tokens,
                     origin,
-                    Some(w.clone()),
+                    w.cloned(),
                 )
                 .unwrap();
             });
@@ -1398,21 +1446,13 @@ impl Editor {
     pub fn store(&mut self) -> anyhow::Result<()> {
         if let Some(w) = &self.workspace {
             let hash = crate::hash(&w);
-            let cfgdir = std::env::var("XDG_CONFIG_HOME")
-                .map(PathBuf::from)
-                .or_else(|_| {
-                    std::env::var("HOME")
-                        .map(PathBuf::from)
-                        .map(|x| x.join(".config"))
-                })
-                .unwrap_or("/tmp/".into());
-
-            let p = cfgdir.join("gracilaria").join(format!("{hash:x}"));
+            let cfgdir = cfgdir();
+            let p = cfgdir.join(format!("{hash:x}"));
             std::fs::create_dir_all(&p)?;
-            std::fs::write(
-                p.join("state.torrent"),
-                serde_bencode::to_bytes(self)?,
-            )?;
+            let b = serde_bencoded::to_vec::<Editor>(self)?;
+            std::fs::write(p.join(STORE), &b)?;
+            serde_bencoded::from_bytes::<Editor>(&b)
+                .expect("ensure roundtrips");
         }
         Ok(())
     }
@@ -1474,3 +1514,15 @@ impl State {
         (x, y, z)
     }
 }
+fn cfgdir() -> PathBuf {
+    std::env::var("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .or_else(|_| {
+            std::env::var("HOME")
+                .map(PathBuf::from)
+                .map(|x| x.join(".config"))
+        })
+        .unwrap_or("/tmp/".into())
+        .join("gracilaria")
+}
+const STORE: &str = "state.torrent";
