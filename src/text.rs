@@ -1127,6 +1127,9 @@ impl TextArea {
                     1.. => t.delta_start,
                     0 => ch + t.delta_start,
                 };
+                if ln < self.vo as u32 {
+                    continue;
+                }
                 let x: Result<(usize, usize), ropey::Error> = try {
                     let x1 = self.rope.try_byte_to_char(
                         self.rope.try_line_to_byte(ln as _)? + ch as usize,
