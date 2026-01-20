@@ -174,7 +174,7 @@ impl Editor {
     pub fn new() -> Self {
         let mut me = Self::default();
 
-        me.origin = std::env::args()
+        let o = std::env::args()
             .nth(1)
             .and_then(|x| PathBuf::try_from(x).ok())
             .and_then(|x| x.canonicalize().ok());
@@ -183,8 +183,7 @@ impl Editor {
             me.text.insert(&std::fs::read_to_string(x).unwrap()).unwrap();
             me.text.cursor = 0;
         });
-        me.workspace = me
-            .origin
+        me.workspace = o
             .as_ref()
             .and_then(|x| rooter(&x.parent().unwrap()))
             .and_then(|x| x.canonicalize().ok());
@@ -198,9 +197,9 @@ impl Editor {
             let x = serde_bencoded::from_bytes::<Editor>(&x).unwrap();
             me = x;
             loaded_state = true;
-            println!("loaded previous state");
+            assert!(me.workspace.is_some());
         }
-
+        me.origin = o;
         me.tree = me.workspace.as_ref().map(|x| {
             walkdir::WalkDir::new(x)
                 .into_iter()
@@ -211,6 +210,7 @@ impl Editor {
                 .map(|x| x.path().to_owned())
                 .collect::<Vec<_>>()
         });
+        assert!(me.tree.is_some());
         let l = me.workspace.as_ref().map(|(workspace)| {
             let dh = std::panic::take_hook();
             let main = std::thread::current_id();
@@ -261,11 +261,15 @@ impl Editor {
             );
             (&*Box::leak(Box::new(c)), (t2), Some(changed))
         });
+
         if let Some(o) = me.origin.clone()
             && loaded_state
         {
             let w = me.workspace.clone();
+            let t = me.tree.clone();
+            assert!(me.files.len() != 0);
             me.open_or_restore(&o, l, None, w).unwrap();
+            me.tree = t;
         } else {
             me.lsp = l;
             me.hist.last = me.text.clone();
@@ -1369,11 +1373,9 @@ impl Editor {
         let f = take(&mut me.files);
 
         if let Some(x) = me.origin.clone() {
-            println!("colse {x:?}");
             lsp.as_ref().map(|l| l.0.close(&x));
             self.files.insert(x, me);
             self.files.extend(f);
-            println!("added to files {}", self.files.len());
             // assert!(f.len() == 0);
         }
         self.open_or_restore(&x, lsp, Some(w), ws);
@@ -1423,6 +1425,7 @@ impl Editor {
             self.origin = Some(x.to_path_buf());
 
             let new = std::fs::read_to_string(&x)?;
+            take(&mut self.text);
             self.text.insert(&new)?;
             self.text.cursor = 0;
             self.bar.last_action = "open".into();
@@ -1444,7 +1447,23 @@ impl Editor {
         Ok(())
     }
     pub fn store(&mut self) -> anyhow::Result<()> {
-        if let Some(w) = &self.workspace {
+        let ws = self.workspace.clone();
+        let tree = self.tree.clone();
+        let mtime = self.mtime.clone();
+        let origin = self.origin.clone();
+
+        if let Some(w) = self.workspace.clone() {
+            let mut me = take(self);
+            self.workspace = ws;
+            self.tree = tree;
+            self.mtime = mtime;
+            self.origin = origin;
+
+            let f = take(&mut me.files);
+            if let Some(x) = me.origin.clone() {
+                self.files.insert(x, me);
+                self.files.extend(f);
+            }
             let hash = crate::hash(&w);
             let cfgdir = cfgdir();
             let p = cfgdir.join(format!("{hash:x}"));
