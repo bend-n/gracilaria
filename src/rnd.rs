@@ -425,7 +425,7 @@ pub fn render(
                                 )
                             },
                             i.copy(),
-                            &n,
+                            &*n,
                             x_lim,
                             17.0,
                             0.,
@@ -752,7 +752,7 @@ pub fn render(
             .as_chunks_unchecked_mut::<4>()
         };
         fimg::overlay::copy_rgb_bgr_(i.flatten(), x);
-        dbg!(now.elapsed());
+        println!("rnd took: {:.3}", now.elapsed().as_millis_f32());
         buffer.present().unwrap();
     }
 }

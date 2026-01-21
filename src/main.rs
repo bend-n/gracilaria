@@ -1,5 +1,6 @@
 #![feature(tuple_trait, unboxed_closures, fn_traits)]
 #![feature(
+    duration_millis_float,
     anonymous_lifetime_in_impl_trait,
     try_blocks_heterogeneous,
     current_thread_id,

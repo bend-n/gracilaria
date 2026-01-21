@@ -4,9 +4,9 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-dsb = { git = "https://github.com/bend-n/dsb" }
-fimg = { git = "https://github.com/bend-n/fimg" }
-pattypan = { git = "https://github.com/bend-n/pattypan" }
+dsb = { git = "https://git.bendn.org/dsb" }
+fimg = { git = "https://git.bendn.org/fimg" }
+pattypan = { git = "https://git.bendn.org/pattypan" }
 implicit-fn = "0.1.0"
 ropey = "1.6.1"
 softbuffer = "0.4.6"
@@ -20,24 +20,21 @@ lower = "0.2.0"
 amap = "0.1.4"
 run_times = "0.1.0"
 array_chunks = "1.0.0"
-rust-fsm = { git = "https://github.com/bend-n/rust-fsm", features = [
-    "diagram",
-] }
+rust-fsm = { git = "https://git.bendn.org/rust-fsm", features = ["diagram"] }
 clipp = "0.1.0"
 diff-match-patch-rs = "0.5.1"
 regex = "1.11.3"
 tree-house = { version = "0.3.0", features = ["fixtures"] }
 
 # for tree house grammar loading
-helix-loader = { git = "https://github.com/bend-n/helix" }
-helix-core = { git = "https://github.com/bend-n/helix" }
-
-lsp-types = { git = "https://github.com/bend-n/helix", package = "helix-lsp-types", features = [
+helix-loader = { git = "https://git.bendn.org/helix" }
+helix-core = { git = "https://git.bendn.org/helix" }
+lsp-types = { git = "https://git.bendn.org/helix", package = "helix-lsp-types", features = [
     "proposed",
 ] }
 
-lsp-server = { git = "https://github.com/bend-n/rust-analyzer" }
-rust-analyzer = { git = "https://github.com/bend-n/rust-analyzer" }
+lsp-server = { git = "https://git.bendn.org/rust-analyzer" }
+rust-analyzer = { git = "https://git.bendn.org/rust-analyzer" }
 
 serde_json = "1.0.145"
 serde = "1.0.228"
