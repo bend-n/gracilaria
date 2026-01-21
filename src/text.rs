@@ -1107,6 +1107,18 @@ impl TextArea {
             for t in t {
                 let pl = ln;
                 ln += t.delta_line;
+                // dbg!(
+                //     &mapping,
+                //     self.source_map(ln as _).coerce().collect::<Vec<_>>(),
+                //     self.rope.line(ln as _)
+                // );
+                if ln < self.vo as u32 {
+                    continue;
+                }
+                ch = match t.delta_line {
+                    1.. => t.delta_start,
+                    0 => ch + t.delta_start,
+                };
                 if pl != ln {
                     src_map = self
                         .source_map(ln as _)
@@ -1116,19 +1128,6 @@ impl TextArea {
                         .reverse_source_map_w(src_map.iter().cloned())
                         .coerce()
                         .collect::<Vec<_>>();
-                }
-
-                // dbg!(
-                //     &mapping,
-                //     self.source_map(ln as _).coerce().collect::<Vec<_>>(),
-                //     self.rope.line(ln as _)
-                // );
-                ch = match t.delta_line {
-                    1.. => t.delta_start,
-                    0 => ch + t.delta_start,
-                };
-                if ln < self.vo as u32 {
-                    continue;
                 }
                 let x: Result<(usize, usize), ropey::Error> = try {
                     let x1 = self.rope.try_byte_to_char(
