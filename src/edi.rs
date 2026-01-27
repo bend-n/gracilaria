@@ -89,6 +89,7 @@ pub struct Requests {
         RequestError<SemanticTokensFullRequest>,
     >,
     pub diag: Rq<String, Option<String>, (), anyhow::Error>,
+    #[serde(skip)]
     pub inlay: Rq<
         Vec<InlayHint>,
         Vec<InlayHint>,
@@ -120,7 +121,7 @@ pub struct Editor {
         std::thread::JoinHandle<()>,
         Option<Sender<Arc<Window>>>,
     )>,
-    #[serde(skip)]
+    // #[serde(skip)]
     pub requests: Requests,
     #[serde(skip)]
     pub tree: Option<Vec<PathBuf>>,
@@ -194,7 +195,7 @@ impl Editor {
             && at.exists()
         {
             let x = std::fs::read(at).unwrap();
-            let x = serde_bencoded::from_bytes::<Editor>(&x).unwrap();
+            let x = bendy::serde::from_bytes::<Editor>(&x).unwrap();
             me = x;
             loaded_state = true;
             assert!(me.workspace.is_some());
@@ -1413,6 +1414,7 @@ impl Editor {
                     self.text.cursor.min(self.text.rope.len_chars());
                 self.mtime = Self::modify(self.origin.as_deref());
                 self.bar.last_action = "restored -> reloaded".into();
+                take(&mut self.requests);
                 self.hist.push(&self.text)
             }
             self.lsp = lsp;
@@ -1468,10 +1470,9 @@ impl Editor {
             let cfgdir = cfgdir();
             let p = cfgdir.join(format!("{hash:x}"));
             std::fs::create_dir_all(&p)?;
-            let b = serde_bencoded::to_vec::<Editor>(self)?;
+            let b = bendy::serde::to_bytes(&self).unwrap();
+            bendy::serde::from_bytes::<Editor>(&b)?;
             std::fs::write(p.join(STORE), &b)?;
-            serde_bencoded::from_bytes::<Editor>(&b)
-                .expect("ensure roundtrips");
         }
         Ok(())
     }
@@ -1545,3 +1546,11 @@ fn cfgdir() -> PathBuf {
         .join("gracilaria")
 }
 const STORE: &str = "state.torrent";
+#[track_caller]
+fn rtt<T: serde::Serialize + serde::Deserialize<'static>>(
+    x: &T,
+) -> Result<T, bendy::serde::Error> {
+    bendy::serde::from_bytes::<T>(
+        bendy::serde::to_bytes(x).unwrap().leak(),
+    )
+}

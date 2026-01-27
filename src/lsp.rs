@@ -1090,12 +1090,20 @@ impl<R: Request> std::fmt::Debug for RequestError<R> {
 fn none<T>() ->Option<T> {
     None
 }
+impl<T: Clone,R,D,E> Clone for Rq<T, R, D, E> {
+    fn clone(&self) -> Self {
+        Self { result: self.result.clone(), request: None }
+    }
+}
 #[derive(Debug, serde_derive::Serialize, serde_derive::Deserialize)]
+
 pub struct Rq<T, R, D = (), E = RequestError<R>> {
+    #[serde(skip_serializing_if = "Option::is_none", default = "none")]
     pub result: Option<T>,
     #[serde(skip, default = "none")]
     pub request: Option<(AbortOnDropHandle<Result<R, E>>, D)>,
 }
+
 pub type RqS<T, R: Request, D = ()> = Rq<T, R::Result, D, RequestError<R>>;
 impl<T, R, D, E> Default for Rq<T, R, D, E> {
     fn default() -> Self {

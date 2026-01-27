@@ -22,7 +22,7 @@ run_times = "0.1.0"
 array_chunks = "1.0.0"
 rust-fsm = { git = "https://git.bendn.org/rust-fsm", features = ["diagram"] }
 clipp = "0.1.0"
-diff-match-patch-rs = "0.5.1"
+diff-match-patch-rs = { git = "https://git.bendn.org/dmp" }
 regex = "1.11.3"
 tree-house = { version = "0.3.0", features = ["fixtures"] }
 
@@ -61,9 +61,8 @@ swizzle = "0.1.0"
 walkdir = "2.5.0"
 niri = { package = "niri-ipc", version = "25.11.0" }
 libc = "0.2.180"
-serde_bencode = "0.2.4"
 rustc-hash = "=2.1.1"
-serde_bencoded = "0.3.2"
+bendy = { version = "0.6.1", features = ["serde"] }
 
 [profile.dev.package]
 rust-analyzer.opt-level = 3
