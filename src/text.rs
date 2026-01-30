@@ -394,6 +394,14 @@ impl TextArea {
         [(x1, y1), (x2, y2)]
     }
 
+    pub fn visual_position(&self, r: Range<usize>) -> [(usize, usize); 2] {
+        self.position(r).map(|x| self.map_to_visual(x))
+    }
+
+    pub fn visual_xy(&self, x: usize) -> Option<(usize, usize)> {
+        self.xy(x).map(|p| self.map_to_visual(p))
+    }
+
     pub fn map_to_visual(&self, (x, y): (usize, usize)) -> (usize, usize) {
         (
             self.reverse_source_map(y)
@@ -1221,7 +1229,7 @@ impl TextArea {
             for (_, tabstop) in
                 tabstops.stops.iter().skip(tabstops.index - 1)
             {
-                let [a, b] = self.position(tabstop.r());
+                let [a, b] = self.visual_position(tabstop.r());
                 for char in cells.get_range(a, b) {
                     char.style.bg = [55, 86, 81];
                 }

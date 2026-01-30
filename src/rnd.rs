@@ -740,7 +740,7 @@ pub fn render(
         for stop in
             text.tabstops.as_ref().into_iter().flat_map(|x| x.list())
         {
-            let Some((x, y)) = text.xy(stop.clone().r().end) else {
+            let Some((x, y)) = text.visual_xy(stop.clone().r().end) else {
                 continue;
             };
             draw_at(x, y, &image);
