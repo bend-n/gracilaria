@@ -16,6 +16,14 @@ pub struct Symbols {
     pub tedit: TextArea,
     pub selection: usize,
     pub vo: usize,
+    pub ty: SymbolsType,
+}
+
+#[derive(Debug, Default, Copy, Clone, PartialEq, Eq)]
+pub enum SymbolsType {
+    Document,
+    #[default]
+    Workspace,
 }
 const N: usize = 30;
 impl Symbols {
@@ -87,7 +95,7 @@ impl Symbols {
         //     //     })
         //     .take(13)
         i.for_each(|((_, x, indices), i)| {
-            r(x, ws, c, i == self.selection, &indices, &mut out)
+            r(x, ws, c, i == self.selection, &indices, &mut out, self.ty)
         });
 
         out
@@ -121,6 +129,7 @@ fn r(
     selected: bool,
     indices: &[u32],
     to: &mut Vec<Cell>,
+    sty: SymbolsType,
 ) {
     let bg = if selected { col!("#262d3b") } else { col!("#1c212b") };
 
@@ -171,8 +180,11 @@ fn r(
         - (charc(&x.name) as i32 + qualifier.clone().count() as i32)
         - 3;
     let loc = x.location.uri.to_file_path().unwrap();
-    let locs =
-        loc.strip_prefix(workspace).unwrap_or(&loc).to_str().unwrap_or("");
+    let locs = if sty == SymbolsType::Workspace {
+        loc.strip_prefix(workspace).unwrap_or(&loc).to_str().unwrap_or("")
+    } else {
+        ""
+    };
     let loc = locs.chars().rev().collect::<Vec<_>>().into_iter();
     let q = if left < charc(&locs) as i32 {
         locs.chars()
@@ -186,6 +198,7 @@ fn r(
     } else {
         loc
     };
+
     i.iter_mut()
         .rev()
         .zip(q.map(|x| {

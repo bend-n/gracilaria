@@ -58,6 +58,27 @@ pub enum RequestError<X> {
     Failure(Re, #[serde(skip)] Option<Backtrace>),
     Cancelled(Re, DiagnosticServerCancellationData),
 }
+pub type AQErr = RequestError<LSPError>;
+impl Request for LSPError {
+    type Params = ();
+    type Result = ();
+    const METHOD: &'static str = "<unknown method>";
+}
+#[derive(Debug)]
+pub struct LSPError {}
+pub trait Anonymize<T> {
+    fn anonymize(self) -> Result<T, RequestError<LSPError>>;
+}
+impl<T, E> Anonymize<T> for Result<T, RequestError<E>> {
+    fn anonymize(self) -> Result<T, RequestError<LSPError>> {
+        self.map_err(|e| match e {
+            RequestError::Rx(_) => RequestError::Rx(PhantomData),
+            RequestError::Failure(r, b) => RequestError::Failure(r, b),
+            RequestError::Cancelled(r, d) => RequestError::Cancelled(r, d),
+        })
+    }
+}
+
 // impl<X> Debug for RequestError<X> {}
 impl<X> From<oneshot::error::RecvError> for RequestError<X> {
     fn from(_: oneshot::error::RecvError) -> Self {
@@ -137,7 +158,10 @@ impl Client {
                         );
                         Err(RequestError::Cancelled(x, e.expect("lsp??")))
                     } else {
-                        Err(RequestError::Failure(x, Some(Backtrace::capture())))
+                        Err(RequestError::Failure(
+                            x,
+                            Some(Backtrace::capture()),
+                        ))
                     }
                 } else {
                     Ok(serde_json::from_value::<X::Result>(
@@ -169,7 +193,7 @@ impl Client {
             },
         })
     }
-    pub fn close(&self, f:&Path) ->Result<(), SendError<Message>>{
+    pub fn close(&self, f: &Path) -> Result<(), SendError<Message>> {
         self.notify::<DidCloseTextDocument>(&DidCloseTextDocumentParams {
             text_document: f.tid(),
         })
@@ -389,6 +413,38 @@ impl Client {
             .unwrap()
             .0
             .map(|x| x.map(|x| x.unwrap_or_default()))
+    }
+    pub fn document_symbols(
+        &'static self,
+        p: &Path,
+    ) -> impl Future<
+        Output = Result<
+            Vec<SymbolInformation>,
+            RequestError<lsp_request!("textDocument/documentSymbol")>,
+        >,
+    > {
+        self.request::<lsp_request!("textDocument/documentSymbol")>(
+            &DocumentSymbolParams {
+                text_document: p.tid(),
+                work_done_progress_params: default(),
+                partial_result_params: default(),
+            },
+        )
+        .unwrap()
+        .0
+        .map(|x| {
+            x.map(|x| {
+                x.map(|x| {
+                    // std::fs::write("syms", serde_json::to_string_pretty(&x).unwrap());
+                    match x {
+                        DocumentSymbolResponse::Flat(x) => x,
+                        DocumentSymbolResponse::Nested(_) =>
+                            unreachable!(),
+                    }
+                })
+                .unwrap_or_default()
+            })
+        })
     }
     pub fn symbols(
         &'static self,
@@ -1087,10 +1143,10 @@ impl<R: Request> std::fmt::Debug for RequestError<R> {
     }
 }
 
-fn none<T>() ->Option<T> {
+fn none<T>() -> Option<T> {
     None
 }
-impl<T: Clone,R,D,E> Clone for Rq<T, R, D, E> {
+impl<T: Clone, R, D, E> Clone for Rq<T, R, D, E> {
     fn clone(&self) -> Self {
         Self { result: self.result.clone(), request: None }
     }

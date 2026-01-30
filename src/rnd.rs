@@ -4,6 +4,7 @@ use std::sync::{Arc, LazyLock};
 use std::time::Instant;
 
 use atools::prelude::*;
+use crossbeam::channel::select_biased;
 use dsb::cell::Style;
 use dsb::{Cell, Fonts};
 use fimg::pixels::Blend;
@@ -100,8 +101,7 @@ pub fn render(
         //     }
         // }
 
-        text.write_to(
-                        (cells, (c, r)),
+        text.write_to((cells, (c, r)),
                         (t_ox, 0),
                         x,
                         |(_c, _r), text,  mut x| {
@@ -285,7 +285,10 @@ pub fn render(
             // std::fs::write("cells", Cell::store(c));
 
             if w >= size.width as usize
-                || (position.1 + h >= size.height as usize
+                || (position
+                    .1
+                    .checked_add(h)
+                    .is_none_or(|x| x >= size.height as usize)
                     && !position.1.checked_sub(h).is_some())
                 || position.1 >= size.height as usize
                 || position.0 >= size.width as usize
@@ -461,6 +464,9 @@ pub fn render(
                 let [_x, _x2] =
                     [_x, _x2].add(text.line_number_offset() + 1);
                 let Some(_y) = _y.checked_sub(text.vo) else {
+                    return;
+                };
+                let Some(_x) = _x.checked_sub(text.ho) else {
                     return;
                 };
 

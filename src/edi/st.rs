@@ -7,8 +7,8 @@ use regex::Regex;
 use winit::event::MouseButton;
 use winit::keyboard::{Key, NamedKey, SmolStr};
 
-use crate::lsp::{RequestError, Rq, RqS};
-use crate::sym::Symbols;
+use crate::lsp::{AQErr, RequestError, Rq, RqS};
+use crate::sym::{Symbols, SymbolsType};
 use crate::text::TextArea;
 use crate::{
     BoolRequest, CLICKING, InputRequest, act, ctrl, handle, shift,
@@ -57,9 +57,10 @@ Symbols(Rq { result: Some(_x), request: None }) => {
     K(Key::Named(ArrowUp | Tab)) => _ [SymbolsSelectPrev],
     K(Key::Named(Enter)) => _ [SymbolsSelect],
     K(Key::Named(Escape)) => Default,
-    K(_) => _ [SymbolsHandleKey],
 },
-Symbols(Rq::<Symbols, Vec<SymbolInformation>, (), RequestError<lsp_request!("workspace/symbol")>> => _rq) => {
+Symbols(Rq::<Symbols, Vec<SymbolInformation>, (), AQErr> => _rq) => {
+    K(Key::Character(x) if x == "d" && ctrl()) => _ [SwitchType], // crahs cond methinks
+    K(_) => _ [SymbolsHandleKey],
     K(Key::Named(Escape)) => Default,
     C(_) => _,
     M(_) => _,

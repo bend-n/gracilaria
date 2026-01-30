@@ -28,7 +28,10 @@ use st::*;
 use crate::bar::Bar;
 use crate::com::Complete;
 use crate::hov::{self, Hovr};
-use crate::lsp::{self, Client, PathURI, RedrawAfter, RequestError, Rq};
+use crate::lsp::{
+    self, Anonymize, Client, Map_, PathURI, RedrawAfter, RequestError, Rq,
+};
+use crate::sym::SymbolsType;
 use crate::text::{self, CoerceOption, Mapping, SortTedits, TextArea};
 use crate::{
     BoolRequest, CDo, ClickHistory, CompletionAction, CompletionState,
@@ -394,33 +397,48 @@ impl Editor {
             x.poll(
                 |x, (_, p)| {
                     x.ok().map(|r| {
-                        let tree =
-                            self.tree.as_deref().unwrap().iter().map(
-                                |x| SymbolInformation {
-                                    name: x
-                                        .file_name()
-                                        .unwrap()
-                                        .to_str()
-                                        .unwrap()
-                                        .to_string(),
-                                    kind: SymbolKind::FILE,
-                                    location: Location {
-                                        range: lsp_types::Range {
-                                            end: default(),
-                                            start: default(),
+                        if p.as_ref()
+                            .is_none_or(|x| x.ty == SymbolsType::Workspace)
+                        {
+                            let tree =
+                                self.tree.as_deref().unwrap().iter().map(
+                                    |x| SymbolInformation {
+                                        name: x
+                                            .file_name()
+                                            .unwrap()
+                                            .to_str()
+                                            .unwrap()
+                                            .to_string(),
+                                        kind: SymbolKind::FILE,
+                                        location: Location {
+                                            range: lsp_types::Range {
+                                                end: default(),
+                                                start: default(),
+                                            },
+                                            uri: Url::from_file_path(&x)
+                                                .unwrap(),
                                         },
-                                        uri: Url::from_file_path(&x)
-                                            .unwrap(),
+                                        container_name: None,
+                                        deprecated: None,
+                                        tags: None,
                                     },
-                                    container_name: None,
-                                    deprecated: None,
-                                    tags: None,
-                                },
-                            );
-                        sym::Symbols {
-                            tedit: p.map(|x| x.tedit).unwrap_or_default(),
-                            r: tree.chain(r).collect(),
-                            ..default() // dont care about previous selection
+                                );
+                            sym::Symbols {
+                                tedit: p
+                                    .map(|x| x.tedit)
+                                    .unwrap_or_default(),
+                                r: tree.chain(r).collect(),
+                                ..default() // dont care about previous selection
+                            }
+                        } else {
+                            sym::Symbols {
+                                tedit: p
+                                    .map(|x| x.tedit)
+                                    .unwrap_or_default(),
+                                r,
+                                ty: SymbolsType::Document,
+                                ..default()
+                            }
                         }
                     })
                 },
@@ -504,26 +522,23 @@ impl Editor {
             'out: {
                 let l = &mut self.requests.hovering.result;
                 if let Some(Hovr {
-                    span: Some([(_x, _y), (_x2, _)]),
-                    ..
+                    span: Some([(_x, _y), (_x2, _)]), ..
                 }) = &*l
+                    && let Some(_y) = _y.checked_sub(self.text.vo)
+                    && let Some(_x) = _x.checked_sub(self.text.ho)
+                    && let Some(_x2) = _x2.checked_sub(self.text.ho)
+                    && cursor_position.1 == _y
+                    && (_x..=_x2).contains(
+                        &&(cursor_position.0
+                            - self.text.line_number_offset()
+                            - 1),
+                    )
                 {
-                    let Some(_y) = _y.checked_sub(self.text.vo) else {
-                        break 'out;
-                    };
-                    if cursor_position.1 == _y
-                        && (_x..=_x2).contains(
-                            &&(cursor_position.0
-                                - self.text.line_number_offset()
-                                - 1),
-                        )
-                    {
-                        break 'out;
-                    } else {
-                        // println!("span no longer below cursor; cancel hover {_x}..{_x2} {}", cursor_position.0 - text.line_number_offset() - 1);
-                        *l = None;
-                        w.request_redraw();
-                    }
+                    break 'out;
+                } else {
+                    // println!("span no longer below cursor; cancel hover {_x}..{_x2} {}", cursor_position.0 - text.line_number_offset() - 1);
+                    *l = None;
+                    w.request_redraw();
                 }
                 let text = self.text.clone();
                 let mut rang = None;
@@ -840,10 +855,31 @@ impl Editor {
             }
             Some(Do::Symbols) =>
                 if let Some(lsp) = lsp!(self) {
-                    self.state =
-                        State::Symbols(Rq::new(lsp.runtime.spawn(
-                            window.redraw_after(lsp.symbols("".into())),
-                        )));
+                    self.state = State::Symbols(Rq::new(
+                        lsp.runtime.spawn(window.redraw_after(
+                            lsp.symbols("".into()).map(|x| x.anonymize()),
+                        )),
+                    ));
+                },
+            Some(Do::SwitchType) =>
+                if let Some((lsp, p)) = lsp!(self + p) {
+                    dbg!("switch type");
+                    let State::Symbols(Rq { result: Some(x), request }) =
+                        &mut self.state
+                    else {
+                        unreachable!()
+                    };
+                    x.ty = sym::SymbolsType::Document;
+                    let p = p.to_owned();
+                    take(&mut x.r);
+                    *request = Some((
+                        DropH::new(lsp.runtime.spawn(
+                            window.redraw_after(async move {
+                                lsp.document_symbols(&p).await.anonymize()
+                            }),
+                        )),
+                        (),
+                    ));
                 },
             Some(Do::SymbolsHandleKey) => {
                 if let Some(lsp) = lsp!(self) {
@@ -853,20 +889,26 @@ impl Editor {
                         unreachable!()
                     };
                     let ptedit = x.tedit.rope.clone();
-                    if handle2(
+                    if (handle2(
                         &event.logical_key,
                         &mut x.tedit,
                         lsp!(self + p),
                     )
                     .is_some()
-                        || ptedit != x.tedit.rope
+                        || ptedit != x.tedit.rope)
+                        && x.ty == SymbolsType::Workspace
                     {
                         *request = Some((
-                            DropH::new(lsp.runtime.spawn(
-                                window.redraw_after(
-                                    lsp.symbols(x.tedit.rope.to_string()),
+                            DropH::new(
+                                lsp.runtime.spawn(
+                                    window.redraw_after(
+                                        lsp.symbols(
+                                            x.tedit.rope.to_string(),
+                                        )
+                                        .map(|x| x.anonymize()),
+                                    ),
                                 ),
-                            )),
+                            ),
                             (),
                         ));
                         // state = State::Symbols(Rq::new(lsp.runtime.spawn(lsp.symbols("".into()))));
