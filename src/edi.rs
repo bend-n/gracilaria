@@ -780,13 +780,16 @@ impl Editor {
                     target_range,
                     ..
                 }) = self.requests.def.result
-                    && let Some(p) = self.origin.as_deref()
                 {
-                    if target_uri == &p.tid().uri {
-                        text.cursor =
-                            text.l_position(target_range.start).unwrap();
-                        text.scroll_to_cursor();
-                    }
+                    self.open(
+                        &target_uri.to_file_path().unwrap(),
+                        w.clone(),
+                    )
+                    .unwrap();
+
+                    self.text.cursor =
+                        self.text.l_position(target_range.start).unwrap();
+                    self.text.scroll_to_cursor();
                 }
             }
             None => {}
@@ -948,7 +951,7 @@ impl Editor {
                     self.state = State::Default;
                     self.requests.complete = CompletionState::None;
                     if Some(&f) != self.origin.as_ref() {
-                        self.open(&f, window)?;
+                        self.open(&f, window.clone())?;
                     }
                     let p = self.text
                         .l_position(x.location.range.start).ok_or(anyhow::anyhow!("rah"))?;
@@ -1341,7 +1344,7 @@ impl Editor {
                 change!(self);
             }
             Some(Do::OpenFile(x)) => {
-                _ = self.open(Path::new(&x), window);
+                _ = self.open(Path::new(&x), window.clone());
             }
             Some(
                 Do::MoveCursor | Do::ExtendSelectionToMouse | Do::Hover,
@@ -1400,7 +1403,7 @@ impl Editor {
     pub fn open(
         &mut self,
         x: &Path,
-        w: &mut Arc<Window>,
+        w: Arc<Window>,
     ) -> anyhow::Result<()> {
         let x = x.canonicalize()?.to_path_buf();
         if Some(&*x) == self.origin.as_deref() {
@@ -1435,7 +1438,7 @@ impl Editor {
             std::thread::JoinHandle<()>,
             Option<Sender<Arc<Window>>>,
         )>,
-        w: Option<&mut Arc<Window>>,
+        w: Option<Arc<Window>>,
         ws: Option<PathBuf>,
     ) -> anyhow::Result<()> {
         if let Some(x) = self.files.remove(x) {
@@ -1483,7 +1486,7 @@ impl Editor {
                 x.rq_semantic_tokens(
                     &mut self.requests.semantic_tokens,
                     origin,
-                    w.cloned(),
+                    w.clone(),
                 )
                 .unwrap();
             });

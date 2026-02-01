@@ -60,11 +60,10 @@ Symbols(Rq { result: Some(_x), request: None }) => {
 },
 Symbols(Rq::<Symbols, Vec<SymbolInformation>, (), AQErr> => _rq) => {
     K(Key::Character(x) if x == "d" && ctrl()) => _ [SwitchType], // crahs cond methinks
-    K(_) => _ [SymbolsHandleKey],
     K(Key::Named(Escape)) => Default,
+    K(_) => _ [SymbolsHandleKey],
     C(_) => _,
     M(_) => _,
-    K(_) => _,
 },
 CodeAction(Rq { result : Some(_x), request }) => {
     K(Key::Named(Tab) if shift()) => _ [CASelectPrev],

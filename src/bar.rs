@@ -5,6 +5,7 @@ use dsb::cell::Style;
 use lsp_types::WorkDoneProgress;
 
 use crate::lsp::{Client, Rq};
+use crate::rnd::simplify_path;
 use crate::sym::Symbols;
 use crate::text::TextArea;
 #[derive(Default, Debug)]
@@ -24,6 +25,7 @@ impl Bar {
         t: &TextArea,
         lsp: Option<&Client>,
     ) {
+        let fname = simplify_path(fname);
         let row = &mut into[oy * w..oy * w + w];
         row.fill(Cell {
             style: Style::new(color, bg) | Style::ITALIC,
@@ -70,7 +72,7 @@ impl Bar {
                             _ => None,
                         })
                 {
-                    dbg!(&m);
+                    // dbg!(&m);
                     row.iter_mut()
                         .rev()
                         .zip(m.chars().rev())

@@ -243,11 +243,12 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
     // let ed = Box::leak(Box::new(ed));
 
     let mut fonts = dsb::Fonts::new(
-        F::FontRef(*FONT, &[(2003265652, 550.0)]),
-        F::instance(*FONT, *BFONT),
-        F::FontRef(*IFONT, &[(2003265652, 550.0)]),
-        F::instance(*IFONT, *BIFONT),
+        F::FontRef(*FONT, &[]),
+        F::FontRef(*BFONT, &[]),
+        F::FontRef(*IFONT, &[]),
+        F::FontRef(*BIFONT, &[]),
     );
+
     let mut cursor_position = (0, 0);
     let mut i = Image::build(1, 1).fill(BG);
     let mut cells = vec![];
@@ -479,12 +480,21 @@ pub static IFONT: LazyLock<FontRef<'static>> = LazyLock::new(|| {
     .unwrap()
 });
 
-pub static BIFONT: LazyLock<Instance<'static>> = LazyLock::new(|| {
-    IFONT.instances().find_by_name("Bold Italic").unwrap()
+pub static BIFONT: LazyLock<FontRef<'static>> = LazyLock::new(|| {
+    FontRef::from_index(
+        &include_bytes!("../CascadiaCodeNFBoldItalic.ttf")[..],
+        0,
+    )
+    .unwrap()
 });
 
-pub static BFONT: LazyLock<Instance<'static>> =
-    LazyLock::new(|| FONT.instances().find_by_name("Bold").unwrap());
+pub static BFONT: LazyLock<FontRef<'static>> = LazyLock::new(|| {
+    FontRef::from_index(
+        &include_bytes!("../CascadiaCodeNFBold.ttf")[..],
+        0,
+    )
+    .unwrap()
+});
 fn shift() -> bool {
     unsafe { MODIFIERS }.shift_key()
 }

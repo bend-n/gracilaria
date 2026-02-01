@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::iter::once;
 use std::os::fd::AsFd;
 use std::sync::{Arc, LazyLock};
@@ -10,6 +11,7 @@ use dsb::{Cell, Fonts};
 use fimg::pixels::Blend;
 use fimg::{Image, OverlayAt};
 use lsp_types::*;
+use regex::Regex;
 use rust_fsm::StateMachine;
 use softbuffer::Surface;
 use swash::{FontRef, Instance};
@@ -376,10 +378,9 @@ pub fn render(
                             (95, (r.saturating_sub(5)) as _),
                             false,
                         );
-                        for b in x
+                        for b in simplify_path(&x
                             .replace('\n', "\r\n")
-                            .replace("⸬", ":")
-                            .replace("/home/os", "")
+                            .replace("⸬", ":"))
                             .bytes()
                         {
                             t.rx(
@@ -761,4 +762,18 @@ pub fn render(
         println!("rnd took: {:.3}", now.elapsed().as_millis_f32());
         buffer.present().unwrap();
     }
+}
+
+pub fn simplify_path(x: &str) -> String {
+   static DEP: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\.cargo\/git\/checkouts\/(?<name>[^/]+)\-[a-f0-9]+\/[a-f0-9]+").unwrap());
+   static DEP2: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\.cargo\/registry\/src/index.crates.io-[0-9a-f]+/(?<name>[^/]+)\-(?<version>[0-9]+\.[0-9]+\.[0-9]+)").unwrap());
+   static RUST_SRC: LazyLock<Regex> = LazyLock::new(|| Regex::new(r".rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library").unwrap());
+   let x = x.replace(env!("HOME"), " ");
+   [
+       (&*RUST_SRC, " "),
+       (&*DEP, " /$name"),
+       (&*DEP2, " /$name"),
+   ].into_iter().fold(x, |acc, (r, repl)| {
+       r.replace(&acc, repl).into_owned()
+   })
 }
