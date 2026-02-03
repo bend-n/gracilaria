@@ -768,7 +768,7 @@ pub fn simplify_path(x: &str) -> String {
    static DEP: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\.cargo\/git\/checkouts\/(?<name>[^/]+)\-[a-f0-9]+\/[a-f0-9]+").unwrap());
    static DEP2: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\.cargo\/registry\/src/index.crates.io-[0-9a-f]+/(?<name>[^/]+)\-(?<version>[0-9]+\.[0-9]+\.[0-9]+)").unwrap());
    static RUST_SRC: LazyLock<Regex> = LazyLock::new(|| Regex::new(r".rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library").unwrap());
-   let x = x.replace(env!("HOME"), " ");
+   let x = x.replace(env!("HOME"), "");
    [
        (&*RUST_SRC, " "),
        (&*DEP, " /$name"),

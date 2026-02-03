@@ -367,14 +367,8 @@ impl TextArea {
                 if i.padding_right == Some(true) {
                     label.push((' ', None));
                 }
-                (
-                    Mark {
-                        relpos: i.position.character as _,
-                        ty: INLAY,
-                        l: label.into(),
-                    },
-                    i.position.line,
-                )
+                let p = self.l_pos_to_char(i.position).unwrap();
+                (Mark { relpos: p.0, ty: INLAY, l: label.into() }, p.1)
             })
             .chunk_by(|x| x.1)
             .into_iter()
