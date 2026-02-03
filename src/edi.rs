@@ -3,12 +3,13 @@ use std::collections::HashMap;
 use std::mem::take;
 use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
+use std::pin::pin;
 use std::sync::Arc;
 use std::time::{Instant, SystemTime};
 
 use Default::default;
 use implicit_fn::implicit_fn;
-use lsp_server::{Connection, Request as LRq};
+use lsp_server::{Connection, Request as LRq, ResponseError};
 use lsp_types::request::*;
 use lsp_types::*;
 use regex::Regex;
@@ -963,6 +964,58 @@ impl Editor {
                     log::error!("alas! {e}");
                 }
             }
+            Some(Do::RenameSymbol(to)) => {
+                if let Some((lsp, f)) = lsp!(self + p) {
+                    let t = lsp
+                        .request::<lsp_request!("textDocument/rename")>(
+                            &RenameParams {
+                                text_document_position:
+                                    TextDocumentPositionParams {
+                                        text_document: f.tid(),
+                                        position: self
+                                            .text
+                                            .to_l_position(
+                                                self.text.cursor,
+                                            )
+                                            .unwrap(),
+                                    },
+                                new_name: to,
+                                work_done_progress_params: default(),
+                            },
+                        )
+                        .unwrap()
+                        .0;
+                    let mut t = Box::pin(t);
+                    let mut ctx = std::task::Context::from_waker(
+                        std::task::Waker::noop(),
+                    );
+                    let x = loop {
+                        match Future::poll(t.as_mut(), &mut ctx) {
+                            std::task::Poll::Ready(x) => break x,
+                            std::task::Poll::Pending => {
+                                std::hint::spin_loop();
+                            }
+                        }
+                    };
+                    match x {
+                        Ok(Some(x)) => self.apply_wsedit(x, &f.to_owned()),
+                        Err(RequestError::Failure(
+                            lsp_server::Response {
+                                result: None,
+                                error:
+                                    Some(ResponseError {
+                                        code: -32602,
+                                        message,
+                                        data: None,
+                                    }),
+                                ..
+                            },
+                            ..,
+                        )) => self.bar.last_action = message,
+                        _ => {}
+                    }
+                }
+            }
             Some(Do::CodeAction) => {
                 if let Some((lsp, f)) = lsp!(self + p) {
                     let r = lsp
@@ -1032,48 +1085,8 @@ impl Editor {
                         self.text.apply_snippet_tedit(edit).unwrap();
                     }
                 };
-                match act.edit {
-                    Some(WorkspaceEdit {
-                        document_changes: Some(DocumentChanges::Edits(x)),
-                        ..
-                    }) =>
-                        for x in x {
-                            if x.text_document.uri != f.tid().uri {
-                                continue;
-                            }
-                            f_(&mut { x }.edits);
-                        },
-                    Some(WorkspaceEdit {
-                        document_changes:
-                            Some(DocumentChanges::Operations(x)),
-                        ..
-                    }) => {
-                        for op in x {
-                            match op {
-                                DocumentChangeOperation::Edit(
-                                    TextDocumentEdit {
-                                        edits,
-                                        text_document,
-                                        ..
-                                    },
-                                ) => {
-                                    if text_document.uri != f.tid().uri {
-                                        continue;
-                                    }
-                                    f_(&mut { edits });
-                                }
-                                x => log::error!("didnt apply {x:?}"),
-                            };
-                            // if text_document.uri!= f.tid().uri { continue }
-                            // for lsp_types::OneOf::Left(x)| lsp_types::OneOf::Right(AnnotatedTextEdit { text_edit: x, .. }) in edits {
-                            //     self.text.apply(&x).unwrap();
-                            // }
-                        }
-                    }
-                    _ => {}
-                }
-                change!(self);
-                self.hist.record(&self.text);
+                let f = f.to_owned();
+                act.edit.map(|x| self.apply_wsedit(x, &f));
             }
             Some(Do::CASelectNext) => {
                 let State::CodeAction(Rq { result: Some(c), .. }) =
@@ -1098,7 +1111,7 @@ impl Editor {
                 | Do::NavForward,
             ) => panic!(),
             Some(Do::Save) => match &self.origin {
-                Some(x) => {
+                Some(_) => {
                     self.state.consume(Action::Saved).unwrap();
                     self.save();
                 }
@@ -1398,6 +1411,47 @@ impl Editor {
             None => {}
         }
         ControlFlow::Continue(())
+    }
+    pub fn apply_wsedit(&mut self, x: WorkspaceEdit, f: &Path) {
+        let mut f_ = |edits: &mut [SnippetTextEdit]| {
+            edits.sort_tedits();
+            // let mut first = false;
+            for edit in edits {
+                self.text.apply_snippet_tedit(edit).unwrap();
+            }
+        };
+        let mut f2 =
+            |TextDocumentEdit { edits, text_document, .. }| {
+                if text_document.uri != f.tid().uri {
+                    log::error!("didnt apply to {}", text_document.uri);
+                    return;
+                }
+                f_(&mut { edits });
+            };
+        match x {
+            WorkspaceEdit {
+                document_changes: Some(DocumentChanges::Edits(x)),
+                ..
+            } =>
+                for t in x {
+                    f2(t)
+                },
+            WorkspaceEdit {
+                document_changes: Some(DocumentChanges::Operations(x)),
+                ..
+            } =>
+                for op in x {
+                    match op {
+                        DocumentChangeOperation::Edit(t) => {
+                            f2(t);
+                        }
+                        x => log::error!("didnt apply {x:?}"),
+                    };
+                },
+            _ => {}
+        }
+        change!(self);
+        self.hist.record(&self.text);
     }
 
     pub fn open(

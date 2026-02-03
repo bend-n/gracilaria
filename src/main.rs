@@ -509,6 +509,7 @@ enum InputRequest {
     SaveFile,
     OpenFile,
     Search,
+    RenameSymbol,
 }
 
 impl InputRequest {
@@ -517,6 +518,7 @@ impl InputRequest {
             InputRequest::SaveFile => "write to file: ",
             InputRequest::OpenFile => "open file: ",
             InputRequest::Search => "search: ",
+            InputRequest::RenameSymbol => "rename symbol: ",
         }
     }
 }
