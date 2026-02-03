@@ -583,7 +583,7 @@ rust_fsm::state_machine! {
     // exit cases
     Complete(_) => Click => None,
     Complete(_) => NoResult => None,
-    Complete(_) => K(Key::Named(Escape)) => None,
+    Complete(_) => K(Key::Named(Escape|ArrowDown|ArrowUp)) => None,
     Complete(_) => K(Key::Character(x) if !x.chars().all(is_word)) => None,
     Complete(Rq { result: None, request: _y }) => K(Key::Named(NamedKey::ArrowUp | NamedKey::ArrowUp)) => None,
 

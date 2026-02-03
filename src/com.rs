@@ -13,12 +13,21 @@ use serde::{Deserialize, Serialize};
 use crate::FG;
 use crate::text::{col, color_, set_a};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct Complete {
     pub r: CompletionResponse,
     pub start: usize,
     pub selection: usize,
     pub vo: usize,
+}
+impl std::fmt::Debug for Complete {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Complete")
+            .field("start", &self.start)
+            .field("selection", &self.selection)
+            .field("vo", &self.vo)
+            .finish()
+    }
 }
 #[lower::apply(saturating)]
 pub fn next<const N: usize>(n: usize, sel: &mut usize, vo: &mut usize) {

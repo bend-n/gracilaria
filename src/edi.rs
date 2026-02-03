@@ -834,6 +834,7 @@ impl Editor {
         }
         match o {
             Some(Do::MaybeRemoveSigHelp) => {
+                take(&mut self.requests.complete);
                 take(&mut self.requests.sig_help);
             }
             Some(Do::Comment(x)) => {
@@ -866,7 +867,6 @@ impl Editor {
                 },
             Some(Do::SwitchType) =>
                 if let Some((lsp, p)) = lsp!(self + p) {
-                    dbg!("switch type");
                     let State::Symbols(Rq { result: Some(x), request }) =
                         &mut self.state
                     else {
