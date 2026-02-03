@@ -1308,6 +1308,10 @@ impl Editor {
                 change!(self);
             }
             Some(Do::Quit) => return ControlFlow::Break(()),
+            Some(Do::SetCursor(x)) => {
+                self.text.cursor = x;
+                self.text.setc();
+            }
             Some(Do::StartSelection) => {
                 let Key::Named(y) = event.logical_key else { panic!() };
                 *self.state.sel() = self.text.extend_selection(

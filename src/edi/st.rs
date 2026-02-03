@@ -93,6 +93,8 @@ Selection(x) => {
     K(Key::Character(y) if y == "/" && ctrl()) => Default [Comment(Range<usize> => x)],
 
     K(Key::Character(y) if !ctrl()) => Default [Insert((Range<usize>, SmolStr) => (x, y))],
+    K(Key::Named(ArrowLeft)) => Default [SetCursor(usize => x.start)],
+    K(Key::Named(ArrowRight)) => Default [SetCursor(usize => x.end)],
     K(_) => Default [Edit],
 },
 Save => {
