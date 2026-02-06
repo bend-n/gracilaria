@@ -1,5 +1,7 @@
 #![feature(tuple_trait, unboxed_closures, fn_traits)]
 #![feature(
+    type_alias_impl_trait,
+    decl_macro,
     duration_millis_float,
     anonymous_lifetime_in_impl_trait,
     try_blocks_heterogeneous,
@@ -36,6 +38,7 @@
 #![allow(incomplete_features, irrefutable_let_patterns, static_mut_refs)]
 mod act;
 mod edi;
+mod meta;
 // mod new;
 mod rnd;
 mod sym;
@@ -167,8 +170,8 @@ impl Hist {
                 ))
                 .unwrap(),
             data: [
-                (self.last.cursor, self.last.column, self.last.vo),
-                (x.cursor, x.column, x.vo),
+                (self.last.cursor.clone(), self.last.vo),
+                (x.cursor.clone(), x.vo),
             ],
         });
         println!("push {}", self.history.last().unwrap());
@@ -603,13 +606,17 @@ impl Default for CompletionState {
 fn filter(text: &TextArea) -> String {
     if text
         .cursor
+        .first()
         .checked_sub(1)
         .is_none_or(|x| matches!(text.rope.get_char(x), Some('.' | ':')))
     {
         "".to_string()
     } else {
         text.rope
-            .slice(text.word_left_p()..text.cursor)
+            .slice(
+                text.cursor.first().word_left_p(&text.rope)
+                    ..*text.cursor.first(),
+            )
             .chars()
             .collect::<String>()
     }

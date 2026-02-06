@@ -7,7 +7,7 @@ use lsp_types::WorkDoneProgress;
 use crate::lsp::{Client, Rq};
 use crate::rnd::simplify_path;
 use crate::sym::Symbols;
-use crate::text::TextArea;
+use crate::text::{RopeExt, TextArea};
 #[derive(Default, Debug)]
 pub struct Bar {
     pub last_action: String,
@@ -130,9 +130,17 @@ impl Bar {
                         }
                     });
             }
-            State::Selection(x) => {
-                let [(x1, y1), (x2, y2)] = t.position(x.clone());
-                format!("selection from ({x1}, {y1}) to ({x2}, {y2})")
+            // State::Selection => {
+            // let [(x1, y1), (x2, y2)] = t.position(x.clone()).unwrap();
+            // format!("selection from ({x1}, {y1}) to ({x2}, {y2})")
+            //     .chars()
+            //     .rev()
+            //     .zip(row.iter_mut().rev())
+            //     .for_each(|(x, y)| y.letter = Some(x));
+            // }
+            State::Selection => {
+                // let [(x1, y1), (x2, y2)] = t.position(x.clone()).unwrap();
+                format!("selection mode")
                     .chars()
                     .rev()
                     .zip(row.iter_mut().rev())

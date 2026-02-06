@@ -11,13 +11,23 @@ use crate::lsp::{AQErr, RequestError, Rq, RqS};
 use crate::sym::{Symbols, SymbolsType};
 use crate::text::TextArea;
 use crate::{
-    BoolRequest, CLICKING, InputRequest, act, ctrl, handle, shift,
+    BoolRequest, CLICKING, InputRequest, act, alt, ctrl, handle, shift,
 };
 
 impl Default for State {
     fn default() -> Self {
         Self::Default
     }
+}
+#[derive(Debug, Copy, Clone)]
+pub enum Direction {
+    Above,
+    Below,
+}
+#[derive(Debug, Copy, Clone)]
+pub enum LR {
+    Left,
+    Right,
 }
 rust_fsm::state_machine! {
 #[derive(Debug)]
@@ -37,17 +47,21 @@ Default => {
     K(Key::Character(x) if x == "." && ctrl()) => _ [CodeAction],
     K(Key::Character(x) if x == "0" && ctrl()) => _ [MatchingBrace],
     K(Key::Character(x) if x == "`" && ctrl()) => _ [SpawnTerminal],
-    K(Key::Character(y) if y == "/" && ctrl()) => Default [Comment(Range<usize> => 0..0)],
+    K(Key::Character(y) if y == "/" && ctrl()) => Default [Comment],
     K(Key::Named(F1)) => Procure((default(), InputRequest::RenameSymbol)),
-    K(Key::Named(ArrowUp | ArrowLeft | ArrowDown | ArrowRight | Home | End) if shift()) => Selection(Range<usize> => 0..0) [StartSelection],
-    M(MouseButton::Left if shift()) => Selection(Range<usize> => 0..0) [StartSelection],
+    K(Key::Named(k @ (ArrowUp | ArrowDown)) if alt()) => _ [InsertCursor(Direction => {
+        if k == ArrowUp {Direction::Above} else { Direction::Below }
+    })],
+    K(Key::Named(ArrowUp | ArrowLeft | ArrowDown | ArrowRight | Home | End) if shift()) => Selection [StartSelection],
+    M(MouseButton::Left if shift()) => Selection [StartSelection],
+    M(MouseButton::Left if alt()) => _ [InsertCursorAtMouse],
     M(MouseButton::Left if ctrl()) => _ [GoToDefinition],
     M(MouseButton::Left) => _ [MoveCursor],
     M(MouseButton::Back) => _ [NavBack],
     M(MouseButton::Forward) => _ [NavForward],
-    C(((usize, usize)) => .. if unsafe { CLICKING }) => Selection(0..0) [StartSelection],
+    C(((usize, usize)) => .. if unsafe { CLICKING }) => Selection [StartSelection],
     Changed => RequestBoolean(BoolRequest => BoolRequest::ReloadFile),
-    K(Key::Named(Escape)) => _ [MaybeRemoveSigHelp],
+    K(Key::Named(Escape)) => _ [Escape],
     C(_) => _ [Hover],
     K(_) => _ [Edit],
     M(_) => _,
@@ -79,22 +93,22 @@ CodeAction(RqS<act::CodeActions, lsp_request!("textDocument/codeAction")> => rq)
     M(_) => _,
     K(_) => _,
 },
-Selection(x if shift()) => {
-    K(Key::Named(ArrowUp | ArrowLeft | ArrowDown | ArrowRight | Home | End)) => Selection(x) [UpdateSelection],
-    M(MouseButton => MouseButton::Left) => Selection(x) [ExtendSelectionToMouse],
+Selection => {
+    K(Key::Named(ArrowUp | ArrowLeft | ArrowDown | ArrowRight | Home | End) if shift()) => Selection [UpdateSelection],
+    M(MouseButton::Left if shift()) => Selection [ExtendSelectionToMouse],
 }, // note: it does in fact fall through. this syntax is not an arm, merely shorthand.
-Selection(x) => {
+Selection => {
     C(_ if unsafe { CLICKING }) => _ [ExtendSelectionToMouse],
-    C(_) => Selection(x),
+    C(_) => _,
     M(MouseButton => MouseButton::Left) => Default [MoveCursor],
-    K(Key::Named(Backspace)) => Default [Delete(Range<usize> => x)],
-    K(Key::Character(y) if y == "x" && ctrl()) => Default [Cut(Range<usize> => x)],
-    K(Key::Character(y) if y == "c" && ctrl()) => Default [Copy(Range<usize> => x)],
-    K(Key::Character(y) if y == "/" && ctrl()) => Default [Comment(Range<usize> => x)],
+    K(Key::Named(Backspace)) => Default [Delete],
+    K(Key::Character(y) if y == "x" && ctrl()) => Default [Cut],
+    K(Key::Character(y) if y == "c" && ctrl()) => Default [Copy],
+    K(Key::Character(y) if y == "/" && ctrl()) => Default [Comment],
 
-    K(Key::Character(y) if !ctrl()) => Default [Insert((Range<usize>, SmolStr) => (x, y))],
-    K(Key::Named(ArrowLeft)) => Default [SetCursor(usize => x.start)],
-    K(Key::Named(ArrowRight)) => Default [SetCursor(usize => x.end)],
+    K(Key::Character(y) if !ctrl()) => Default [Insert(SmolStr => y)],
+    K(Key::Named(ArrowLeft)) => Default [SetCursor(LR => LR::Left)],
+    K(Key::Named(ArrowRight)) => Default [SetCursor(LR::Right)],
     K(_) => Default [Edit],
 },
 Save => {

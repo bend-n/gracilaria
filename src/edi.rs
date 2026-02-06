@@ -32,8 +32,12 @@ use crate::hov::{self, Hovr};
 use crate::lsp::{
     self, Anonymize, Client, Map_, PathURI, RedrawAfter, RequestError, Rq,
 };
+use crate::meta::META;
 use crate::sym::SymbolsType;
-use crate::text::{self, CoerceOption, Mapping, SortTedits, TextArea};
+use crate::text::cursor::{Ronge, ceach};
+use crate::text::{
+    self, CoerceOption, Mapping, RopeExt, SortTedits, TextArea,
+};
 use crate::{
     BoolRequest, CDo, ClickHistory, CompletionAction, CompletionState,
     Hist, act, alt, ctrl, filter, hash, shift, sig, sym, trm,
@@ -186,7 +190,7 @@ impl Editor {
 
         std::env::args().nth(1).map(|x| {
             me.text.insert(&std::fs::read_to_string(x).unwrap()).unwrap();
-            me.text.cursor = 0;
+            me.text.cursor = default();
         });
         me.workspace = o
             .as_ref()
@@ -341,8 +345,8 @@ impl Editor {
                     eprintln!("unhappy fmt")
                 }
             }
-            self.text.cursor =
-                self.text.cursor.min(self.text.rope.len_chars());
+            // self.text.cursor =
+            // self.text.cursor.min(self.text.rope.len_chars());
             change!(self);
             self.hist.push(&self.text);
             l.notify::<lsp_notification!("textDocument/didSave")>(
@@ -504,17 +508,18 @@ impl Editor {
     ) {
         match self.state.consume(Action::C(cursor_position)).unwrap() {
             Some(Do::ExtendSelectionToMouse) => {
-                *self.state.sel() = self.text.extend_selection_to(
-                    self.text.mapped_index_at(cursor_position),
-                    self.state.sel().clone(),
-                );
+                let p = self.text.mapped_index_at(cursor_position);
+                self.text
+                    .cursor
+                    .first_mut()
+                    .extend_selection_to(p, &self.text.rope);
                 w.request_redraw();
             }
             Some(Do::StartSelection) => {
                 let x = self.text.mapped_index_at(cursor_position);
-                self.hist.last.cursor = x;
-                self.text.cursor = x;
-                *self.state.sel() = x..x;
+                self.hist.last.cursor.first_mut().position = x;
+                self.text.cursor.first_mut().position = x;
+                self.text.cursor.first_mut().sel = Some((x..x).into());
             }
             Some(Do::Hover)
                 if let Some(hover) =
@@ -731,49 +736,63 @@ impl Editor {
             .unwrap();
         match self.state.consume(Action::M(bt)).unwrap() {
             Some(Do::MoveCursor) => {
-                text.cursor = text.mapped_index_at(cursor_position);
+                text.cursor.just(
+                    text.mapped_index_at(cursor_position),
+                    &text.rope,
+                );
                 if let Some((lsp, path)) = lsp!(self + p) {
                     self.requests.sig_help.request(lsp.runtime.spawn(
-                        w.redraw_after(
-                            lsp.request_sig_help(path, text.cursor()),
-                        ),
+                        w.redraw_after(lsp.request_sig_help(
+                            path,
+                            text.primary_cursor(),
+                        )),
                     ));
                     self.requests.document_highlights.request(
-                        lsp.runtime.spawn(w.redraw_after(
-                            lsp.document_highlights(
-                                path,
-                                text.to_l_position(text.cursor).unwrap(),
+                        lsp.runtime.spawn(
+                            w.redraw_after(
+                                lsp.document_highlights(
+                                    path,
+                                    text.to_l_position(
+                                        text.cursor.first().position,
+                                    )
+                                    .unwrap(),
+                                ),
                             ),
-                        )),
+                        ),
                     );
                 }
-                self.hist.last.cursor = text.cursor;
-                self.chist.push(text.cursor());
-                text.setc();
+                self.hist.last.cursor = text.cursor.clone();
+                self.chist.push(text.primary_cursor());
+                text.cursor.first().setc(&text.rope);
             }
             Some(Do::NavForward) => {
                 self.chist.forth().map(|x| {
-                    text.cursor = text.rope.line_to_char(x.1) + x.0;
+                    text.cursor.just(
+                        text.rope.line_to_char(x.1) + x.0,
+                        &text.rope,
+                    );
                     text.scroll_to_cursor();
                 });
             }
             Some(Do::NavBack) => {
                 self.chist.back().map(|x| {
-                    text.cursor = text.rope.line_to_char(x.1) + x.0;
+                    text.cursor.just(
+                        text.rope.line_to_char(x.1) + x.0,
+                        &text.rope,
+                    );
                     text.scroll_to_cursor();
                 });
             }
             Some(Do::ExtendSelectionToMouse) => {
-                *self.state.sel() = text.extend_selection_to(
-                    text.mapped_index_at(cursor_position),
-                    self.state.sel().clone(),
-                );
+                let p = text.mapped_index_at(cursor_position);
+                text.cursor.first_mut().extend_selection_to(p, &text.rope);
             }
             Some(Do::StartSelection) => {
-                let x = text.mapped_index_at(cursor_position);
-                self.hist.last.cursor = x;
-                *self.state.sel() =
-                    text.extend_selection_to(x, text.cursor..text.cursor);
+                let p = text.mapped_index_at(cursor_position);
+                self.hist.last.cursor.just(p, &text.rope);
+                let x = *text.cursor.first();
+                text.cursor.first_mut().sel = Some((x..x).into());
+                text.cursor.first_mut().extend_selection_to(p, &text.rope);
             }
             Some(Do::GoToDefinition) => {
                 if let Some(LocationLink {
@@ -788,10 +807,21 @@ impl Editor {
                     )
                     .unwrap();
 
-                    self.text.cursor =
-                        self.text.l_position(target_range.start).unwrap();
+                    self.text.cursor.just(
+                        self.text.l_position(target_range.start).unwrap(),
+                        &self.text.rope,
+                    );
                     self.text.scroll_to_cursor();
                 }
+            }
+            Some(Do::InsertCursorAtMouse) => {
+                text.cursor.add(
+                    text.mapped_index_at(cursor_position),
+                    &text.rope,
+                );
+                self.hist.last.cursor = text.cursor.clone();
+                self.chist.push(text.primary_cursor());
+                text.cursor.first().setc(&text.rope);
             }
             None => {}
             _ => unreachable!(),
@@ -834,16 +864,25 @@ impl Editor {
             _ => {}
         }
         match o {
-            Some(Do::MaybeRemoveSigHelp) => {
+            Some(Do::Escape) => {
                 take(&mut self.requests.complete);
                 take(&mut self.requests.sig_help);
+                self.text.cursor.alone();
             }
-            Some(Do::Comment(x)) => {
-                if x == (0..0) {
-                    self.text.comment(self.text.cursor..self.text.cursor);
-                } else {
-                    self.text.comment(x);
-                }
+            Some(Do::Comment) => {
+                ceach!(self.text.cursor, |cursor| {
+                    Some(
+                        if let Some(x) = cursor.sel
+                            && matches!(self.state, State::Selection)
+                        {
+                            self.text.comment(x.into());
+                        } else {
+                            self.text
+                                .comment(cursor.position..cursor.position);
+                        },
+                    )
+                });
+                self.text.cursor.clear_selections();
                 change!(self);
             }
             Some(Do::SpawnTerminal) => {
@@ -957,7 +996,7 @@ impl Editor {
                     let p = self.text
                         .l_position(x.location.range.start).ok_or(anyhow::anyhow!("rah"))?;
                     if p != 0 {
-                        self.text.cursor = p;
+                        self.text.cursor.just(p, &self.text.rope);
                     }
                     self.text.scroll_to_cursor_centering();
                 } {
@@ -975,7 +1014,10 @@ impl Editor {
                                         position: self
                                             .text
                                             .to_l_position(
-                                                self.text.cursor,
+                                                self.text
+                                                    .cursor
+                                                    .first()
+                                                    .position,
                                             )
                                             .unwrap(),
                                     },
@@ -1025,7 +1067,7 @@ impl Editor {
                             range: self
                                 .text
                                 .to_l_range(
-                                    self.text.cursor..self.text.cursor,
+                                    self.text.cursor.first().position..self.text.cursor.first().position,
                                 )
                                 .unwrap(),
                             context: CodeActionContext {
@@ -1068,7 +1110,7 @@ impl Editor {
                 let Some(act) = c.right() else { break 'out };
                 let act = act.clone();
                 self.state = State::Default;
-                self.hist.last.cursor = self.text.cursor;
+                self.hist.last.cursor = self.text.cursor.clone();
                 self.hist.test_push(&self.text);
                 let act = lsp
                     .runtime
@@ -1107,8 +1149,10 @@ impl Editor {
             Some(
                 Do::Reinsert
                 | Do::GoToDefinition
+                | Do::MoveCursor
                 | Do::NavBack
-                | Do::NavForward,
+                | Do::NavForward
+                | Do::InsertCursorAtMouse,
             ) => panic!(),
             Some(Do::Save) => match &self.origin {
                 Some(_) => {
@@ -1124,8 +1168,9 @@ impl Editor {
                 self.save();
             }
             Some(Do::Edit) => {
+                self.text.cursor.clear_selections();
                 self.hist.test_push(&self.text);
-                let cb4 = self.text.cursor;
+                let cb4 = self.text.cursor.first();
                 if let Key::Named(Enter | ArrowUp | ArrowDown | Tab) =
                     event.logical_key
                     && let CompletionState::Complete(..) =
@@ -1140,27 +1185,36 @@ impl Editor {
                 }
                 self.text.scroll_to_cursor();
                 inlay!(self);
-                if cb4 != self.text.cursor
+                if cb4 != self.text.cursor.first()
                     && let CompletionState::Complete(Rq {
                         result: Some(c),
                         ..
                     }) = &self.requests.complete
-                    && ((self.text.cursor < c.start)
-                        || (!super::is_word(self.text.at_())
-                            && (self.text.at_() != '.'
-                                || self.text.at_() != ':')))
+                    && let at =
+                        self.text.cursor.first().at_(&self.text.rope)
+                    && ((self.text.cursor.first() < c.start)
+                        || (!super::is_word(at)
+                            && (at != '.' || at != ':')))
                 {
                     self.requests.complete = CompletionState::None;
                 }
                 if self.requests.sig_help.running()
-                    && cb4 != self.text.cursor
+                    && cb4 != self.text.cursor.first()
                     && let Some((lsp, path)) = lsp!(self + p)
                 {
-                    self.requests.sig_help.request(lsp.runtime.spawn(
-                        window.redraw_after(
-                            lsp.request_sig_help(path, self.text.cursor()),
+                    self.requests.sig_help.request(
+                        lsp.runtime.spawn(
+                            window.redraw_after(
+                                lsp.request_sig_help(
+                                    path,
+                                    self.text
+                                        .cursor
+                                        .first()
+                                        .cursor(&self.text.rope),
+                                ),
+                            ),
                         ),
-                    ));
+                    );
                 }
                 if self.hist.record(&self.text)
                     && let Some((lsp, path)) = lsp!(self + p)
@@ -1179,12 +1233,17 @@ impl Editor {
                                 && x.contains(&y.to_string()) =>
                         {
                             self.requests.sig_help.request(
-                                lsp.runtime.spawn(window.redraw_after(
-                                    lsp.request_sig_help(
-                                        o,
-                                        self.text.cursor(),
+                                lsp.runtime.spawn(
+                                    window.redraw_after(
+                                        lsp.request_sig_help(
+                                            o,
+                                            self.text
+                                                .cursor
+                                                .first()
+                                                .cursor(&self.text.rope),
+                                        ),
                                     ),
-                                )),
+                                ),
                             );
                         }
                         _ => {}
@@ -1198,13 +1257,20 @@ impl Editor {
                         .unwrap()
                     {
                         Some(CDo::Request(ctx)) => {
-                            let h = DropH::new(lsp.runtime.spawn(
-                                window.redraw_after(lsp.request_complete(
-                                    o,
-                                    self.text.cursor(),
-                                    ctx,
-                                )),
-                            ));
+                            let h = DropH::new(
+                                lsp.runtime.spawn(
+                                    window.redraw_after(
+                                        lsp.request_complete(
+                                            o,
+                                            self.text
+                                                .cursor
+                                                .first()
+                                                .cursor(&self.text.rope),
+                                            ctx,
+                                        ),
+                                    ),
+                                ),
+                            );
                             let CompletionState::Complete(Rq {
                                 request: x,
                                 result: c,
@@ -1217,7 +1283,7 @@ impl Editor {
                                 c.as_ref()
                                     .map(|x| x.start)
                                     .or(x.as_ref().map(|x| x.1))
-                                    .unwrap_or(self.text.cursor),
+                                    .unwrap_or(*self.text.cursor.first()),
                             ));
                         }
                         Some(CDo::SelectNext) => {
@@ -1265,7 +1331,10 @@ impl Editor {
                                 _ => {
                                     let (s, _) =
                                         self.text.apply(&ed).unwrap();
-                                    self.text.cursor =
+                                    self.text
+                                        .cursor
+                                        .first_mut()
+                                        .position =
                                         s + ed.new_text.chars().count();
                                 }
                             }
@@ -1283,12 +1352,17 @@ impl Editor {
                                 change!(self);
                             }
                             self.requests.sig_help = Rq::new(
-                                lsp.runtime.spawn(window.redraw_after(
-                                    lsp.request_sig_help(
-                                        o,
-                                        self.text.cursor(),
+                                lsp.runtime.spawn(
+                                    window.redraw_after(
+                                        lsp.request_sig_help(
+                                            o,
+                                            self.text
+                                                .cursor
+                                                .first()
+                                                .cursor(&self.text.rope),
+                                        ),
                                     ),
-                                )),
+                                ),
                             );
                         }
                         None => return,
@@ -1309,54 +1383,152 @@ impl Editor {
             }
             Some(Do::Quit) => return ControlFlow::Break(()),
             Some(Do::SetCursor(x)) => {
-                self.text.cursor = x;
-                self.text.setc();
+                self.text.cursor.each(|c| {
+                    let Some(r) = c.sel else { return };
+                    match x {
+                        LR::Left => c.position = r.start,
+                        LR::Right => c.position = r.end,
+                    }
+                });
+                self.text.cursor.clear_selections();
             }
             Some(Do::StartSelection) => {
                 let Key::Named(y) = event.logical_key else { panic!() };
-                *self.state.sel() = self.text.extend_selection(
-                    y,
-                    self.text.cursor..self.text.cursor,
-                );
+                // let mut z = vec![];
+                self.text.cursor.each(|x| {
+                    x.sel = Some(Ronge::from(**x..**x));
+                    x.extend_selection(
+                        y,
+                        // **x..**x,
+                        &self.text.rope,
+                        &mut self.text.vo,
+                        self.text.r,
+                    );
+                });
+                // *self.state.sel() = z;
             }
             Some(Do::UpdateSelection) => {
                 let Key::Named(y) = event.logical_key else { panic!() };
-                *self.state.sel() = self
-                    .text
-                    .extend_selection(y, self.state.sel().clone());
+                self.text.cursor.each(|x| {
+                    x.extend_selection(
+                        y,
+                        // dbg!(r.clone()),
+                        &self.text.rope,
+                        &mut self.text.vo,
+                        self.text.r,
+                    );
+                });
+
                 self.text.scroll_to_cursor();
                 inlay!(self);
             }
-            Some(Do::Insert(x, c)) => {
+            Some(Do::Insert(c)) => {
+                // self.text.cursor.inner.clear();
                 self.hist.push_if_changed(&self.text);
-                _ = self.text.remove(x.clone());
-                self.text.cursor = x.start;
-                self.text.setc();
-                self.text.insert(&c);
-                self.hist.push_if_changed(&self.text);
-                change!(self);
-            }
-            Some(Do::Delete(x)) => {
-                self.hist.push_if_changed(&self.text);
-                self.text.cursor = x.start;
-                _ = self.text.remove(x);
+                ceach!(self.text.cursor, |cursor| {
+                    let Some(r) = cursor.sel else { return };
+                    _ = self.text.remove(r.into());
+                    // self.text.cursor.first().setc(&self.text.rope);
+                });
+                self.text.insert(&c).unwrap();
+                self.text.cursor.clear_selections();
                 self.hist.push_if_changed(&self.text);
                 change!(self);
             }
-            Some(Do::Copy(x)) => {
-                clipp::copy(self.text.rope.slice(x).to_string());
-            }
-            Some(Do::Cut(x)) => {
+            Some(Do::Delete) => {
                 self.hist.push_if_changed(&self.text);
-                clipp::copy(self.text.rope.slice(x.clone()).to_string());
-                self.text.rope.remove(x.clone());
-                self.text.cursor = x.start;
+                ceach!(self.text.cursor, |cursor| {
+                    let Some(r) = cursor.sel else { return };
+                    _ = self.text.remove(r.into());
+                });
+                self.text.cursor.clear_selections();
+                self.hist.push_if_changed(&self.text);
+                change!(self);
+            }
+
+            Some(Do::Copy) => {
+                self.hist.push_if_changed(&self.text);
+                unsafe { take(&mut META) };
+                let mut clip = String::new();
+                self.text.cursor.each_ref(|x| {
+                    if let Some(x) = x.sel {
+                        unsafe {
+                            META.count += 1;
+                            META.splits.push(clip.len());
+                        }
+                        clip.extend(self.text.rope.slice(x).chars());
+                    }
+                });
+                unsafe {
+                    META.splits.push(clip.len());
+                    META.hash = hash(&clip)
+                };
+                clipp::copy(clip);
+                self.text.cursor.clear_selections();
+                self.hist.push_if_changed(&self.text);
+                change!(self);
+            }
+            Some(Do::Cut) => {
+                self.hist.push_if_changed(&self.text);
+                unsafe { take(&mut META) };
+                let mut clip = String::new();
+                self.text.cursor.each_ref(|x| {
+                    if let Some(x) = x.sel {
+                        unsafe {
+                            META.count += 1;
+                            META.splits.push(clip.len());
+                        }
+                        clip.extend(self.text.rope.slice(x).chars());
+                    }
+                });
+                unsafe {
+                    META.splits.push(clip.len());
+                    META.hash = hash(&clip)
+                };
+                clipp::copy(clip);
+                ceach!(self.text.cursor, |x| {
+                    if let Some(x) = x.sel {
+                        self.text.remove(x.into()).unwrap();
+                    }
+                });
+                self.text.cursor.clear_selections();
                 self.hist.push_if_changed(&self.text);
                 change!(self);
             }
             Some(Do::Paste) => {
                 self.hist.push_if_changed(&self.text);
-                self.text.insert(&clipp::paste());
+                let r = clipp::paste();
+                if unsafe { META.hash == hash(&r) } {
+                    let bounds = unsafe { &*META.splits };
+                    let pieces = bounds.windows(2).map(|w| unsafe {
+                        std::str::from_utf8_unchecked(
+                            &r.as_bytes()[w[0]..w[1]],
+                        )
+                    });
+                    if unsafe { META.count }
+                        == self.text.cursor.iter().len()
+                    {
+                        for (piece, cursor) in
+                            pieces.zip(0..self.text.cursor.iter().count())
+                        {
+                            let c = self
+                                .text
+                                .cursor
+                                .iter()
+                                .nth(cursor)
+                                .unwrap();
+                            self.text.insert_at(*c, piece).unwrap();
+                        }
+                    } else {
+                        let new =
+                            pieces.intersperse("\n").collect::<String>();
+                        // vscode behaviour: insane?
+                        self.text.insert(&new).unwrap();
+                        eprintln!("hrmst");
+                    }
+                } else {
+                    self.text.insert(&clipp::paste()).unwrap();
+                }
                 self.hist.push_if_changed(&self.text);
                 change!(self);
             }
@@ -1377,11 +1549,13 @@ impl Editor {
                 s.clone()
                     .find_iter(&self.text.rope.to_string())
                     .enumerate()
-                    .find(|(_, x)| x.start() > self.text.cursor)
+                    .find(|(_, x)| x.start() > *self.text.cursor.first())
                     .map(|(x, m)| {
                         self.state = State::Search(s, x, n);
-                        self.text.cursor =
-                            self.text.rope.byte_to_char(m.end());
+                        self.text.cursor.just(
+                            self.text.rope.byte_to_char(m.end()),
+                            &self.text.rope,
+                        );
                         self.text.scroll_to_cursor_centering();
                         inlay!(self);
                     })
@@ -1393,7 +1567,10 @@ impl Editor {
                 let (re, index, _) = self.state.search();
                 let s = self.text.rope.to_string();
                 let m = re.find_iter(&s).nth(*index).unwrap();
-                self.text.cursor = self.text.rope.byte_to_char(m.end());
+                self.text.cursor.just(
+                    self.text.rope.byte_to_char(m.end()),
+                    &self.text.rope,
+                );
                 self.text.scroll_to_cursor_centering();
                 inlay!(self);
             }
@@ -1405,13 +1582,31 @@ impl Editor {
                     )
                     .unwrap(),
                 );
-                self.text.cursor =
-                    self.text.cursor.min(self.text.rope.len_chars());
+
+                self.text.cursor.first_mut().position = self
+                    .text
+                    .cursor
+                    .first()
+                    .position
+                    .min(self.text.rope.len_chars());
                 self.mtime = Self::modify(self.origin.as_deref());
                 self.bar.last_action = "reloaded".into();
                 self.hist.push(&self.text)
             }
             Some(Do::Boolean(BoolRequest::ReloadFile, false)) => {}
+            Some(Do::InsertCursor(dir)) => {
+                let (x, y) = match dir {
+                    Direction::Above => self.text.cursor.min(),
+                    Direction::Below => self.text.cursor.max(),
+                }
+                .cursor(&self.text.rope);
+                let y = match dir {
+                    Direction::Above => y - 1,
+                    Direction::Below => y + 1,
+                };
+                let position = self.text.line_to_char(y);
+                self.text.cursor.add(position + x, &self.text.rope);
+            }
             None => {}
         }
         ControlFlow::Continue(())
@@ -1513,8 +1708,13 @@ impl Editor {
                     )
                     .unwrap(),
                 );
-                self.text.cursor =
-                    self.text.cursor.min(self.text.rope.len_chars());
+
+                self.text.cursor.first_mut().position = self
+                    .text
+                    .cursor
+                    .first()
+                    .position
+                    .min(self.text.rope.len_chars());
                 self.mtime = Self::modify(self.origin.as_deref());
                 self.bar.last_action = "restored -> reloaded".into();
                 take(&mut self.requests);
@@ -1532,7 +1732,7 @@ impl Editor {
             let new = std::fs::read_to_string(&x)?;
             take(&mut self.text);
             self.text.insert(&new)?;
-            self.text.cursor = 0;
+            self.text.cursor.just(0, &self.text.rope);
             self.bar.last_action = "open".into();
             self.mtime = Self::modify(self.origin.as_deref());
             self.lsp = lsp;
@@ -1594,11 +1794,11 @@ pub fn handle2<'a>(
         Named(Backspace) if ctrl() => text.backspace_word(),
         Named(Backspace) => text.backspace(),
         Named(Home) if ctrl() => {
-            text.cursor = 0;
+            text.cursor.just(0, &text.rope);
             text.vo = 0;
         }
         Named(End) if ctrl() => {
-            text.cursor = text.rope.len_chars();
+            text.cursor.just(text.rope.len_chars(), &text.rope);
             text.vo = text.l().saturating_sub(text.r);
         }
         Named(Home) => text.home(),
@@ -1628,10 +1828,6 @@ pub fn handle2<'a>(
 }
 
 impl State {
-    fn sel(&mut self) -> &mut std::ops::Range<usize> {
-        let State::Selection(x) = self else { panic!() };
-        x
-    }
     fn search(&mut self) -> (&mut Regex, &mut usize, &mut usize) {
         let State::Search(x, y, z) = self else { panic!() };
         (x, y, z)

@@ -22,7 +22,7 @@ use winit::window::Window;
 use crate::edi::st::State;
 use crate::edi::{Editor, lsp_m};
 use crate::lsp::Rq;
-use crate::text::{CoerceOption, col};
+use crate::text::{CoerceOption, RopeExt, col};
 use crate::{
     BG, BORDER, CompletionAction, CompletionState, FG, FONT, com, filter,
     lsp, sig,
@@ -45,7 +45,7 @@ pub fn render(
     mut i: Image<&mut [u8], 3>,
 ) {
     let text = &mut ed.text;
-    let (cx, cy) = text.cursor_visual();
+    let (cx, cy) = text.primary_cursor_visual();
     let met = super::FONT.metrics(&[]);
     let fac = ppem / met.units_per_em as f32;
     window.set_ime_cursor_area(
@@ -75,7 +75,7 @@ pub fn render(
             letter: None,
         });
         let x = match &ed.state {
-            State::Selection(x) => Some(x.clone()),
+            State::Selection => Some(text.cursor.iter().filter_map(|x| x.sel).map(std::ops::Range::from).collect()),
             _ => None,
         };
         text.line_numbers(
@@ -505,7 +505,7 @@ pub fn render(
             State::CodeAction(Rq { result: Some(x), .. }) => 'out: {
                 let m = x.maxc();
                 let c = x.write(m);
-                let (_x, _y) = text.cursor_visual();
+                let (_x, _y) = (cx, cy);
                 let _x = _x + text.line_number_offset() + 1;
                 let Some(_y) = _y.checked_sub(text.vo) else {
                     println!("rah");
@@ -590,7 +590,7 @@ pub fn render(
             {
                 let (sig, p) = sig::active(x);
                 let c = sig::sig((sig, p), 40);
-                let (_x, _y) = text.cursor_visual();
+                let (_x, _y) = (cx, cy);
                 let _x = _x + text.line_number_offset() + 1;
                 let Some(_y) = _y.checked_sub(text.vo) else { break 'out };
                 let Ok((is_above, left, top, w, mut h)) = place_around(
@@ -688,7 +688,7 @@ pub fn render(
                 }
             } else if let Some(c) = com {
                 let ppem = 20.0;
-                let (_x, _y) = text.cursor_visual();
+                let (_x, _y) = text.primary_cursor_visual();
                 let _x = _x + text.line_number_offset() + 1;
                 let _y = _y.wrapping_sub(text.vo);
                 let Ok((_, left, top, w, h)) = place_around(
@@ -735,7 +735,14 @@ pub fn render(
                 );
             }
         };
-        let (x, y) = text.cursor_visual();
+        if matches!(ed.state, State::Default | State::Selection) {
+         
+        }
+        text.cursor.each_ref(|c| {
+            let(x,y)=text.visual_xy(*c).unwrap();
+                   draw_at(x, y, &cursor);
+        });
+        // let (x, y) = text.cursor_visual();
         let image = Image::<_, 4>::build(2, (fh).ceil() as u32)
             .fill([82, 82, 82, 255]);
         for stop in
@@ -746,9 +753,7 @@ pub fn render(
             };
             draw_at(x, y, &image);
         }
-        if matches!(ed.state, State::Default | State::Selection(_)) {
-            draw_at(x, y, &cursor);
-        }
+        
         window.pre_present_notify();
         let buffer = surface.buffer_mut().unwrap();
         let x = unsafe {
@@ -768,7 +773,7 @@ pub fn simplify_path(x: &str) -> String {
    static DEP: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\.cargo\/git\/checkouts\/(?<name>[^/]+)\-[a-f0-9]+\/[a-f0-9]+").unwrap());
    static DEP2: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\.cargo\/registry\/src/index.crates.io-[0-9a-f]+/(?<name>[^/]+)\-(?<version>[0-9]+\.[0-9]+\.[0-9]+)").unwrap());
    static RUST_SRC: LazyLock<Regex> = LazyLock::new(|| Regex::new(r".rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library").unwrap());
-   let x = x.replace(env!("HOME"), "");
+   let x = x.replace(env!("HOME"), " ");
    [
        (&*RUST_SRC, " "),
        (&*DEP, " /$name"),

@@ -10,7 +10,8 @@ use std::sync::atomic::Ordering::Relaxed;
 use std::task::Poll;
 use std::thread::spawn;
 use std::time::Instant;
-
+use tokio::task;
+use crate::text::{SortTedits, TextArea, cursor::ceach};
 use Default::default;
 use anyhow::bail;
 use crossbeam::channel::{
@@ -488,13 +489,13 @@ impl Client {
             self.request::<lsp_request!("experimental/matchingBrace")>(
                 &MatchingBraceParams {
                     text_document: f.tid(),
-                    positions: vec![t.to_l_position(t.cursor).unwrap()],
+                    positions: vec![t.to_l_position(*t.cursor.first()).unwrap()],
                 },
             )
             .unwrap()
             .0,
         ) {
-            t.cursor = t.l_position(x).unwrap();
+            t.cursor.first_mut().position = t.l_position(x).unwrap();
         }
     }
     pub fn inlay(
@@ -603,13 +604,14 @@ impl Client {
     }
 
     pub fn enter<'a>(&self, f: &Path, t: &'a mut TextArea) {
+        ceach!(t.cursor, |c| {
         let r = self
             .runtime
             .block_on(
                 self.request::<lsp_request!("experimental/onEnter")>(
                     &TextDocumentPositionParams {
                         text_document: f.tid(),
-                        position: t.to_l_position(t.cursor).unwrap(),
+                        position: t.to_l_position(*c).unwrap(),
                     },
                 )
                 .unwrap()
@@ -625,6 +627,7 @@ impl Client {
                 }
             }
         }
+        });
     }
 }
 pub fn run(
@@ -1114,9 +1117,7 @@ impl<T, U, F: FnMut(T) -> U, Fu: Future<Output = T>> Map_<T, U, F> for Fu {
         Map(self, f)
     }
 }
-use tokio::task;
 
-use crate::text::{CoerceOption, SortTedits, TextArea};
 #[derive(Debug)]
 pub enum OnceOff<T> {
     Waiting(task::JoinHandle<Result<T, oneshot::error::RecvError>>),

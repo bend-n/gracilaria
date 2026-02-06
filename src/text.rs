@@ -24,6 +24,8 @@ use ropey::{Rope, RopeSlice};
 use serde::{Deserialize, Serialize};
 use tree_house::Language;
 use winit::keyboard::{NamedKey, SmolStr};
+pub mod cursor;
+use cursor::*;
 
 use crate::sni::{Snippet, StopP};
 use crate::text::semantic::{MCOLORS, MODIFIED, MSTYLE};
@@ -217,7 +219,7 @@ pub struct Diff {
     pub forth: Patches<u8>,
     #[serde(deserialize_with = "from_t", serialize_with = "to_t")]
     pub back: Patches<u8>,
-    pub data: [(usize, usize, usize); 2],
+    pub data: [(Cursors, usize); 2],
 }
 
 impl Display for Diff {
@@ -239,9 +241,8 @@ impl Diff {
             .unwrap()
             .0,
         );
-        let (cu, co, vo) = self.data[redo as usize];
+        let (cu, vo) = self.data[redo as usize].clone();
         t.cursor = cu;
-        t.column = co;
         t.scroll_to_cursor_centering();
         // t.vo = vo;
     }
@@ -260,8 +261,8 @@ pub struct TextArea {
         deserialize_with = "deserialize_from_string"
     )]
     pub rope: Rope,
-    pub cursor: usize,
-    pub column: usize,
+    pub cursor: Cursors,
+
     /// ┌─────────────────┐
     /// │#invisible text  │
     /// │╶╶╶view offset╶╶╶│
@@ -334,11 +335,99 @@ impl Debug for TextArea {
         f.debug_struct("TextArea")
             .field("rope", &self.rope)
             .field("cursor", &self.cursor)
-            .field("column", &self.column)
+            // .field("column", &self.column)
             .field("vo", &self.vo)
             .field("r", &self.r)
             .field("c", &self.c)
             .finish()
+    }
+}
+
+impl Deref for TextArea {
+    type Target = Rope;
+
+    fn deref(&self) -> &Self::Target {
+        &self.rope
+    }
+}
+
+pub trait RopeExt {
+    fn position(&self, r: Range<usize>) -> Option<[(usize, usize); 2]>;
+    /// number of lines
+    fn l(&self) -> usize;
+
+    // input: char, output: utf8
+    fn x_bytes(&self, c: usize) -> Option<usize>;
+    fn y(&self, c: usize) -> Option<usize>;
+    fn x(&self, c: usize) -> Option<usize>;
+    fn xy(&self, c: usize) -> Option<(usize, usize)>;
+
+    fn beginning_of_line(&self, c: usize) -> Option<usize>;
+
+    fn indentation_of(&self, n: usize) -> usize;
+
+    /// or eof
+    fn eol(&self, li: usize) -> usize;
+}
+impl RopeExt for Rope {
+    fn position(
+        &self,
+        Range { start, end }: Range<usize>,
+    ) -> Option<[(usize, usize); 2]> {
+        let y1 = self.try_char_to_line(start).ok()?;
+        let y2 = self.try_char_to_line(end).ok()?;
+        let x1 = start - self.try_line_to_char(y1).ok()?;
+        let x2 = end - self.try_line_to_char(y2).ok()?;
+        [(x1, y1), (x2, y2)].into()
+    }
+    /// number of lines
+    fn l(&self) -> usize {
+        self.len_lines()
+    }
+
+    // input: char, output: utf8
+    fn x_bytes(&self, c: usize) -> Option<usize> {
+        let y = self.try_char_to_line(c).ok()?;
+        let x = self
+            .try_char_to_byte(c)
+            .ok()?
+            .checked_sub(self.try_line_to_byte(y).ok()?)?;
+        Some(x)
+    }
+    fn y(&self, c: usize) -> Option<usize> {
+        self.try_char_to_line(c).ok()
+    }
+
+    fn xy(&self, c: usize) -> Option<(usize, usize)> {
+        let y = self.try_char_to_line(c).ok()?;
+        let x = c.checked_sub(self.try_line_to_char(y).ok()?)?;
+        Some((x, y))
+    }
+
+    fn x(&self, c: usize) -> Option<usize> {
+        self.xy(c).map(|x| x.0)
+    }
+    fn beginning_of_line(&self, c: usize) -> Option<usize> {
+        self.y(c).and_then(|x| self.try_line_to_char(x).ok())
+    }
+    #[implicit_fn]
+    fn indentation_of(&self, n: usize) -> usize {
+        let Some(l) = self.get_line(n) else { return 0 };
+        l.chars().filter(*_ != '\n').take_while(_.is_whitespace()).count()
+    }
+
+    /// or eof
+    #[lower::apply(saturating)]
+    fn eol(&self, li: usize) -> usize {
+        self.try_line_to_char(li)
+            .map(|l| {
+                l + self
+                    .get_line(li)
+                    .map(|x| x.len_chars() - 1)
+                    .unwrap_or_default()
+            })
+            .unwrap_or(usize::MAX)
+            .min(self.len_chars())
     }
 }
 
@@ -377,19 +466,12 @@ impl TextArea {
             });
         self.decorations = decorations;
     }
-    pub fn position(
-        &self,
-        Range { start, end }: Range<usize>,
-    ) -> [(usize, usize); 2] {
-        let y1 = self.rope.char_to_line(start);
-        let y2 = self.rope.char_to_line(end);
-        let x1 = start - self.rope.line_to_char(y1);
-        let x2 = end - self.rope.line_to_char(y2);
-        [(x1, y1), (x2, y2)]
-    }
 
-    pub fn visual_position(&self, r: Range<usize>) -> [(usize, usize); 2] {
-        self.position(r).map(|x| self.map_to_visual(x))
+    pub fn visual_position(
+        &self,
+        r: Range<usize>,
+    ) -> Option<[(usize, usize); 2]> {
+        self.position(r).map(|x| x.map(|x| self.map_to_visual(x)))
     }
 
     pub fn visual_xy(&self, x: usize) -> Option<(usize, usize)> {
@@ -403,11 +485,6 @@ impl TextArea {
                 .unwrap_or(x),
             y,
         )
-    }
-
-    /// number of lines
-    pub fn l(&self) -> usize {
-        self.rope.len_lines()
     }
 
     pub fn source_map(
@@ -453,22 +530,6 @@ impl TextArea {
         Some(self.source_map(li)?.count())
     }
 
-    /// or eof
-    #[lower::apply(saturating)]
-    pub fn eol(&self, li: usize) -> usize {
-        self.rope
-            .try_line_to_char(li)
-            .map(|l| {
-                l + self
-                    .rope
-                    .get_line(li)
-                    .map(|x| x.len_chars() - 1)
-                    .unwrap_or_default()
-            })
-            .unwrap_or(usize::MAX)
-            .min(self.rope.len_chars())
-    }
-
     #[implicit_fn::implicit_fn]
     pub fn raw_index_at(&self, (x, y): (usize, usize)) -> Option<usize> {
         let x = x.checked_sub(self.line_number_offset() + 1)? + self.ho;
@@ -491,7 +552,7 @@ impl TextArea {
     pub fn mapped_index_at(&'_ self, (x, y): (usize, usize)) -> usize {
         match self.visual_index_at((x, y)) {
             Some(Mapping::Char(_, _, index)) => index,
-            Some(Mapping::Fake(_, real, ..)) => real,
+            Some(Mapping::Fake(_, _, real, ..)) => real,
             None => self.eol(self.vo + y),
         }
     }
@@ -508,7 +569,7 @@ impl TextArea {
             }
         };
         self.tabstops.as_mut().map(|x| x.manipulate(manip));
-        self.cursor = manip(self.cursor);
+        self.cursor.manipulate(manip);
         Ok(())
     }
 
@@ -522,16 +583,17 @@ impl TextArea {
             if x < c { x } else { x + with.chars().count() }
         };
         self.tabstops.as_mut().map(|x| x.manipulate(manip));
-        self.cursor = manip(self.cursor);
+        self.cursor.manipulate(manip);
         Ok(())
     }
 
     pub fn insert(&mut self, c: &str) -> Result<(), ropey::Error> {
-        let oc = self.cursor;
-        self.insert_at(self.cursor, c)?;
-        assert_eq!(self.cursor, oc + c.chars().count());
-        self.cursor = oc + c.chars().count();
-        self.setc();
+        // let oc = self.cursor;
+        ceach!(self.cursor, |cursor| {
+            self.insert_at(cursor.position, c).unwrap();
+            // assert_eq!(*cursor, oc + c.chars().count());
+            // self.cursor = oc + c.chars().count();
+        });
         self.set_ho();
         Ok(())
     }
@@ -546,7 +608,8 @@ impl TextArea {
 
     pub fn apply_adjusting(&mut self, x: &TextEdit) -> Result<(), ()> {
         let (b, e) = self.apply(&x)?;
-        if e < self.cursor {
+
+        if e < self.cursor.first().position {
             if !self.visible(e) {
                 // line added behind, not visible
                 self.vo +=
@@ -584,25 +647,28 @@ impl TextArea {
             crate::sni::Snippet::parse(&x.new_text, begin)
                 .ok_or(anyhow!("failed to parse snippet"))?;
         self.insert_at(begin, &tex)?;
-        self.cursor = match sni.next() {
+        self.cursor.one(match sni.next() {
             Some(x) => {
                 self.tabstops = Some(sni);
-                x.r().end
+                Cursor::new(x.r().end, &self.rope)
             }
             None => {
                 self.tabstops = None;
-                sni.last
-                    .map(|x| x.r().end)
-                    .unwrap_or_else(|| begin + x.new_text.chars().count())
+                Cursor::new(
+                    sni.last.map(|x| x.r().end).unwrap_or_else(|| {
+                        begin + x.new_text.chars().count()
+                    }),
+                    &self.rope,
+                )
             }
-        };
+        });
         Ok(())
     }
-    pub fn cursor(&self) -> (usize, usize) {
-        self.xy(self.cursor).unwrap()
+    pub fn primary_cursor(&self) -> (usize, usize) {
+        self.cursor.first().cursor(&self.rope)
     }
-    pub fn cursor_visual(&self) -> (usize, usize) {
-        let (x, y) = self.cursor();
+    pub fn primary_cursor_visual(&self) -> (usize, usize) {
+        let (x, y) = self.primary_cursor();
         let mut z = self.reverse_source_map(y).unwrap();
         (z.nth(x).unwrap_or(x), y)
     }
@@ -613,213 +679,92 @@ impl TextArea {
     pub fn visible(&self, x: usize) -> bool {
         (self.vo..self.vo + self.r).contains(&self.rope.char_to_line(x))
     }
-    pub fn x(&self, c: usize) -> usize {
-        self.xy(c).unwrap().0
-    }
-    pub fn beginning_of_line(&self, c: usize) -> Option<usize> {
-        self.rope.try_line_to_char(self.y(c)).ok()
-    }
-
-    // input: char, output: utf8
-    pub fn x_bytes(&self, c: usize) -> Option<usize> {
-        let y = self.rope.try_char_to_line(c).ok()?;
-        let x = self
-            .rope
-            .try_char_to_byte(c)
-            .ok()?
-            .checked_sub(self.rope.try_line_to_byte(y).ok()?)?;
-        Some(x)
-    }
-    pub fn y(&self, c: usize) -> usize {
-        self.rope.char_to_line(c)
-    }
-
-    pub fn xy(&self, c: usize) -> Option<(usize, usize)> {
-        let y = self.rope.try_char_to_line(c).ok()?;
-        let x = c.checked_sub(self.rope.try_line_to_char(y).ok()?)?;
-        Some((x, y))
-    }
-
-    fn cl(&self) -> RopeSlice<'_> {
-        self.rope.line(self.rope.char_to_line(self.cursor))
-    }
-
-    pub fn setc(&mut self) {
-        self.column =
-            self.cursor - self.beginning_of_line(self.cursor).unwrap();
-    }
 
     pub fn page_down(&mut self) {
-        self.cursor = self.rope.line_to_char(min(
-            self.rope.char_to_line(self.cursor) + self.r,
-            self.l(),
-        ));
+        let l = self.l();
+        self.cursor.each(|x| {
+            x.position = self.rope.line_to_char(min(
+                self.rope.char_to_line(**x) + self.r,
+                l,
+            ));
+        });
+        // for c in &mut self.cursor {
+        // *c = self.rope.line_to_char(min(
+        //     self.rope.char_to_line(*c) + self.r,
+        //     self.l(),
+        // ));
+        // }
         self.scroll_to_cursor();
     }
 
     #[lower::apply(saturating)]
     pub fn page_up(&mut self) {
-        self.cursor = self
-            .rope
-            .line_to_char(self.rope.char_to_line(self.cursor) - self.r);
+        self.cursor.each(|x| {
+            x.position = self
+                .rope
+                .line_to_char(self.rope.char_to_line(**x) - self.r);
+        });
+        // self.cursor = self
+        //     .rope
+        //     .line_to_char(self.rope.char_to_line(self.cursor) - self.r);
         self.scroll_to_cursor();
     }
 
     #[lower::apply(saturating)]
     pub fn left(&mut self) {
-        self.cursor -= 1;
-        self.setc();
-        self.set_ho();
-    }
-    #[implicit_fn]
-    fn indentation_of(&self, n: usize) -> usize {
-        let Some(l) = self.rope.get_line(n) else { return 0 };
-        l.chars().filter(*_ != '\n').take_while(_.is_whitespace()).count()
+        self.cursor.left(&self.rope);
+        // self.cursor -= 1;
+        // self.setc();
+        // self.set_ho();
     }
 
-    #[implicit_fn]
-    fn indentation(&self) -> usize {
-        self.indentation_of(self.cursor().1)
-    }
+    // #[implicit_fn]
+    // fn indentation(&self) -> usize {
+    //     self.indentation_of(self.cursor().1)
+    // }
 
     #[implicit_fn]
     pub fn home(&mut self) {
-        let l = self.rope.char_to_line(self.cursor);
-        let beg = self.rope.line_to_char(l);
-        let i = self.cursor - beg;
-        let whitespaces = self.indentation();
-        if self.rope.line(l).chars().all(_.is_whitespace()) {
-            self.cursor = beg;
-            self.column = 0;
-        } else if i == whitespaces {
-            self.cursor = beg;
-            self.column = 0;
-        } else {
-            self.cursor = whitespaces + beg;
-            self.column = whitespaces;
-        }
-        self.set_ho();
+        self.cursor.home(&self.rope);
     }
 
     pub fn end(&mut self) {
-        let i = self.rope.char_to_line(self.cursor);
-        let beg = self.rope.line_to_char(i);
-
-        self.cursor = beg + self.cl().len_chars()
-            - self.rope.get_line(i + 1).map(|_| 1).unwrap_or(0);
-        self.setc();
-        self.set_ho();
+        self.cursor.end(&self.rope);
     }
     pub fn set_ho(&mut self) {
-        let x = self.cursor_visual().0;
-        if x < self.ho + 4 {
-            self.ho = x.saturating_sub(4);
-        } else if x + 4 > (self.ho + self.c) {
-            self.ho = (x.saturating_sub(self.c)) + 4;
-        }
+        // let x = self.cursor_visual().0;
+        // if x < self.ho + 4 {
+        //     self.ho = x.saturating_sub(4);
+        // } else if x + 4 > (self.ho + self.c) {
+        //     self.ho = (x.saturating_sub(self.c)) + 4;
+        // }
     }
 
     #[lower::apply(saturating)]
     pub fn right(&mut self) {
-        self.cursor += 1;
-        self.cursor = self.cursor.min(self.rope.len_chars());
-        self.setc();
-        self.set_ho();
+        self.cursor.right(&self.rope);
     }
 
-    pub fn at_(&self) -> char {
-        self.rope.get_char(self.cursor - 1).unwrap_or('\n')
-    }
-    /// ??
-    pub fn at_plus_one(&self) -> char {
-        self.rope.get_char(self.cursor).unwrap_or('\n')
-    }
     #[implicit_fn]
     pub fn word_right(&mut self) {
-        self.cursor += self
-            .rope
-            .slice(self.cursor..)
-            .chars()
-            .take_while(_.is_whitespace())
-            .count();
-
-        self.cursor += if is_word(self.at_plus_one()).not()
-            && !self.at_plus_one().is_whitespace()
-            && !is_word(self.rope.char(self.cursor + 1))
-        {
-            self.rope
-                .slice(self.cursor..)
-                .chars()
-                .take_while(|&x| {
-                    is_word(x).not() && x.is_whitespace().not()
-                })
-                .count()
-        } else {
-            self.right();
-            self.rope
-                .slice(self.cursor..)
-                .chars()
-                .take_while(|&x| is_word(x))
-                .count()
-        };
-        self.setc();
-        self.set_ho();
+        self.cursor.word_right(&self.rope);
     }
     // from μ
     pub fn word_left(&mut self) {
-        self.cursor = self.word_left_p();
-        self.setc();
-        self.set_ho();
-    }
-    #[lower::apply(saturating)]
-    pub fn word_left_p(&self) -> usize {
-        let mut c = self.cursor - 1;
-        if self.x(self.cursor) == 0 {
-            return c;
-        }
-        macro_rules! at {
-            () => {
-                self.rope.get_char(c).unwrap_or('\n')
-            };
-        }
-        while at!().is_whitespace() {
-            if self.x(c) == 0 {
-                return c;
-            }
-            c -= 1
-        }
-        if is_word(at!()).not()
-            && !at!().is_whitespace()
-            && !is_word(self.rope.char(c - 1))
-        {
-            while is_word(at!()).not() && at!().is_whitespace().not() {
-                if self.x(c) == 0 {
-                    return c;
-                }
-                c -= 1;
-            }
-            c += 1;
-        } else {
-            c -= 1;
-            while is_word(at!()) {
-                if self.x(c) == 0 {
-                    return c;
-                }
-                c -= 1;
-            }
-            c += 1;
-        }
-        c
+        self.cursor.word_left(&self.rope);
     }
     pub fn tab(&mut self) {
         match &mut self.tabstops {
             None => self.insert("    ").unwrap(),
             Some(x) => match x.next() {
                 Some(x) => {
-                    self.cursor = x.r().end;
+                    self.cursor.one(Cursor::new(x.r().end, &self.rope));
                 }
                 None => {
-                    self.cursor = x.last.clone().unwrap().r().end;
+                    self.cursor.one(Cursor::new(
+                        x.last.clone().unwrap().r().end,
+                        &self.rope,
+                    ));
                     self.tabstops = None;
                 }
             },
@@ -827,89 +772,64 @@ impl TextArea {
     }
     pub fn enter(&mut self) {
         use run::Run;
-        let n = self.indentation();
-        self.insert("\n");
-        (|| self.insert(" ")).run(n);
-        self.set_ho();
+
+        // let oc = self.cursor;
+        ceach!(self.cursor, |cursor| {
+            let n = cursor.indentation(&self.rope);
+            self.insert_at(cursor.position, "\n").unwrap();
+            // assert_eq!(*cursor, oc + c.chars().count());
+            // self.cursor = oc + c.chars().count();
+
+            // cursor.set_ho();
+            (|| self.insert(" ")).run(n);
+        });
     }
 
     pub fn down(&mut self) {
-        let l = self.rope.try_char_to_line(self.cursor).unwrap_or(0);
-
-        // next line size
-        let Some(s) = self.rope.get_line(l + 1) else {
-            return;
-        };
-        if s.len_chars() == 0 {
-            return self.cursor += 1;
-        }
-        // position of start of next line
-        let b = self.rope.line_to_char(l.wrapping_add(1));
-        self.cursor = b + if s.len_chars() > self.column {
-            // if next line is long enough to position the cursor at column, do so
-            self.column
-        } else {
-            // otherwise, put it at the end of the next line, as it is too short.
-            s.len_chars()
-                - self
-                    .rope
-                    .get_line(l.wrapping_add(2))
-                    .map(|_| 1)
-                    .unwrap_or(0)
-        };
-        if self.rope.char_to_line(self.cursor)
-            >= (self.vo + self.r).saturating_sub(5)
-        {
-            self.vo += 1;
-            // self.vo = self.vo.min(self.l() - self.r);
-        }
-        self.set_ho();
+        self.cursor.down(&self.rope, &mut self.vo, self.r);
     }
 
     pub fn up(&mut self) {
-        let l = self.rope.try_char_to_line(self.cursor).unwrap_or(0);
-        let Some(s) = self.rope.get_line(l.wrapping_sub(1)) else {
-            return;
-        };
-        let b = self.rope.line_to_char(l - 1);
-        self.cursor = b + if s.len_chars() > self.column {
-            self.column
-        } else {
-            s.len_chars() - 1
-        };
-        if self.rope.char_to_line(self.cursor).saturating_sub(4) < self.vo
-        {
-            self.vo = self.vo.saturating_sub(1);
-        }
-        self.set_ho();
+        self.cursor.up(&self.rope, &mut self.vo);
     }
     pub fn backspace_word(&mut self) {
-        let c = self.word_left_p();
-        _ = self.remove(c..self.cursor);
-        self.cursor = c;
-        self.setc();
-        self.set_ho();
+        ceach!(self.cursor, |cursor| {
+            let c = cursor.word_left_p(&self.rope);
+            _ = self.remove(c..*cursor);
+            // FIXME maybe?
+            // cursor.position = c;
+
+            // cursor.setc(&self.rope);
+            // cursor.set_ho();
+        });
+        self.cursor.each(|cursor| {
+            cursor.setc(&self.rope);
+            cursor.set_ho();
+        });
     }
     #[lower::apply(saturating)]
     pub fn backspace(&mut self) {
         if let Some(tabstops) = &mut self.tabstops
             && let Some((_, StopP::Range(find))) =
                 tabstops.stops.get_mut(tabstops.index - 1)
-            && find.end == self.cursor
+            && find.end == self.cursor.first().position
         {
-            self.cursor = find.start;
+            self.cursor.one(Cursor::new(find.start, &self.rope));
             let f = find.clone();
             *find = find.end..find.end;
             _ = self.remove(f);
         } else {
-            _ = self.remove(self.cursor - 1..self.cursor);
+            ceach!(self.cursor, |cursor| {
+                _ = self.remove((*cursor) - 1..*cursor);
+                // FIXME: maybe?
+            });
             self.set_ho();
         }
     }
 
     #[lower::apply(saturating)]
     pub fn scroll_to_cursor(&mut self) {
-        let (_, y) = self.cursor();
+        let (_, y) = self.primary_cursor();
 
         if !(self.vo..self.vo + self.r).contains(&y) {
             if self.vo > y {
@@ -925,7 +845,7 @@ impl TextArea {
 
     #[lower::apply(saturating)]
     pub fn scroll_to_cursor_centering(&mut self) {
-        let (_, y) = self.cursor();
+        let (_, y) = self.primary_cursor();
 
         if !(self.vo..self.vo + self.r).contains(&y) {
             self.vo = y - (self.r / 2);
@@ -992,9 +912,10 @@ impl TextArea {
         (c, _r): (usize, usize),
         cell: &'c mut [Cell],
         range: Range<usize>,
-    ) -> &'c mut [Cell] {
-        let [(x1, y1), (x2, y2)] = self.position(range);
-        &mut cell[y1 * c + x1..y2 * c + x2]
+    ) -> Option<&'c mut [Cell]> {
+        self.position(range).map(|[(x1, y1), (x2, y2)]| {
+            &mut cell[y1 * c + x1..y2 * c + x2]
+        })
     }
 
     pub fn l_pos_to_char(&self, p: Position) -> Option<(usize, usize)> {
@@ -1012,7 +933,7 @@ impl TextArea {
     }
     pub fn to_l_position(&self, l: usize) -> Option<lsp_types::Position> {
         Some(Position {
-            line: self.y(l) as _,
+            line: self.y(l)? as _,
             character: self.x_bytes(l)? as _,
         })
     }
@@ -1031,7 +952,7 @@ impl TextArea {
         &self,
         (into, into_s): (&mut [Cell], (usize, usize)),
         (ox, oy): (usize, usize),
-        selection: Option<Range<usize>>,
+        selection: Option<Vec<Range<usize>>>,
         apply: impl FnOnce((usize, usize), &Self, Output),
         path: Option<&Path>,
         tokens: Option<(&[SemanticToken], &SemanticTokensLegend)>,
@@ -1081,14 +1002,16 @@ impl TextArea {
                 }
             }
         }
-        cells
-            .get_range(
-                (self.ho, self.y(self.cursor)),
-                (self.ho + c, self.y(self.cursor)),
-            )
-            .for_each(|x| {
-                x.style.bg = const { color(b"#1a1f29") };
-            });
+        self.cursor.each_ref(|c| {
+            cells
+                .get_range(
+                    (self.ho, self.y(*c).unwrap()),
+                    (self.ho + *c, self.y(*c).unwrap()),
+                )
+                .for_each(|x| {
+                    x.style.bg = const { color(b"#1a1f29") };
+                });
+        });
 
         // let tokens = None::<(
         //     arc_swap::Guard<Arc<Box<[SemanticToken]>>>,
@@ -1223,37 +1146,39 @@ impl TextArea {
             for (_, tabstop) in
                 tabstops.stops.iter().skip(tabstops.index - 1)
             {
-                let [a, b] = self.visual_position(tabstop.r());
+                let [a, b] = self.visual_position(tabstop.r()).unwrap();
                 for char in cells.get_range(a, b) {
                     char.style.bg = [55, 86, 81];
                 }
             }
         }
         selection.map(|x| {
-            let [a, b] = self.position(x);
-            let a = self.map_to_visual(a);
-            let b = self.map_to_visual(b);
-            cells
-                .get_range_enumerated(a, b)
-                .filter(|(c, (x, y))| {
-                    c.letter.is_some()
-                        || *x == 0
-                        || (self
-                            .rope
-                            .get_line(*y)
-                            .map(_.len_chars())
-                            .unwrap_or_default()
-                            .saturating_sub(1)
-                            == *x)
-                })
-                .for_each(|(x, _)| {
-                    if x.letter == Some(' ') {
-                        x.letter = Some('·'); // tabs? what are those
-                        x.style.fg = [0x4e, 0x62, 0x79];
-                    }
-                    x.style.bg = [0x27, 0x43, 0x64];
-                    // 0x23, 0x34, 0x4B
-                })
+            for x in x {
+                let [a, b] = self.position(x).unwrap();
+                let a = self.map_to_visual(a);
+                let b = self.map_to_visual(b);
+                cells
+                    .get_range_enumerated(a, b)
+                    .filter(|(c, (x, y))| {
+                        c.letter.is_some()
+                            || *x == 0
+                            || (self
+                                .rope
+                                .get_line(*y)
+                                .map(_.len_chars())
+                                .unwrap_or_default()
+                                .saturating_sub(1)
+                                == *x)
+                    })
+                    .for_each(|(x, _)| {
+                        if x.letter == Some(' ') {
+                            x.letter = Some('·'); // tabs? what are those
+                            x.style.fg = [0x4e, 0x62, 0x79];
+                        }
+                        x.style.bg = [0x27, 0x43, 0x64];
+                        // 0x23, 0x34, 0x4B
+                    })
+            }
         });
 
         // for (y, inlay) in inlay
@@ -1298,7 +1223,7 @@ impl TextArea {
     ) {
         for y in 0..r {
             if (self.vo + y) < self.l() {
-                (self.vo + y)
+                (self.vo + y + 1)
                     .to_string()
                     .chars()
                     .zip(into[(y + oy) * w..].iter_mut().skip(ox))
@@ -1312,106 +1237,6 @@ impl TextArea {
         }
     }
 
-    pub fn extend_selection(
-        &mut self,
-        key: NamedKey,
-        r: std::ops::Range<usize>,
-    ) -> std::ops::Range<usize> {
-        macro_rules! left {
-            () => {
-                if self.cursor != 0 && self.cursor >= r.start {
-                    // left to right going left (shrink right end)
-                    r.start..self.cursor
-                } else {
-                    // right to left going left (extend left end)
-                    self.cursor..r.end
-                }
-            };
-        }
-        macro_rules! right {
-            () => {
-                if self.cursor == self.rope.len_chars() {
-                    r
-                } else if self.cursor > r.end {
-                    // left to right (extend right end)
-                    r.start..self.cursor
-                } else {
-                    // right to left (shrink left end)
-                    self.cursor..r.end
-                }
-            };
-        }
-        match key {
-            NamedKey::Home => {
-                self.home();
-                left!()
-            }
-            NamedKey::End => {
-                self.end();
-                right!()
-            }
-            NamedKey::ArrowLeft if super::ctrl() => {
-                self.word_left();
-                left!()
-            }
-            NamedKey::ArrowRight if super::ctrl() => {
-                self.word_right();
-                right!()
-            }
-            NamedKey::ArrowLeft => {
-                self.left();
-                left!()
-            }
-            NamedKey::ArrowRight => {
-                self.right();
-                right!()
-            }
-            NamedKey::ArrowUp => {
-                self.up();
-                left!()
-            }
-            NamedKey::ArrowDown => {
-                self.down();
-                right!()
-            }
-            _ => unreachable!(),
-        }
-    }
-
-    pub fn extend_selection_to(
-        &mut self,
-        to: usize,
-        r: std::ops::Range<usize>,
-    ) -> std::ops::Range<usize> {
-        if [r.start, r.end].contains(&to) {
-            return r;
-        }
-        let r = if self.cursor == r.start {
-            if to < r.start {
-                to..r.end
-            } else if to > r.end {
-                r.end..to
-            } else {
-                to..r.end
-            }
-        } else if self.cursor == r.end {
-            if to > r.end {
-                r.start..to
-            } else if to < r.start {
-                to..r.start
-            } else {
-                r.start..to
-            }
-        } else {
-            panic!()
-        };
-        assert!(r.start < r.end);
-        dbg!(to, &r);
-
-        self.cursor = to;
-        self.setc();
-        r
-    }
     pub fn comment(&mut self, selection: std::ops::Range<usize>) {
         let a = self.rope.char_to_line(selection.start);
         let b = self.rope.char_to_line(selection.end);
@@ -1935,7 +1760,7 @@ fn apply() {
         new_text: "let x = var_name;\n    ".to_owned(),
     })
     .unwrap();
-    assert_eq!(t.cursor, 8);
+    assert_eq!(t.cursor.first().position, 8);
 }
 #[test]
 fn apply2() {

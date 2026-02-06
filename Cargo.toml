@@ -37,7 +37,7 @@ lsp-server = { git = "https://git.bendn.org/rust-analyzer" }
 rust-analyzer = { git = "https://git.bendn.org/rust-analyzer" }
 
 serde_json = "1.0.145"
-serde = "1.0.228"
+serde = { version = "1.0.228", features = ["unstable"] }
 serde_derive = "1.0.228"
 log = "0.4.28"
 crossbeam = { version = "0.8.4", features = ["nightly", "crossbeam-channel"] }
