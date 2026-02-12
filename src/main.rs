@@ -58,11 +58,11 @@ use dsb::cell::Style;
 use dsb::{Cell, F};
 use fimg::Image;
 use libc::{atexit, signal};
-use lsp::{PathURI, Rq};
+use lsp::Rq;
 use lsp_types::*;
 use rust_fsm::StateMachine;
-use serde::{Deserialize, Deserializer, Serialize};
-use swash::{FontRef, Instance};
+use serde::{Deserialize, Serialize};
+use swash::FontRef;
 use winit::event::{
     ElementState, Event, Ime, MouseButton, MouseScrollDelta, WindowEvent,
 };

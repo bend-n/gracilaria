@@ -1,5 +1,5 @@
-use std::iter::repeat;
-use std::path::Path;
+use std::iter::{chain, repeat};
+use std::path::{Path, PathBuf};
 
 use Default::default;
 use dsb::Cell;
@@ -13,6 +13,7 @@ use crate::text::{TextArea, col, color_, set_a};
 #[derive(Debug, Default)]
 pub struct Symbols {
     pub r: Vec<SymbolInformation>,
+    pub tree: Vec<SymbolInformation>,
     pub tedit: TextArea,
     pub selection: usize,
     pub vo: usize,
@@ -27,6 +28,26 @@ pub enum SymbolsType {
 }
 const N: usize = 30;
 impl Symbols {
+    pub fn new(tree: &[PathBuf]) -> Self {
+        let tree = tree
+            .iter()
+            .map(|x| SymbolInformation {
+                name: x.file_name().unwrap().to_str().unwrap().to_string(),
+                kind: SymbolKind::FILE,
+                location: Location {
+                    range: lsp_types::Range {
+                        end: default(),
+                        start: default(),
+                    },
+                    uri: Url::from_file_path(&x).unwrap(),
+                },
+                container_name: None,
+                deprecated: None,
+                tags: None,
+            })
+            .collect();
+        Self { tree, ..Default::default() }
+    }
     fn f(&self) -> String {
         self.tedit.rope.to_string()
     }
@@ -113,7 +134,17 @@ fn filter_c<'a>(
     f: &'_ str,
 ) -> impl Iterator<Item = &'a SymbolInformation> {
     let x = &completion.r;
-    filter(x.iter(), sym_as_str, f)
+    filter(
+        chain(&completion.tree, x).skip(
+            if completion.ty == SymbolsType::Document {
+                completion.tree.len()
+            } else {
+                0
+            },
+        ),
+        sym_as_str,
+        f,
+    )
 }
 fn sym_as_str(x: &SymbolInformation) -> &str {
     &x.name

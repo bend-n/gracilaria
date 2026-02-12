@@ -66,7 +66,7 @@ Default => {
     K(_) => _ [Edit],
     M(_) => _,
 },
-Symbols(Rq { result: Some(_x), request: None }) => {
+Symbols(Rq { result: Some(_x), request: _rq }) => {
     K(Key::Named(Tab) if shift()) => _ [SymbolsSelectNext],
     K(Key::Named(ArrowDown)) => _ [SymbolsSelectNext],
     K(Key::Named(ArrowUp | Tab)) => _ [SymbolsSelectPrev],
@@ -105,6 +105,7 @@ Selection => {
     K(Key::Character(y) if y == "x" && ctrl()) => Default [Cut],
     K(Key::Character(y) if y == "c" && ctrl()) => Default [Copy],
     K(Key::Character(y) if y == "/" && ctrl()) => Default [Comment],
+    M(_) => _,
 
     K(Key::Character(y) if !ctrl()) => Default [Insert(SmolStr => y)],
     K(Key::Named(ArrowLeft)) => Default [SetCursor(LR => LR::Left)],
