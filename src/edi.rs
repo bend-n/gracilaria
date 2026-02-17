@@ -219,7 +219,6 @@ impl Editor {
                 .map(|x| x.path().to_owned())
                 .collect::<Vec<_>>()
         });
-        assert!(me.tree.is_some());
         let l = me.workspace.as_ref().map(|(workspace)| {
             let dh = std::panic::take_hook();
             let main = std::thread::current_id();

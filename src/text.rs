@@ -820,7 +820,7 @@ impl TextArea {
             _ = self.remove(f);
         } else {
             ceach!(self.cursor, |cursor| {
-                _ = self.remove((*cursor) - 1..*cursor);
+                _ = self.remove(cursor.saturating_sub(1)..*cursor);
                 // FIXME: maybe?
             });
             self.set_ho();
@@ -1459,6 +1459,10 @@ pub fn hl(
             let end = h.next_event_offset() as _;
             if end == 4294967295 {
                 break;
+            }
+            if end < at {
+                at = end;
+                continue;
             }
             for &h in &highlight_stack {
                 let y1 = text.byte_to_line(at);

@@ -40,6 +40,7 @@ mod act;
 mod edi;
 mod meta;
 // mod new;
+mod git;
 mod rnd;
 mod sym;
 mod trm;
