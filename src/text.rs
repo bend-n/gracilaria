@@ -1143,10 +1143,11 @@ impl TextArea {
             self.tree_sit(path, &mut cells);
         }
         if let Some(tabstops) = &self.tabstops {
-            for (_, tabstop) in
-                tabstops.stops.iter().skip(tabstops.index - 1)
+            for [a, b] in
+                tabstops.stops.iter().skip(tabstops.index - 1).flat_map(
+                    |(_, tabstop)| self.visual_position(tabstop.r()),
+                )
             {
-                let [a, b] = self.visual_position(tabstop.r()).unwrap();
                 for char in cells.get_range(a, b) {
                     char.style.bg = [55, 86, 81];
                 }

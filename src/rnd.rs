@@ -75,7 +75,13 @@ pub fn render(
             letter: None,
         });
         let x = match &ed.state {
-            State::Selection => Some(text.cursor.iter().filter_map(|x| x.sel).map(std::ops::Range::from).collect()),
+            State::Selection => Some(
+                text.cursor
+                    .iter()
+                    .filter_map(|x| x.sel)
+                    .map(std::ops::Range::from)
+                    .collect(),
+            ),
             _ => None,
         };
         text.line_numbers(
@@ -130,7 +136,7 @@ pub fn render(
                                     x.style.flags |= Style::UNDERLINE;
                                     x.style.fg = col!("#FFD173");
                                 });
-                            } } 
+                            } }
                             if let Some((lsp, p)) = lsp_m!(ed + p) && let uri = Url::from_file_path(p).unwrap() && let Some(diag) = lsp.diagnostics.get(&uri, &lsp.diagnostics.guard()) {
                                 #[derive(Copy, Clone, Debug)]
                                 enum EType {
@@ -263,6 +269,44 @@ pub fn render(
             )
         };
 
+        let text = text.clone();
+        if let Some(d) = &ed.requests.git_diff.result {
+            for h in d.hunks() {
+                // let b = text.rope.byte_to_line(h.after.start as _);
+                if h.after.start == h.after.end && (text.vo..text.vo + r).contains(&(h.after.start as usize)) {
+                    let l = h.after.start - text.vo as u32;
+                    let f = fh + ls * fac;
+                    i.tri::<f32>(
+                        (0.0f32, (l as f32 - 0.15) * f - (ls * fac)),
+                        (6.0f32, (l as f32)        * f - (ls * fac)),
+                        (0.0f32, (l as f32 + 0.15) * f - (ls * fac)),
+                        col!("#F27983")
+                    );
+                }
+                for l in h.after.clone() {
+                    if (text.vo..text.vo + r).contains(&(l as usize)) {
+                        let l = l - text.vo as u32;
+                        let col = if h.is_pure_insertion() {
+                            col!("#87D96C")
+                        } else {
+                            col!("#80BFFF")
+                        };
+                        for x in 0..(fw / 2.0) as u32 {
+                            for y in (l as f32 * (fh + ls * fac)) as u32
+                                ..(((l + 1) as f32) * (fh + ls * fac))
+                                    as u32
+                            {
+                                if let Some(x) = i.get_pixel_mut(x, y) {
+                                    *x = col;
+                                }
+                                // unsafe { i.pixel(x, y, &col)};
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         let mut place_around = |(_x, _y): (usize, usize),
                                 i: Image<&mut [u8], 3>,
                                 c: &[Cell],
@@ -378,10 +422,10 @@ pub fn render(
                             (95, (r.saturating_sub(5)) as _),
                             false,
                         );
-                        for b in simplify_path(&x
-                            .replace('\n', "\r\n")
-                            .replace("⸬", ":"))
-                            .bytes()
+                        for b in simplify_path(
+                            &x.replace('\n', "\r\n").replace("⸬", ":"),
+                        )
+                        .bytes()
                         {
                             t.rx(
                                 b,
@@ -735,12 +779,10 @@ pub fn render(
                 );
             }
         };
-        if matches!(ed.state, State::Default | State::Selection) {
-         
-        }
+        if matches!(ed.state, State::Default | State::Selection) {}
         text.cursor.each_ref(|c| {
-            let(x,y)=text.visual_xy(*c).unwrap();
-                   draw_at(x, y, &cursor);
+            let (x, y) = text.visual_xy(*c).unwrap();
+            draw_at(x, y, &cursor);
         });
         // let (x, y) = text.cursor_visual();
         let image = Image::<_, 4>::build(2, (fh).ceil() as u32)
@@ -753,7 +795,7 @@ pub fn render(
             };
             draw_at(x, y, &image);
         }
-        
+
         window.pre_present_notify();
         let buffer = surface.buffer_mut().unwrap();
         let x = unsafe {
@@ -770,15 +812,17 @@ pub fn render(
 }
 
 pub fn simplify_path(x: &str) -> String {
-   static DEP: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\.cargo\/git\/checkouts\/(?<name>[^/]+)\-[a-f0-9]+\/[a-f0-9]+").unwrap());
-   static DEP2: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\.cargo\/registry\/src/index.crates.io-[0-9a-f]+/(?<name>[^/]+)\-(?<version>[0-9]+\.[0-9]+\.[0-9]+)").unwrap());
-   static RUST_SRC: LazyLock<Regex> = LazyLock::new(|| Regex::new(r".rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library").unwrap());
-   let x = x.replace(env!("HOME"), " ");
-   [
-       (&*RUST_SRC, " "),
-       (&*DEP, " /$name"),
-       (&*DEP2, " /$name"),
-   ].into_iter().fold(x, |acc, (r, repl)| {
-       r.replace(&acc, repl).into_owned()
-   })
+    static DEP: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"\.cargo\/git\/checkouts\/(?<name>[^/]+)\-[a-f0-9]+\/[a-f0-9]+").unwrap()
+    });
+    static DEP2: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"\.cargo\/registry\/src/index.crates.io-[0-9a-f]+/(?<name>[^/]+)\-(?<version>[0-9]+\.[0-9]+\.[0-9]+)").unwrap()
+    });
+    static RUST_SRC: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r".rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library").unwrap()
+    });
+    let x = x.replace(env!("HOME"), " ");
+    [(&*RUST_SRC, " "), (&*DEP, " /$name"), (&*DEP2, " /$name")]
+        .into_iter()
+        .fold(x, |acc, (r, repl)| r.replace(&acc, repl).into_owned())
 }

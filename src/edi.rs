@@ -110,6 +110,8 @@ pub struct Requests {
         (usize, usize),
         RequestError<lsp_request!("textDocument/definition")>,
     >,
+    #[serde(skip)]
+    pub git_diff: Rq<imara_diff::Diff, imara_diff::Diff, (), ()>,
 }
 #[derive(
     Default, Debug, serde_derive::Serialize, serde_derive::Deserialize,
@@ -136,6 +138,9 @@ pub struct Editor {
     pub chist: ClickHistory,
     pub hist: Hist,
     pub mtime: Option<std::time::SystemTime>,
+    // #[serde(skip)]
+    // pub git_diff:
+    // Option<std::rc::Rc<std::cell::RefCell<imara_diff::Diff>>>,
 }
 macro_rules! lsp {
     ($self:ident) => {
@@ -158,15 +163,37 @@ macro_rules! inlay {
 }
 macro_rules! change {
     ($self:ident) => {
+        change!(@$self, None)
+    };
+    ($self:ident, $w:expr) => {
+        change!(@$self, Some($w))
+    };
+    (@$self:ident, $w:expr) => {
         lsp!($self + p).map(|(x, origin)| {
             x.edit(&origin, $self.text.rope.to_string()).unwrap();
             x.rq_semantic_tokens(
                 &mut $self.requests.semantic_tokens,
                 origin,
-                None,
+                $w,
             )
             .unwrap();
             inlay!($self);
+            let o_ = $self.origin.clone();
+            let w = $self.workspace.clone();
+            let r = $self.text.rope.clone();
+            let t =
+                x.runtime.spawn_blocking(move || {
+                    try {
+                        crate::git::diff(
+                            o_?.strip_prefix(w.as_deref()?).ok()?,
+                            &w?,
+                            &r,
+                        )
+                        .ok()?
+                    }
+                    .ok_or(())
+                });
+            $self.requests.git_diff.request(t);
         });
     };
 }
@@ -459,6 +486,7 @@ impl Editor {
             &r,
         );
         self.requests.hovering.poll(|x, _| x.ok().flatten(), &r);
+        self.requests.git_diff.poll(|x, _| x.ok(), &r);
     }
     #[implicit_fn]
     pub fn cursor_moved(
@@ -830,11 +858,11 @@ impl Editor {
                 take(&mut self.requests.sig_help);
                 self.text.cursor.alone();
             }
-            Some(Do::Comment) => {
+            Some(Do::Comment(p)) => {
                 ceach!(self.text.cursor, |cursor| {
                     Some(
                         if let Some(x) = cursor.sel
-                            && matches!(self.state, State::Selection)
+                            && matches!(p, State::Selection)
                         {
                             self.text.comment(x.into());
                         } else {
@@ -844,7 +872,7 @@ impl Editor {
                     )
                 });
                 self.text.cursor.clear_selections();
-                change!(self);
+                change!(self, window.clone());
             }
             Some(Do::SpawnTerminal) => {
                 trm::toggle(
@@ -960,8 +988,10 @@ impl Editor {
                     if Some(&f) != self.origin.as_ref() {
                         self.open(&f, window.clone())?;
                     }
-                    let p = self.text
-                        .l_position(x.location.range.start).ok_or(anyhow::anyhow!("rah"))?;
+                    let p = self
+                        .text
+                        .l_position(x.location.range.start)
+                        .ok_or(anyhow::anyhow!("rah"))?;
                     if p != 0 {
                         self.text.cursor.just(p, &self.text.rope);
                     }
@@ -1186,7 +1216,7 @@ impl Editor {
                 if self.hist.record(&self.text)
                     && let Some((lsp, path)) = lsp!(self + p)
                 {
-                    change!(self);
+                    change!(self, window.clone());
                 }
                 lsp!(self + p).map(|(lsp, o)| {
                     let window = window.clone();
@@ -1316,7 +1346,7 @@ impl Editor {
                                 }
                             }
                             if self.hist.record(&self.text) {
-                                change!(self);
+                                change!(self, window.clone());
                             }
                             self.requests.sig_help = Rq::new(
                                 lsp.runtime.spawn(
@@ -1340,13 +1370,13 @@ impl Editor {
                 self.hist.test_push(&self.text);
                 self.hist.undo(&mut self.text);
                 self.bar.last_action = "undid".to_string();
-                change!(self);
+                change!(self, window.clone());
             }
             Some(Do::Redo) => {
                 self.hist.test_push(&self.text);
                 self.hist.redo(&mut self.text);
                 self.bar.last_action = "redid".to_string();
-                change!(self);
+                change!(self, window.clone());
             }
             Some(Do::Quit) => return ControlFlow::Break(()),
             Some(Do::SetCursor(x)) => {
@@ -1400,7 +1430,7 @@ impl Editor {
                 self.text.insert(&c).unwrap();
                 self.text.cursor.clear_selections();
                 self.hist.push_if_changed(&self.text);
-                change!(self);
+                change!(self, window.clone());
             }
             Some(Do::Delete) => {
                 self.hist.push_if_changed(&self.text);
@@ -1410,7 +1440,7 @@ impl Editor {
                 });
                 self.text.cursor.clear_selections();
                 self.hist.push_if_changed(&self.text);
-                change!(self);
+                change!(self, window.clone());
             }
 
             Some(Do::Copy) => {
@@ -1433,7 +1463,7 @@ impl Editor {
                 clipp::copy(clip);
                 self.text.cursor.clear_selections();
                 self.hist.push_if_changed(&self.text);
-                change!(self);
+                change!(self, window.clone());
             }
             Some(Do::Cut) => {
                 self.hist.push_if_changed(&self.text);
@@ -1460,7 +1490,7 @@ impl Editor {
                 });
                 self.text.cursor.clear_selections();
                 self.hist.push_if_changed(&self.text);
-                change!(self);
+                change!(self, window.clone());
             }
             Some(Do::Paste) => {
                 self.hist.push_if_changed(&self.text);
@@ -1497,7 +1527,7 @@ impl Editor {
                     self.text.insert(&clipp::paste()).unwrap();
                 }
                 self.hist.push_if_changed(&self.text);
-                change!(self);
+                change!(self, window.clone());
             }
             Some(Do::OpenFile(x)) => {
                 _ = self.open(Path::new(&x), window.clone());
@@ -1718,6 +1748,7 @@ impl Editor {
         }
         Ok(())
     }
+
     pub fn store(&mut self) -> anyhow::Result<()> {
         let ws = self.workspace.clone();
         let tree = self.tree.clone();

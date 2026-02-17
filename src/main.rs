@@ -38,9 +38,8 @@
 #![allow(incomplete_features, irrefutable_let_patterns, static_mut_refs)]
 mod act;
 mod edi;
-mod meta;
-// mod new;
 mod git;
+mod meta;
 mod rnd;
 mod sym;
 mod trm;

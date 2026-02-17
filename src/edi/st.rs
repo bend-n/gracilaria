@@ -47,7 +47,7 @@ Default => {
     K(Key::Character(x) if x == "." && ctrl()) => _ [CodeAction],
     K(Key::Character(x) if x == "0" && ctrl()) => _ [MatchingBrace],
     K(Key::Character(x) if x == "`" && ctrl()) => _ [SpawnTerminal],
-    K(Key::Character(y) if y == "/" && ctrl()) => Default [Comment],
+    K(Key::Character(y) if y == "/" && ctrl()) => Default [Comment(State => State::Default)],
     K(Key::Named(F1)) => Procure((default(), InputRequest::RenameSymbol)),
     K(Key::Named(k @ (ArrowUp | ArrowDown)) if alt()) => _ [InsertCursor(Direction => {
         if k == ArrowUp {Direction::Above} else { Direction::Below }
@@ -104,7 +104,7 @@ Selection => {
     K(Key::Named(Backspace)) => Default [Delete],
     K(Key::Character(y) if y == "x" && ctrl()) => Default [Cut],
     K(Key::Character(y) if y == "c" && ctrl()) => Default [Copy],
-    K(Key::Character(y) if y == "/" && ctrl()) => Default [Comment],
+    K(Key::Character(y) if y == "/" && ctrl()) => Default [Comment(State::Selection)],
     M(_) => _,
 
     K(Key::Character(y) if !ctrl()) => Default [Insert(SmolStr => y)],
