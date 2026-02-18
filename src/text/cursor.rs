@@ -74,7 +74,8 @@ impl Deref for Cursor {
 
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
 pub struct Cursors {
-    inner: Vec<Cursor>,
+    #[doc(hidden)]
+    pub inner: Vec<Cursor>,
 }
 use Default::default;
 use ropey::{Rope, RopeSlice};
@@ -91,10 +92,10 @@ pub fn caster<T, U>(x: impl FnMut(T) -> U) -> impl FnMut(T) -> U {
     x
 }
 pub macro ceach($cursor: expr, $f:expr) {
-    (0..$cursor.inner.len()).for_each(|i| {
+    for i in (0..$cursor.inner.len()) {
         let c = *$cursor.inner.get(i).expect("aw dangit");
         caster::<Cursor, _>($f)(c);
-    });
+    }
     $cursor.coalesce();
 }
 // macro_rules! ceach_mut {

@@ -318,9 +318,9 @@ fn t() {
 
     let mut fonts = dsb::Fonts::new(
         F::FontRef(*crate::FONT, &[(2003265652, 550.0)]),
-        F::instance(*crate::FONT, *crate::BFONT),
+        F::FontRef(*crate::BFONT, &[]),
         F::FontRef(*crate::IFONT, &[(2003265652, 550.0)]),
-        F::instance(*crate::IFONT, *crate::BIFONT),
+        F::FontRef(*crate::IFONT, &[]),
     );
 
     let mut x = Image::build(w as u32, h as u32).fill(crate::hov::BG);

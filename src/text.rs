@@ -1,4 +1,6 @@
+use std::alloc::Global;
 use std::cmp::{Reverse, min};
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{Debug, Display};
 use std::ops::{Deref, Not as _, Range, RangeBounds};
 use std::path::Path;
@@ -6,8 +8,10 @@ use std::pin::pin;
 use std::sync::LazyLock;
 use std::vec::Vec;
 
+use Default::default;
 use anyhow::anyhow;
 use atools::prelude::*;
+use btree_multiset::{BTreeMultiset, ToK};
 use diff_match_patch_rs::{DiffMatchPatch, Patches};
 use dsb::Cell;
 use dsb::cell::Style;
@@ -254,7 +258,7 @@ pub fn deserialize_from_string<'de, D: serde::de::Deserializer<'de>>(
     let s = serde::de::Deserialize::deserialize(de)?;
     Ok(Rope::from_str(s))
 }
-#[derive(Default, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, Default)]
 pub struct TextArea {
     #[serde(
         serialize_with = "crate::serialize_display",
@@ -284,11 +288,44 @@ pub struct TextArea {
     #[serde(skip)]
     pub tabstops: Option<Snippet>,
     #[serde(skip)]
-    pub decorations: Decorations,
+    pub inlays: BTreeSet<Marking<Box<[(char, Option<Location>)]>>>,
+    // #[serde(skip)]
+    // pub decorations: Decorations,
 }
-
+impl<D> ToK for Marking<D> {
+    type K = u32;
+    fn to_key(&self) -> Self::K {
+        self.position
+    }
+}
 pub type Decorations = Vec<Vec<Mark>>;
-
+#[derive(Clone, Debug, Default)]
+pub struct Marking<D> {
+    /// in characters
+    pub position: u32,
+    pub data: D,
+}
+impl<D: Default> Marking<D> {
+    fn idx(x: u32) -> Self {
+        Self { position: x, ..default() }
+    }
+}
+impl<D> Ord for Marking<D> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.position.cmp(&other.position)
+    }
+}
+impl<D> PartialOrd for Marking<D> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.position.partial_cmp(&other.position)
+    }
+}
+impl<D> Eq for Marking<D> {}
+impl<D> PartialEq for Marking<D> {
+    fn eq(&self, other: &Self) -> bool {
+        self.position == other.position
+    }
+}
 #[derive(Clone, Debug, PartialEq)]
 pub struct Mark {
     // pub start: usize,
@@ -296,6 +333,7 @@ pub struct Mark {
     pub l: Box<[(char, Option<Location>)]>,
     ty: u8,
 }
+
 const INLAY: u8 = 0;
 
 #[derive(Serialize, Deserialize)]
@@ -434,8 +472,7 @@ impl RopeExt for Rope {
 impl TextArea {
     #[implicit_fn::implicit_fn]
     pub fn set_inlay(&mut self, inlay: &[InlayHint]) {
-        let mut decorations = vec![vec![]; self.l()];
-        inlay
+        self.inlays = inlay
             .iter()
             .map(|i| {
                 let mut label = match &i.label {
@@ -456,15 +493,10 @@ impl TextArea {
                 if i.padding_right == Some(true) {
                     label.push((' ', None));
                 }
-                let p = self.l_pos_to_char(i.position).unwrap();
-                (Mark { relpos: p.0, ty: INLAY, l: label.into() }, p.1)
+                let position = self.l_position(i.position).unwrap() as _;
+                Marking { position, data: label.into() }
             })
-            .chunk_by(|x| x.1)
-            .into_iter()
-            .for_each(|(i, x)| {
-                decorations[i as usize] = x.map(|x| x.0).collect()
-            });
-        self.decorations = decorations;
+            .collect();
     }
 
     pub fn visual_position(
@@ -491,17 +523,16 @@ impl TextArea {
         &'_ self,
         l: usize,
     ) -> Option<impl Iterator<Item = Mapping<'_>>> {
-        let rel = self.decorations.get(l).unwrap_or(const { &vec![] });
         let s = self.rope.try_line_to_char(l).ok()?;
         let lin = self.rope.get_line(l)?;
         Some(gen move {
-            for (char, i) in lin.chars().zip(0..) {
-                if let Some(x) = rel.iter().find(|x| x.relpos == i) {
-                    for (i, (c, _)) in x.l.iter().enumerate() {
-                        yield Mapping::Fake(x, i, s + x.relpos, *c);
+            for (char, i) in lin.chars().zip(s..) {
+                if let Some(x) = self.inlays.get(&Marking::idx(i as _)) {
+                    for (i, (c, _)) in x.data.iter().enumerate() {
+                        yield Mapping::Fake(x, i as u32, x.position, *c);
                     }
                 }
-                yield Mapping::Char(char, i, i + s);
+                yield Mapping::Char(char, i - s, i);
             }
         })
     }
@@ -552,7 +583,7 @@ impl TextArea {
     pub fn mapped_index_at(&'_ self, (x, y): (usize, usize)) -> usize {
         match self.visual_index_at((x, y)) {
             Some(Mapping::Char(_, _, index)) => index,
-            Some(Mapping::Fake(_, _, real, ..)) => real,
+            Some(Mapping::Fake(_, _, real, ..)) => real as _,
             None => self.eol(self.vo + y),
         }
     }
@@ -570,6 +601,21 @@ impl TextArea {
         };
         self.tabstops.as_mut().map(|x| x.manipulate(manip));
         self.cursor.manipulate(manip);
+        for pos in self
+            .inlays
+            .range(Marking::idx(r.end as _)..)
+            .map(|x| x.position)
+            .collect::<Vec<_>>()
+        {
+            let mut m = match self.inlays.entry(Marking::idx(pos)) {
+                std::collections::btree_set::Entry::Occupied(x) =>
+                    x.remove(),
+                std::collections::btree_set::Entry::Vacant(_) =>
+                    unreachable!(),
+            };
+            m.position -= r.len() as u32;
+            self.inlays.insert(m);
+        }
         Ok(())
     }
 
@@ -584,16 +630,30 @@ impl TextArea {
         };
         self.tabstops.as_mut().map(|x| x.manipulate(manip));
         self.cursor.manipulate(manip);
+        for m in self
+            .inlays
+            .range(Marking::idx(c as _)..)
+            .map(|x| x.position)
+            .collect::<Vec<_>>()
+        {
+            let mut m = match self.inlays.entry(Marking::idx(m)) {
+                std::collections::btree_set::Entry::Occupied(x) =>
+                    x.remove(),
+                std::collections::btree_set::Entry::Vacant(_) =>
+                    unreachable!(),
+            };
+            m.position += with.chars().count() as u32;
+            self.inlays.insert(m);
+        }
+        // self.decorations;
         Ok(())
     }
 
     pub fn insert(&mut self, c: &str) -> Result<(), ropey::Error> {
-        // let oc = self.cursor;
-        ceach!(self.cursor, |cursor| {
-            self.insert_at(cursor.position, c).unwrap();
-            // assert_eq!(*cursor, oc + c.chars().count());
-            // self.cursor = oc + c.chars().count();
-        });
+        for i in 0..self.cursor.inner.len() {
+            let cursor = *self.cursor.inner.get(i).expect("aw dangit");
+            self.insert_at(cursor.position, c)?;
+        }
         self.set_ho();
         Ok(())
     }
@@ -992,11 +1052,10 @@ impl TextArea {
                     cells.get((x + self.ho, y)).unwrap().style = match e {
                         Mapping::Char(..) =>
                             Style::new(crate::FG, crate::BG),
-                        Mapping::Fake(Mark { ty: INLAY, .. }, ..) =>
-                            Style::new(
-                                const { color_("#536172") },
-                                crate::BG,
-                            ),
+                        Mapping::Fake(Marking { .. }, ..) => Style::new(
+                            const { color_("#536172") },
+                            crate::BG,
+                        ),
                         _ => unreachable!(),
                     };
                 }
@@ -1045,14 +1104,14 @@ impl TextArea {
                     0 => ch + t.delta_start,
                 };
                 if pl != ln {
-                    src_map = self
-                        .source_map(ln as _)
+                    src_map.clear();
+                    self.source_map(ln as _)
                         .coerce()
-                        .collect::<Vec<_>>();
-                    mapping = self
-                        .reverse_source_map_w(src_map.iter().cloned())
+                        .collect_into(&mut src_map);
+                    mapping.clear();
+                    self.reverse_source_map_w(src_map.iter().cloned())
                         .coerce()
-                        .collect::<Vec<_>>();
+                        .collect_into(&mut mapping);
                 }
                 let x: Result<(usize, usize), ropey::Error> = try {
                     let x1 = self.rope.try_byte_to_char(
@@ -1725,9 +1784,11 @@ pub(crate) use col;
 #[derive(Debug, PartialEq, Clone)]
 pub enum Mapping<'a> {
     Fake(
-        &'a Mark,
-        usize,
-        /*label rel */ usize, /* true position */
+        &'a Marking<Box<[(char, Option<Location>)]>>,
+        /// Label relative
+        u32,
+        /// True position
+        u32,
         char,
     ),
     Char(char, usize /* line rel */, usize /* true position */),
@@ -1779,8 +1840,7 @@ fn apply2() {
                         .map_err(anyhow::Error::from)?; // 4
     }
 }",
-    )
-    .unwrap();
+    );
 
     use lsp_types::Range;
     let mut th = [
@@ -1856,4 +1916,42 @@ impl SortTedits for [SnippetTextEdit] {
     fn sort_tedits(&mut self) {
         self.as_mut().sort_by_key(|t| Reverse(t.text_edit.range.start));
     }
+}
+
+#[test]
+fn inlays() {
+    let mut t = TextArea::default();
+    _ = t.insert("let x = 4;");
+    t.set_inlay(&[InlayHint {
+        position: Position { line: 0, character: 4 },
+        label: InlayHintLabel::String("u".into()),
+        kind: Some(lsp_types::InlayHintKind::TYPE),
+        text_edits: None,
+        tooltip: None,
+        padding_left: None,
+        padding_right: None,
+        data: None,
+    }]);
+    use Mapping::*;
+    assert_eq!(
+        t.source_map(0).unwrap().collect::<Vec<_>>(),
+        vec![
+            Char('l', 0, 0),
+            Char('e', 1, 1),
+            Char('t', 2, 2),
+            Char(' ', 3, 3),
+            Fake(
+                &Marking { position: 4, data: Box::new([('u', None)]) },
+                0,
+                4,
+                'u'
+            ),
+            Char('x', 4, 4),
+            Char(' ', 5, 5),
+            Char('=', 6, 6),
+            Char(' ', 7, 7),
+            Char('4', 8, 8),
+            Char(';', 9, 9)
+        ]
+    );
 }

@@ -281,9 +281,9 @@ fn t() {
 
     let mut fonts = dsb::Fonts::new(
         F::FontRef(*crate::FONT, &[(2003265652, 550.0)]),
-        F::instance(*crate::FONT, *crate::BFONT),
+        F::FontRef(*crate::BFONT, &[]),
         F::FontRef(*crate::IFONT, &[(2003265652, 550.0)]),
-        F::instance(*crate::IFONT, *crate::BIFONT),
+        F::FontRef(*crate::IFONT, &[]),
     );
 
     let now = Instant::now();

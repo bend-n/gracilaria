@@ -1045,46 +1045,6 @@ impl<T, E> Void<T> for Result<T, E> {
         self.map_err(|_| ())
     }
 }
-
-#[test]
-fn x22() {
-    let (tx, rx) = std::sync::mpmc::channel::<u8>();
-
-    let rx2 = rx.clone();
-    spawn(move || {
-        loop {
-            println!("t1 {}", rx.recv().unwrap());
-        }
-    });
-    spawn(move || {
-        loop {
-            println!("t2 {}", rx2.recv().unwrap());
-        }
-    });
-    spawn(move || {
-        for n in 0..20 {
-            tx.send(n).unwrap();
-        }
-    });
-    loop {}
-}
-
-#[test]
-fn x33() {
-    let y = serde_json::to_string(&SemanticTokensParams {
-        work_done_progress_params: default(),
-        partial_result_params: default(),
-        text_document: TextDocumentIdentifier::new(
-            url::Url::from_file_path(Path::new(
-                "/home/os/gracilaria/src/text.rs",
-            ))
-            .unwrap(),
-        ),
-    })
-    .unwrap();
-    println!("{y}");
-    let y = serde_json::from_str::<SemanticTokensParams>(&y).unwrap();
-}
 #[pin_project::pin_project]
 pub struct Map<T, U, F: FnMut(T) -> U, Fu: Future<Output = T>>(
     #[pin] Fu,

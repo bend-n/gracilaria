@@ -1,5 +1,9 @@
-#![feature(tuple_trait, unboxed_closures, fn_traits)]
 #![feature(
+    btree_set_entry,
+    tuple_trait,
+    unboxed_closures,
+    fn_traits,
+    allocator_api,
     type_alias_impl_trait,
     decl_macro,
     duration_millis_float,

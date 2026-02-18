@@ -543,22 +543,24 @@ impl Editor {
                         text_document: o.tid(),
                     },
                     Mapping::Fake(mark, relpos, abspos, _) => {
-                        let Some(ref loc) = mark.l[relpos].1 else {
+                        let Some(ref loc) = mark.data[relpos as usize].1
+                        else {
                             break 'out;
                         };
-                        let (x, y) = text.xy(abspos).unwrap();
+                        let (x, y) = text.xy(abspos as _).unwrap();
                         let Some(mut begin) = text.reverse_source_map(y)
                         else {
                             break 'out;
                         };
-                        let start = begin.nth(x - 1).unwrap() + 1;
-                        let left = mark.l[..relpos]
+                        let start =
+                            begin.nth(x.saturating_sub(1)).unwrap() + 1;
+                        let left = mark.data[..relpos as usize]
                             .iter()
                             .rev()
                             .take_while(_.1.as_ref() == Some(loc))
                             .count();
-                        let start = start + relpos - left;
-                        let length = mark.l[relpos..]
+                        let start = start + relpos as usize - left;
+                        let length = mark.data[relpos as usize..]
                             .iter()
                             .take_while(_.1.as_ref() == Some(loc))
                             .count()
@@ -1181,7 +1183,7 @@ impl Editor {
                     );
                 }
                 self.text.scroll_to_cursor();
-                inlay!(self);
+                // inlay!(self);
                 if cb4 != self.text.cursor.first()
                     && let CompletionState::Complete(Rq {
                         result: Some(c),
@@ -1213,9 +1215,7 @@ impl Editor {
                         ),
                     );
                 }
-                if self.hist.record(&self.text)
-                    && let Some((lsp, path)) = lsp!(self + p)
-                {
+                if self.hist.record(&self.text) {
                     change!(self, window.clone());
                 }
                 lsp!(self + p).map(|(lsp, o)| {
