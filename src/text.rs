@@ -2,6 +2,7 @@ use std::alloc::Global;
 use std::cmp::{Reverse, min};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{Debug, Display};
+use std::mem::take;
 use std::ops::{Deref, Not as _, Range, RangeBounds};
 use std::path::Path;
 use std::pin::pin;
@@ -11,8 +12,7 @@ use std::vec::Vec;
 use Default::default;
 use anyhow::anyhow;
 use atools::prelude::*;
-use btree_multiset::{BTreeMultiset, ToK};
-use diff_match_patch_rs::{DiffMatchPatch, Patches};
+use diff_match_patch_rs::{DiffMatchPatch, Ops, Patch, Patches};
 use dsb::Cell;
 use dsb::cell::Style;
 use helix_core::Syntax;
@@ -24,6 +24,7 @@ use lsp_types::{
     InlayHint, InlayHintLabel, Location, Position, SemanticToken,
     SemanticTokensLegend, SnippetTextEdit, TextEdit,
 };
+use rangemap::RangeMap;
 use ropey::{Rope, RopeSlice};
 use serde::{Deserialize, Serialize};
 use tree_house::Language;
@@ -232,11 +233,11 @@ impl Display for Diff {
         writeln!(f, "{}", d.patch_to_text(&self.back))
     }
 }
-
 impl Diff {
     pub fn apply(self, t: &mut TextArea, redo: bool) {
         let d = DiffMatchPatch::new();
         // println!("{}", d.patch_to_text(&self.changes.0));
+        // causes great internal strife atm
         t.rope = Rope::from_str(
             &d.patch_apply(
                 &if redo { self.back } else { self.forth },
@@ -287,19 +288,66 @@ pub struct TextArea {
 
     #[serde(skip)]
     pub tabstops: Option<Snippet>,
-    #[serde(skip)]
-    pub inlays: BTreeSet<Marking<Box<[(char, Option<Location>)]>>>,
-    // #[serde(skip)]
-    // pub decorations: Decorations,
+    pub inlays: BTreeSet<Inlay>,
+    pub tokens: RangeMap<u32, TokenD>, // TODO: fixperf
 }
-impl<D> ToK for Marking<D> {
-    type K = u32;
-    fn to_key(&self) -> Self::K {
-        self.position
+#[derive(
+    Copy, Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize,
+)]
+pub struct TokenD {
+    pub ty: u32,
+    pub modifiers: u32,
+}
+impl TokenD {
+    pub fn style(self, leg: &SemanticTokensLegend) -> Style {
+        let mut sty = Style::new(crate::FG, crate::BG);
+        let Some(tty) = leg.token_types.get(self.ty as usize) else {
+            error!(
+                "issue while loading semantic token {self:?}; couldnt \
+                 find in legend"
+            );
+            return sty;
+        };
+        if let Some(f) =
+            semantic::NAMES.iter().position(|&x| x == tty.as_str())
+        {
+            // cells
+            //     .get_range_enumerated((x1, ln as _), (x2, ln as _))
+            //     .filter(|(_, i)| {
+            //         matches!(src_map.get(i.0), Some(Mapping::Char(..)))
+            //     })
+            //     .for_each(|(x, _)| {
+            sty.fg = semantic::COLORS[f];
+            sty.flags |= semantic::STYLES[f];
+            // });
+        }
+        // println!(
+        //     "{tty:?}: {}",
+        //     slice.iter().flat_map(|x| x.letter).collect::<String>()
+        // );
+        let mut modi = self.modifiers;
+        while modi != 0 {
+            let bit = modi.trailing_zeros();
+
+            leg.token_modifiers
+                .get(bit as usize)
+                .and_then(|modi| {
+                    MODIFIED.iter().position(|&(x, y)| {
+                        (x == tty.as_str()) & (y == modi.as_str())
+                    })
+                })
+                .map(|i| {
+                    sty.fg = MCOLORS[i];
+                    sty.flags |= MSTYLE[i];
+                });
+
+            modi &= !(1 << bit);
+        }
+        sty
     }
 }
-pub type Decorations = Vec<Vec<Mark>>;
-#[derive(Clone, Debug, Default)]
+pub type Inlay = Marking<Box<[(char, Option<Location>)]>>;
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Marking<D> {
     /// in characters
     pub position: u32,
@@ -470,6 +518,38 @@ impl RopeExt for Rope {
 }
 
 impl TextArea {
+    pub fn set_toks(&mut self, toks: &[SemanticToken]) {
+        let mut ln = 0;
+        let mut ch = 0;
+        self.tokens.clear();
+        for t in toks {
+            ln += t.delta_line;
+            ch = match t.delta_line {
+                1.. => t.delta_start,
+                0 => ch + t.delta_start,
+            };
+            let Ok((x1, x2)): ropey::Result<_> = (try {
+                let p1 = self.rope.try_byte_to_char(
+                    self.rope.try_line_to_byte(ln as _)? + ch as usize,
+                )?;
+                let p2 = self.rope.try_byte_to_char(
+                    self.rope.try_line_to_byte(ln as _)?
+                        + ch as usize
+                        + t.length as usize,
+                )?;
+                (p1 as u32, p2 as u32)
+            }) else {
+                continue;
+            };
+            self.tokens.insert(
+                x1..x2,
+                TokenD {
+                    ty: t.token_type,
+                    modifiers: t.token_modifiers_bitset,
+                },
+            );
+        }
+    }
     #[implicit_fn::implicit_fn]
     pub fn set_inlay(&mut self, inlay: &[InlayHint]) {
         self.inlays = inlay
@@ -616,6 +696,17 @@ impl TextArea {
             m.position -= r.len() as u32;
             self.inlays.insert(m);
         }
+        for (mut tr, d) in self
+            .tokens
+            .overlapping(r.end as _..u32::MAX)
+            .map(|(x, y)| (x.clone(), *y))
+            .collect::<Vec<_>>()
+        {
+            self.tokens.remove(tr.clone());
+            tr.start -= r.len() as u32;
+            tr.end -= r.len() as u32;
+            self.tokens.insert(tr, d);
+        }
         Ok(())
     }
 
@@ -645,7 +736,20 @@ impl TextArea {
             m.position += with.chars().count() as u32;
             self.inlays.insert(m);
         }
-        // self.decorations;
+        for (tr, d) in take(&mut self.tokens)
+            .into_iter()
+            // .overlapping(c as u32..u32::MAX)
+            // .map(|(x, y)| (x.clone(), *y))
+            .map(|(tr, d)| {
+                (manip(tr.start as _) as u32..manip(tr.end as _) as u32, d)
+            })
+        // .collect::<Vec<_>>()
+        {
+            // self.tokens.remove(tr.clone());
+            // tr.start += with.chars().count() as u32;
+            // tr.end += with.chars().count() as u32;
+            self.tokens.insert(tr, d);
+        }
         Ok(())
     }
 
@@ -1015,7 +1119,7 @@ impl TextArea {
         selection: Option<Vec<Range<usize>>>,
         apply: impl FnOnce((usize, usize), &Self, Output),
         path: Option<&Path>,
-        tokens: Option<(&[SemanticToken], &SemanticTokensLegend)>,
+        leg: Option<&SemanticTokensLegend>,
     ) {
         let (c, r) = (self.c, self.r);
         let mut cells = Output {
@@ -1050,13 +1154,21 @@ impl TextArea {
                     cells.get((x + self.ho, y)).unwrap().letter =
                         Some(e.c());
                     cells.get((x + self.ho, y)).unwrap().style = match e {
+                        Mapping::Char(_, _, abspos)
+                            if let Some(leg) = leg =>
+                            self.tokens
+                                .get(&(abspos as _))
+                                .map(|x| x.style(leg))
+                                .unwrap_or(Style::new(
+                                    crate::FG,
+                                    crate::BG,
+                                )),
                         Mapping::Char(..) =>
                             Style::new(crate::FG, crate::BG),
                         Mapping::Fake(Marking { .. }, ..) => Style::new(
                             const { color_("#536172") },
                             crate::BG,
                         ),
-                        _ => unreachable!(),
                     };
                 }
             }
@@ -1076,129 +1188,7 @@ impl TextArea {
         //     arc_swap::Guard<Arc<Box<[SemanticToken]>>>,
         //     &SemanticTokensLegend,
         // )>;
-        if let Some((t, leg)) = tokens
-            && t.len() > 0
-        {
-            let mut ln = 0;
-            let mut ch = 0;
-            let mut src_map =
-                self.source_map(ln as _).coerce().collect::<Vec<_>>();
-            let mut mapping = self
-                .reverse_source_map(ln as _)
-                .coerce()
-                .collect::<Vec<_>>();
-
-            for t in t {
-                let pl = ln;
-                ln += t.delta_line;
-                // dbg!(
-                //     &mapping,
-                //     self.source_map(ln as _).coerce().collect::<Vec<_>>(),
-                //     self.rope.line(ln as _)
-                // );
-                if ln < self.vo as u32 {
-                    continue;
-                }
-                ch = match t.delta_line {
-                    1.. => t.delta_start,
-                    0 => ch + t.delta_start,
-                };
-                if pl != ln {
-                    src_map.clear();
-                    self.source_map(ln as _)
-                        .coerce()
-                        .collect_into(&mut src_map);
-                    mapping.clear();
-                    self.reverse_source_map_w(src_map.iter().cloned())
-                        .coerce()
-                        .collect_into(&mut mapping);
-                }
-                let x: Result<(usize, usize), ropey::Error> = try {
-                    let x1 = self.rope.try_byte_to_char(
-                        self.rope.try_line_to_byte(ln as _)? + ch as usize,
-                    )? - self.rope.try_line_to_char(ln as _)?;
-                    let x2 = self.rope.try_byte_to_char(
-                        self.rope.try_line_to_byte(ln as _)?
-                            + ch as usize
-                            + t.length as usize,
-                    )? - self.rope.try_line_to_char(ln as _)?;
-                    (x1, x2)
-                };
-                let Ok((x1, x2)) = x else {
-                    continue;
-                };
-
-                if ln as usize * c + x1 < self.vo * c {
-                    continue;
-                } else if ln as usize * c + x1 > self.vo * c + r * c {
-                    break;
-                }
-                let Some(&x1) = mapping.get(x1) else { continue };
-                let Some(&x2) = mapping.get(x2) else { continue };
-                let Some(tty) = leg.token_types.get(t.token_type as usize)
-                else {
-                    error!(
-                        "issue while loading semantic token {t:?}; \
-                         couldnt find in legend"
-                    );
-                    continue;
-                };
-                if let Some(f) =
-                    semantic::NAMES.iter().position(|&x| x == tty.as_str())
-                {
-                    cells
-                        .get_range_enumerated((x1, ln as _), (x2, ln as _))
-                        .filter(|(_, i)| {
-                            matches!(
-                                src_map.get(i.0),
-                                Some(Mapping::Char(..))
-                            )
-                        })
-                        .for_each(|(x, _)| {
-                            x.style.fg = semantic::COLORS[f];
-                            x.style.flags |= semantic::STYLES[f];
-                        });
-                }
-                // println!(
-                //     "{tty:?}: {}",
-                //     slice
-                //         .iter()
-                //         .flat_map(|x| x.letter)
-                //         .collect::<String>()
-                // );
-                let mut modi = t.token_modifiers_bitset;
-                while modi != 0 {
-                    let bit = modi.trailing_zeros();
-
-                    leg.token_modifiers
-                        .get(bit as usize)
-                        .and_then(|modi| {
-                            MODIFIED.iter().position(|&(x, y)| {
-                                (x == tty.as_str()) & (y == modi.as_str())
-                            })
-                        })
-                        .map(|i| {
-                            cells
-                                .get_range_enumerated(
-                                    (x1, ln as _),
-                                    (x2, ln as _),
-                                )
-                                .filter(|(_, i)| {
-                                    matches!(
-                                        src_map.get(i.0),
-                                        Some(Mapping::Char(..))
-                                    )
-                                })
-                                .for_each(|(x, _)| {
-                                    x.style.fg = MCOLORS[i];
-                                    x.style.flags |= MSTYLE[i];
-                                });
-                        });
-
-                    modi &= !(1 << bit);
-                }
-            }
-        } else {
+        if leg.is_none() {
             self.tree_sit(path, &mut cells);
         }
         if let Some(tabstops) = &self.tabstops {

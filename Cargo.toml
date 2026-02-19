@@ -66,6 +66,7 @@ bendy = { version = "0.6.1", features = ["serde"] }
 git2 = "0.20.4"
 imara-diff = "0.2.0"
 vecto = "0.1.1"
+rangemap = { version = "1.7.1", features = ["const_fn", "nightly", "serde1"] }
 
 [profile.dev.package]
 rust-analyzer.opt-level = 3

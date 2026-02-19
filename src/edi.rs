@@ -88,8 +88,9 @@ pub struct Requests {
         (),
         RequestError<SignatureHelpRequest>,
     >, // vo, lines
-    #[serde(serialize_with = "serialize_tokens")]
-    #[serde(deserialize_with = "deserialize_tokens")]
+    // #[serde(serialize_with = "serialize_tokens")]
+    // #[serde(deserialize_with = "deserialize_tokens")]
+    #[serde(skip)]
     pub semantic_tokens: Rq<
         Box<[SemanticToken]>,
         Box<[SemanticToken]>,
@@ -470,7 +471,10 @@ impl Editor {
             },
             &r,
         );
-        self.requests.semantic_tokens.poll(|x, _| x.ok(), &l.runtime);
+        self.requests.semantic_tokens.poll(
+            |x, _| x.ok().inspect(|x| self.text.set_toks(&x)),
+            &l.runtime,
+        );
         self.requests.sig_help.poll(
             |x, ((), y)| {
                 x.ok().flatten().map(|x| {
@@ -1183,7 +1187,7 @@ impl Editor {
                     );
                 }
                 self.text.scroll_to_cursor();
-                // inlay!(self);
+                inlay!(self);
                 if cb4 != self.text.cursor.first()
                     && let CompletionState::Complete(Rq {
                         result: Some(c),

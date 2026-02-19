@@ -595,7 +595,6 @@ impl Client {
                 SemanticTokensResult::Tokens(x) =>
                     x.data.into_boxed_slice(),
             };
-            
             w.map(|x| x.request_redraw());
             Ok(r)
         });

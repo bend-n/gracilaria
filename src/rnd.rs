@@ -221,8 +221,7 @@ pub fn render(
                             }
                         },
                         ed.origin.as_deref(),
-                        ed.requests.semantic_tokens.result.as_deref().zip(
-                            match lsp_m!(ed)  {
+                        match lsp_m!(ed) {
                                 Some(lsp::Client { initialized: Some(lsp_types::InitializeResult {
                                     capabilities: ServerCapabilities {
                                         semantic_tokens_provider:
@@ -233,7 +232,7 @@ pub fn render(
                                 }), ..
                             }) => Some(legend),
                             _ => None,
-                        }),
+                        },
                     );
 
         ed.bar.write_to(
