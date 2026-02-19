@@ -1,5 +1,4 @@
 use std::iter::{empty, once, repeat_n};
-use std::ops::Range;
 use std::pin::pin;
 use std::vec::Vec;
 
@@ -309,4 +308,4 @@ pub struct Hovr {
     pub(crate) item: crate::text::CellBuffer,
 }
 
-type VisualX = usize;
+pub type VisualX = usize;

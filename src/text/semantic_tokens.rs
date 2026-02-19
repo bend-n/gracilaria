@@ -91,16 +91,6 @@ theme! {
 // "union" b"#cccac2",
 // "unresolvedReference" b"#cccac2",
 }
-const fn of(x: &'static str) -> usize {
-    let mut i = 0;
-    while i < NAMES.len() {
-        if NAMES[i] == x {
-            return i;
-        }
-        i += 1;
-    }
-    panic!()
-}
 
 modified! { 2
     "function" . "unsafe" b"#F28779",
@@ -172,6 +162,9 @@ impl TextArea {
                 1.. => t.delta_start,
                 0 => ch + t.delta_start,
             };
+            if t.length == 0 {
+                continue;
+            }
             let Ok((x1, x2)): ropey::Result<_> = (try {
                 let p1 = self.rope.try_byte_to_char(
                     self.rope.try_line_to_byte(ln as _)? + ch as usize,
@@ -185,6 +178,7 @@ impl TextArea {
             }) else {
                 continue;
             };
+
             self.tokens.insert(
                 x1..x2,
                 TokenD {

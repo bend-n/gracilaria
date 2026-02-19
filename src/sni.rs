@@ -106,4 +106,4 @@ impl Snippet {
         }
     }
 }
-type Stop = usize;
+pub type Stop = usize;

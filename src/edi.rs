@@ -3,9 +3,8 @@ use std::collections::HashMap;
 use std::mem::take;
 use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
-use std::pin::pin;
 use std::sync::Arc;
-use std::time::{Instant, SystemTime};
+use std::time::SystemTime;
 
 use Default::default;
 use implicit_fn::implicit_fn;
@@ -42,6 +41,7 @@ use crate::{
     BoolRequest, CDo, ClickHistory, CompletionAction, CompletionState,
     Hist, act, alt, ctrl, filter, hash, shift, sig, sym, trm,
 };
+#[allow(dead_code)]
 pub fn serialize_tokens<S: serde::Serializer>(
     s: &Rq<
         Box<[SemanticToken]>,
@@ -56,7 +56,7 @@ pub fn serialize_tokens<S: serde::Serializer>(
         ser,
     )
 }
-
+#[allow(dead_code)]
 pub fn deserialize_tokens<'de, D: serde::Deserializer<'de>>(
     ser: D,
 ) -> Result<
@@ -217,7 +217,7 @@ impl Editor {
             .and_then(|x| x.canonicalize().ok());
 
         std::env::args().nth(1).map(|x| {
-            me.text.insert(&std::fs::read_to_string(x).unwrap()).unwrap();
+            me.text.insert(&std::fs::read_to_string(x).unwrap());
             me.text.cursor = default();
         });
         me.workspace = o
@@ -247,7 +247,7 @@ impl Editor {
                 .map(|x| x.path().to_owned())
                 .collect::<Vec<_>>()
         });
-        let l = me.workspace.as_ref().map(|(workspace)| {
+        let l = me.workspace.as_ref().map(|workspace| {
             let dh = std::panic::take_hook();
             let main = std::thread::current_id();
             // let mut c = Command::new("rust-analyzer")
@@ -1123,13 +1123,6 @@ impl Editor {
                             .0,
                     )
                     .unwrap();
-                let mut f_ = |edits: &mut [SnippetTextEdit]| {
-                    edits.sort_tedits();
-                    // let mut first = false;
-                    for edit in edits {
-                        self.text.apply_snippet_tedit(edit).unwrap();
-                    }
-                };
                 let f = f.to_owned();
                 act.edit.map(|x| self.apply_wsedit(x, &f));
             }
@@ -1153,6 +1146,8 @@ impl Editor {
                 Do::Reinsert
                 | Do::GoToDefinition
                 | Do::MoveCursor
+                | Do::ExtendSelectionToMouse
+                | Do::Hover
                 | Do::NavBack
                 | Do::NavForward
                 | Do::InsertCursorAtMouse,
@@ -1431,7 +1426,7 @@ impl Editor {
                     _ = self.text.remove(r.into());
                     // self.text.cursor.first().setc(&self.text.rope);
                 });
-                self.text.insert(&c).unwrap();
+                self.text.insert(&c);
                 self.text.cursor.clear_selections();
                 self.hist.push_if_changed(&self.text);
                 change!(self, window.clone());
@@ -1524,22 +1519,17 @@ impl Editor {
                         let new =
                             pieces.intersperse("\n").collect::<String>();
                         // vscode behaviour: insane?
-                        self.text.insert(&new).unwrap();
+                        self.text.insert(&new);
                         eprintln!("hrmst");
                     }
                 } else {
-                    self.text.insert(&clipp::paste()).unwrap();
+                    self.text.insert(&clipp::paste());
                 }
                 self.hist.push_if_changed(&self.text);
                 change!(self, window.clone());
             }
             Some(Do::OpenFile(x)) => {
                 _ = self.open(Path::new(&x), window.clone());
-            }
-            Some(
-                Do::MoveCursor | Do::ExtendSelectionToMouse | Do::Hover,
-            ) => {
-                unreachable!()
             }
             Some(Do::StartSearch(x)) => {
                 let s = Regex::new(&x).unwrap();
@@ -1678,7 +1668,7 @@ impl Editor {
             self.files.extend(f);
             // assert!(f.len() == 0);
         }
-        self.open_or_restore(&x, lsp, Some(w), ws);
+        self.open_or_restore(&x, lsp, Some(w), ws)?;
         self.text.r = r;
         self.tree = tree;
 
@@ -1732,7 +1722,7 @@ impl Editor {
 
             let new = std::fs::read_to_string(&x)?;
             take(&mut self.text);
-            self.text.insert(&new)?;
+            self.text.insert(&new);
             self.text.cursor.just(0, &self.text.rope);
             self.bar.last_action = "open".into();
             self.mtime = Self::modify(self.origin.as_deref());
@@ -1792,7 +1782,7 @@ pub fn handle2<'a>(
     use Key::*;
 
     match key {
-        Named(Space) => text.insert(" ").unwrap(),
+        Named(Space) => text.insert(" "),
         Named(Backspace) if ctrl() => text.backspace_word(),
         Named(Backspace) => text.backspace(),
         Named(Home) if ctrl() => {
@@ -1848,6 +1838,7 @@ fn cfgdir() -> PathBuf {
 }
 const STORE: &str = "state.torrent";
 #[track_caller]
+#[allow(dead_code)]
 fn rtt<T: serde::Serialize + serde::Deserialize<'static>>(
     x: &T,
 ) -> Result<T, bendy::serde::Error> {

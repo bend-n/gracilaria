@@ -11,11 +11,11 @@ pub fn toggle(at: &Path) {
     _ = try bikeshed anyhow::Result<()> {
         let l = LAST.load(Relaxed);
         let mut niri = niri::socket::Socket::connect()?;
-        let Ok(Ok(Response::FocusedWindow(Some(focused)))) =
-            niri.send(Request::FocusedWindow)
-        else {
-            unreachable!()
-        };
+        // let Ok(Ok(Response::FocusedWindow(Some(focused)))) =
+        //     niri.send(Request::FocusedWindow)
+        // else {
+        //     unreachable!()
+        // };
         if l != !0 {
             let Ok(Ok(Response::Windows(x))) = niri.send(Request::Windows)
             else {

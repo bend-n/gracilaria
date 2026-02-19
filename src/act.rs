@@ -4,12 +4,12 @@ use itertools::Itertools;
 use lsp_types::{CodeAction, CodeActionKind};
 
 #[derive(Debug, Clone)]
-enum N<T> {
+pub enum N<T> {
     One(T),
     Many(Vec<T>, Entry, Vec<String>),
 }
 #[derive(Debug, Clone, Copy)]
-enum Entry {
+pub enum Entry {
     Inside(usize),
     Outside(usize),
 }
@@ -59,7 +59,7 @@ impl CodeActions {
         //     }
         // };
         match &mut self.inner {
-            N::Many(x, Entry::Outside(y), so) => {
+            N::Many(x, Entry::Outside(y), _) => {
                 let n = x.len();
                 next::<{ N }>(n, y, &mut self.vo);
             }
@@ -85,7 +85,7 @@ impl CodeActions {
     }
     pub fn left(&mut self) {
         match &mut self.inner {
-            N::Many(items, x @ Entry::Inside(_), items1) => {
+            N::Many(_, x @ Entry::Inside(_), _) => {
                 let Entry::Inside(y) = x else { unreachable!() };
                 *x = Entry::Outside(*y);
             }

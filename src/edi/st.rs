@@ -1,4 +1,4 @@
-use std::ops::Range;
+#![allow(unused_parens, unused_variables, dead_code)]
 
 use Default::default;
 use NamedKey::*;
@@ -7,8 +7,8 @@ use regex::Regex;
 use winit::event::MouseButton;
 use winit::keyboard::{Key, NamedKey, SmolStr};
 
-use crate::lsp::{AQErr, RequestError, Rq, RqS};
-use crate::sym::{Symbols, SymbolsType};
+use crate::lsp::{AQErr, Rq, RqS};
+use crate::sym::Symbols;
 use crate::text::TextArea;
 use crate::{
     BoolRequest, CLICKING, InputRequest, act, alt, ctrl, handle, shift,

@@ -1,20 +1,17 @@
-use std::borrow::Cow;
 use std::iter::once;
 use std::os::fd::AsFd;
 use std::sync::{Arc, LazyLock};
 use std::time::Instant;
 
 use atools::prelude::*;
-use crossbeam::channel::select_biased;
 use dsb::cell::Style;
-use dsb::{Cell, Fonts};
+use dsb::Cell;
 use fimg::pixels::Blend;
 use fimg::{Image, OverlayAt};
 use lsp_types::*;
 use regex::Regex;
 use rust_fsm::StateMachine;
 use softbuffer::Surface;
-use swash::{FontRef, Instance};
 use url::Url;
 use winit::dpi::{PhysicalPosition, PhysicalSize};
 use winit::window::Window;
@@ -104,7 +101,7 @@ pub fn render(
         //             v.iter().map(_.value.clone()).collect::<String>()
         //         },
         //     };
-        //     text.rope.insert(text.l_position(inlay.position).unwrap() + off, &label);
+        //     text.rope.insert(text.l_position(inlay.position) + off, &label);
         //     off += label.chars().count();
         //     }
         // }
@@ -557,7 +554,7 @@ pub fn render(
                     println!("rah");
                     break 'out;
                 };
-                let Ok((is_above, left, top, w, mut h)) = place_around(
+                let Ok((_is_above, left, top, w, h)) = place_around(
                     (_x, _y),
                     i.copy(),
                     &c,
@@ -587,7 +584,7 @@ pub fn render(
                 // let (_x, _y) = text.cursor_visual();
                 let _x = 0;
                 let _y = r - 1;
-                let Ok((is_above, left, top, w, mut h)) = place_around(
+                let Ok((_is_above, left, top, w, h)) = place_around(
                     (_x, _y),
                     i.copy(),
                     &c,

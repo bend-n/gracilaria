@@ -7,7 +7,7 @@ use lsp_types::WorkDoneProgress;
 use crate::lsp::{Client, Rq};
 use crate::rnd::simplify_path;
 use crate::sym::Symbols;
-use crate::text::{RopeExt, TextArea};
+use crate::text::TextArea;
 #[derive(Default, Debug)]
 pub struct Bar {
     pub last_action: String,
@@ -22,7 +22,7 @@ impl Bar {
         oy: usize,
         fname: &str,
         state: &super::State,
-        t: &TextArea,
+        _t: &TextArea,
         lsp: Option<&Client>,
     ) {
         let fname = simplify_path(fname);

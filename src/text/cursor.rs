@@ -470,7 +470,8 @@ impl Cursors {
         self.each(|c| c.word_left(r));
         self.coalesce();
     }
-    pub fn set_ho(&mut self) {
+    // FIXME: implement
+    pub fn _set_ho(&mut self) {
         // let x = self.cursor_visual().0;
         // if x < self.ho + 4 {
         //     self.ho = x.saturating_sub(4);

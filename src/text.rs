@@ -30,6 +30,7 @@ use inlay::{Inlay, Marking};
 pub mod semantic_tokens;
 use semantic_tokens::{TokenD, theme};
 
+use crate::lsp::Void;
 use crate::sni::{Snippet, StopP};
 
 theme! {
@@ -86,7 +87,7 @@ macro_rules! col {
 #[derive(Debug)]
 struct E;
 impl Display for E {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, _: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         Ok(())
     }
 }
@@ -139,7 +140,7 @@ impl Diff {
             .unwrap()
             .0,
         );
-        let (cu, vo) = self.data[redo as usize].clone();
+        let (cu, _vo) = self.data[redo as usize].clone();
         t.cursor = cu;
         t.scroll_to_cursor_centering();
         // t.vo = vo;
@@ -381,6 +382,7 @@ impl TextArea {
     }
 
     #[implicit_fn::implicit_fn]
+    #[allow(dead_code)]
     pub fn raw_index_at(&self, (x, y): (usize, usize)) -> Option<usize> {
         let x = x.checked_sub(self.line_number_offset() + 1)? + self.ho;
         Some(self.vo + y)
@@ -492,25 +494,24 @@ impl TextArea {
         Ok(())
     }
 
-    pub fn insert(&mut self, c: &str) -> Result<(), ropey::Error> {
+    pub fn insert(&mut self, c: &str) {
         for i in 0..self.cursor.inner.len() {
             let cursor = *self.cursor.inner.get(i).expect("aw dangit");
-            self.insert_at(cursor.position, c)?;
+            self.insert_at(cursor.position, c).expect("");
         }
         self.set_ho();
-        Ok(())
     }
 
     pub fn apply(&mut self, x: &TextEdit) -> Result<(usize, usize), ()> {
         let begin = self.l_position(x.range.start).ok_or(())?;
         let end = self.l_position(x.range.end).ok_or(())?;
-        self.remove(begin..end).map_err(|_| ())?;
-        self.insert_at(begin, &x.new_text).map_err(|_| ())?;
+        self.remove(begin..end).void()?;
+        self.insert_at(begin, &x.new_text).void()?;
         Ok((begin, end))
     }
 
     pub fn apply_adjusting(&mut self, x: &TextEdit) -> Result<(), ()> {
-        let (b, e) = self.apply(&x)?;
+        let (_b, e) = self.apply(&x)?;
 
         if e < self.cursor.first().position {
             if !self.visible(e) {
@@ -575,6 +576,7 @@ impl TextArea {
         let mut z = self.reverse_source_map(y).unwrap();
         (z.nth(x).unwrap_or(x), y)
     }
+    #[allow(dead_code)]
     pub fn visible_(&self) -> Range<usize> {
         self.rope.line_to_char(self.vo)
             ..self.rope.line_to_char(self.vo + self.r)
@@ -658,7 +660,7 @@ impl TextArea {
     }
     pub fn tab(&mut self) {
         match &mut self.tabstops {
-            None => self.insert("    ").unwrap(),
+            None => self.insert("    "),
             Some(x) => match x.next() {
                 Some(x) => {
                     self.cursor.one(Cursor::new(x.r().end, &self.rope));
@@ -809,7 +811,7 @@ impl TextArea {
         //     at = end;
         // }
     }
-
+    #[allow(dead_code)]
     pub fn slice<'c>(
         &self,
         (c, _r): (usize, usize),
@@ -1077,7 +1079,7 @@ pub static LOADER: LazyLock<Loader> = LazyLock::new(|| {
     // });
     x
 });
-// #[test]
+#[test]
 pub fn man() {
     let _query_str = r#"
         (line_comment)+ @quantified_nodes
@@ -1188,7 +1190,7 @@ pub fn man() {
         // panic!()
     }
 
-    panic!();
+    // panic!();
 
     // let root = syntax.tree().root_node();
     // let test = |capture, range| {
@@ -1206,7 +1208,7 @@ pub fn man() {
     //     )
     // };
     // test("quantified_nodes", 1..37);
-    panic!()
+    // panic!()
 }
 
 pub fn hl(
@@ -1300,6 +1302,7 @@ pub fn hl(
 ///  │ ╰ horiz scroll
 ///  ╰ horizontal offset
 /// ```
+#[allow(dead_code)] // ?
 pub struct Mapper {
     /// c, r
     pub into_s: (usize, usize),

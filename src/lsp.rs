@@ -2,7 +2,7 @@ use std::backtrace::Backtrace;
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::marker::PhantomData;
-use std::mem::{MaybeUninit, forget};
+use std::mem::forget;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicI32;
@@ -47,6 +47,8 @@ pub struct Client {
         Option<(WorkDoneProgress, WorkDoneProgressBegin)>,
     >,
     pub diagnostics: &'static papaya::HashMap<Url, Vec<Diagnostic>>,
+    #[allow(dead_code)]
+    // TODO: handle notifications from the server
     pub not_rx: Receiver<N>,
     pub req_rx: Receiver<LRq>,
 }
@@ -285,9 +287,9 @@ impl Client {
         .0
     }
 
-    pub fn pull_all_diag(
+    pub fn _pull_all_diag(
         &self,
-        f: PathBuf,
+        _f: PathBuf,
     ) -> impl Future<Output = anyhow::Result<()>> {
         let r = self
             .request::<lsp_request!("workspace/diagnostic")>(&default())
@@ -319,7 +321,7 @@ impl Client {
             Ok(())
         }
     }
-    pub fn pull_diag(
+    pub fn _pull_diag(
         &self,
         f: PathBuf,
         previous: Option<String>,
@@ -352,7 +354,7 @@ impl Client {
         async move {
             let x = match r.await {
                     Ok(x) => x,
-                    Err(RequestError::Cancelled(x, y)) if y.retrigger_request => {
+                    Err(RequestError::Cancelled(_, y)) if y.retrigger_request => {
                         self.request::<lsp_request!("textDocument/diagnostic")>(&p,).unwrap().0.await?
                     },
                     Err(e) => return Err(e.into()),
@@ -1041,7 +1043,7 @@ pub fn run(
 //     }
 // }
 
-trait Void<T> {
+pub trait Void<T> {
     fn void(self) -> Result<T, ()>;
 }
 impl<T, E> Void<T> for Result<T, E> {
@@ -1080,26 +1082,6 @@ pub trait Map_<T, U, F: FnMut(T) -> U>:
 impl<T, U, F: FnMut(T) -> U, Fu: Future<Output = T>> Map_<T, U, F> for Fu {
     fn map(self, f: F) -> Map<T, U, F, Self> {
         Map(self, f)
-    }
-}
-
-#[derive(Debug)]
-pub enum OnceOff<T> {
-    Waiting(task::JoinHandle<Result<T, oneshot::error::RecvError>>),
-    Waited(T),
-}
-impl<T> OnceOff<T> {
-    pub fn poll(
-        &mut self,
-        r: &tokio::runtime::Runtime,
-    ) -> anyhow::Result<()> {
-        match self {
-            OnceOff::Waiting(join_handle) if join_handle.is_finished() => {
-                *self = Self::Waited(r.block_on(join_handle)??);
-            }
-            _ => {}
-        }
-        Ok(())
     }
 }
 

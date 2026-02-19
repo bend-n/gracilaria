@@ -42,6 +42,7 @@ impl Symbols {
                     uri: Url::from_file_path(&x).unwrap(),
                 },
                 container_name: None,
+                #[allow(deprecated)]
                 deprecated: None,
                 tags: None,
             })
