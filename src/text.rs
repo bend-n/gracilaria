@@ -1,6 +1,7 @@
 use std::cmp::{Reverse, min};
 use std::collections::BTreeSet;
 use std::fmt::{Debug, Display};
+use std::iter::repeat_n;
 use std::ops::{Deref, Range, RangeBounds};
 use std::path::Path;
 use std::pin::pin;
@@ -674,7 +675,7 @@ impl TextArea {
             // self.cursor = oc + c.chars().count();
 
             // cursor.set_ho();
-            (|| self.insert(" ")).run(n);
+            self.insert(&repeat_n(" ", n).collect::<String>());
         });
     }
 
