@@ -272,14 +272,17 @@ pub fn render(
         if let Some(d) = &ed.requests.git_diff.result {
             for h in d.hunks() {
                 // let b = text.rope.byte_to_line(h.after.start as _);
-                if h.after.start == h.after.end && (text.vo..text.vo + r).contains(&(h.after.start as usize)) {
+                if h.after.start == h.after.end
+                    && (text.vo..text.vo + r)
+                        .contains(&(h.after.start as usize))
+                {
                     let l = h.after.start - text.vo as u32;
                     let f = fh + ls * fac;
                     i.tri::<f32>(
                         (0.0f32, (l as f32 - 0.15) * f - (ls * fac)),
-                        (6.0f32, (l as f32)        * f - (ls * fac)),
+                        (6.0f32, (l as f32) * f - (ls * fac)),
                         (0.0f32, (l as f32 + 0.15) * f - (ls * fac)),
-                        col!("#F27983")
+                        col!("#F27983"),
                     );
                 }
                 for l in h.after.clone() {

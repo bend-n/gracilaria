@@ -10,8 +10,7 @@ use std::sync::atomic::Ordering::Relaxed;
 use std::task::Poll;
 use std::thread::spawn;
 use std::time::Instant;
-use tokio::task;
-use crate::text::{SortTedits, TextArea, cursor::ceach};
+
 use Default::default;
 use anyhow::bail;
 use crossbeam::channel::{
@@ -28,8 +27,12 @@ use lsp_types::*;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::sync::oneshot;
+use tokio::task;
 use tokio_util::task::AbortOnDropHandle;
 use winit::window::Window;
+
+use crate::text::cursor::ceach;
+use crate::text::{SortTedits, TextArea};
 #[derive(Debug)]
 pub struct Client {
     pub runtime: tokio::runtime::Runtime,
@@ -489,7 +492,9 @@ impl Client {
             self.request::<lsp_request!("experimental/matchingBrace")>(
                 &MatchingBraceParams {
                     text_document: f.tid(),
-                    positions: vec![t.to_l_position(*t.cursor.first()).unwrap()],
+                    positions: vec![
+                        t.to_l_position(*t.cursor.first()).unwrap(),
+                    ],
                 },
             )
             .unwrap()
@@ -605,28 +610,28 @@ impl Client {
 
     pub fn enter<'a>(&self, f: &Path, t: &'a mut TextArea) {
         ceach!(t.cursor, |c| {
-        let r = self
-            .runtime
-            .block_on(
-                self.request::<lsp_request!("experimental/onEnter")>(
-                    &TextDocumentPositionParams {
-                        text_document: f.tid(),
-                        position: t.to_l_position(*c).unwrap(),
-                    },
+            let r = self
+                .runtime
+                .block_on(
+                    self.request::<lsp_request!("experimental/onEnter")>(
+                        &TextDocumentPositionParams {
+                            text_document: f.tid(),
+                            position: t.to_l_position(*c).unwrap(),
+                        },
+                    )
+                    .unwrap()
+                    .0,
                 )
-                .unwrap()
-                .0,
-            )
-            .unwrap();
-        match r {
-            None => t.enter(),
-            Some(mut r) => {
-                r.sort_tedits();
-                for f in r {
-                    t.apply_snippet_tedit(&f).unwrap();
+                .unwrap();
+            match r {
+                None => t.enter(),
+                Some(mut r) => {
+                    r.sort_tedits();
+                    for f in r {
+                        t.apply_snippet_tedit(&f).unwrap();
+                    }
                 }
             }
-        }
         });
     }
 }
