@@ -1,50 +1,37 @@
-use std::alloc::Global;
 use std::cmp::{Reverse, min};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::fmt::{Debug, Display};
 use std::mem::take;
-use std::ops::{Deref, Not as _, Range, RangeBounds};
+use std::ops::{Deref, Range, RangeBounds};
 use std::path::Path;
 use std::pin::pin;
 use std::sync::LazyLock;
 use std::vec::Vec;
 
-use Default::default;
 use anyhow::anyhow;
 use atools::prelude::*;
-use diff_match_patch_rs::{DiffMatchPatch, Ops, Patch, Patches};
+use diff_match_patch_rs::{DiffMatchPatch, Patches};
 use dsb::Cell;
 use dsb::cell::Style;
 use helix_core::Syntax;
 use helix_core::syntax::{HighlightEvent, Loader};
 use implicit_fn::implicit_fn;
-use itertools::Itertools;
-use log::error;
 use lsp_types::{
-    InlayHint, InlayHintLabel, Location, Position, SemanticToken,
-    SemanticTokensLegend, SnippetTextEdit, TextEdit,
+    Location, Position, SemanticTokensLegend, SnippetTextEdit, TextEdit,
 };
 use rangemap::RangeMap;
 use ropey::{Rope, RopeSlice};
 use serde::{Deserialize, Serialize};
 use tree_house::Language;
-use winit::keyboard::{NamedKey, SmolStr};
 pub mod cursor;
-use cursor::*;
+use cursor::{Cursor, Cursors, ceach};
+pub mod inlay;
+use inlay::{Inlay, Marking};
+pub mod semantic_tokens;
+use semantic_tokens::{TokenD, theme};
 
 use crate::sni::{Snippet, StopP};
-use crate::text::semantic::{MCOLORS, MODIFIED, MSTYLE};
-macro_rules! theme {
-    ($($x:literal $color:literal $($style:expr)?),+ $(,)?) => {
-        #[rustfmt::skip]
-        pub const NAMES: [&str; [$($x),+].len()] = [$($x),+];
-        #[rustfmt::skip]
-        pub const COLORS: [[u8; 3]; NAMES.len()] = car::map!([$($color),+], |x| color(x));
-        pub const STYLES: [u8; NAMES.len()] = [$(
-            ($($style, )? 0, ).0
-        ),+];
-    };
-}
+
 theme! {
     "attribute" b"#ffd173",
     "comment" b"#5c6773" Style::ITALIC,
@@ -62,100 +49,6 @@ theme! {
     "variable" b"#cccac2",
     "variable.parameter" b"#DFBFFF",
     "namespace" b"#73d0ff",
-}
-
-mod semantic {
-    use dsb::cell::Style;
-    macro_rules! modified {
-        ($count:literal $($x:literal . $mod:literal $color:literal $($style:expr)?,)+ $(,)?) => {
-            pub const MODIFIED: [(&str, &str); $count] = [
-                $(($x, $mod),)+
-            ];
-            pub const MCOLORS: [[u8;3]; MODIFIED.len()] = car::map!([$($color),+], |x| color(x));
-            pub const MSTYLE: [u8; MODIFIED.len()] = [$(($($style, )? 0, ).0 ,)+];
-        };
-    }
-    use super::color;
-    theme! {
-    "constructor" b"#FFAD66",
-    "field" b"#cccac2",
-
-    "comment" b"#5c6773" Style::ITALIC,
-    // "decorator" b"#cccac2",
-    "function" b"#FFD173" Style::ITALIC,
-    "interface" b"#5CCFE6",
-    "keyword" b"#FFAD66"  Style::ITALIC | Style::BOLD,
-    "macro" b"#fbc351" Style::BOLD,
-    "method" b"#FFD173" Style::ITALIC,
-    // "namespace" b"#cccac2",
-    "number" b"#dfbfff",
-    "operator" b"#F29E74",
-    // "property" b"#cccac2",
-    "string" b"#D5FF80",
-    // "struct" b"#cccac2",
-    // "typeParameter" b"#cccac2",
-    "class" b"#73b9ff",
-    "enumMember" b"#73b9ff",
-    "enum" b"#73b9ff" Style::ITALIC | Style::BOLD,
-    "builtinType" b"#73d0ff" Style::ITALIC,
-    // "type" b"#73d0ff" Style::ITALIC | Style::BOLD,
-    "typeAlias" b"#69caed" Style::ITALIC | Style::BOLD,
-    "struct" b"#73d0ff" Style::ITALIC | Style::BOLD,
-    "variable" b"#cccac2",
-    // "angle" b"#cccac2",
-    // "arithmetic" b"#cccac2",
-    // "attributeBracket" b"#cccac2",
-    "parameter" b"#DFBFFF",
-    "namespace" b"#73d0ff",
-    // "attributeBracket" b"#cccac2",
-    // "attribute" b"#cccac2",
-    // "bitwise" b"#cccac2",
-    // "boolean" b"#cccac2",
-    // "brace" b"#cccac2",
-    // "bracket" b"#cccac2",
-    // "builtinAttribute" b"#cccac2",
-    // "character" b"#cccac2",
-    // "colon" b"#cccac2",
-    // "comma" b"#cccac2",
-    // "comparison" b"#cccac2",
-    // "constParameter" b"#cccac2",
-    "const" b"#DFBFFF",
-    // "deriveHelper" b"#cccac2",
-    // "derive" b"#cccac2",
-    // "dot" b"#cccac2",
-    // "escapeSequence" b"#cccac2",
-    // "formatSpecifier" b"#cccac2",
-    // "generic" b"#cccac2",
-    // "invalidEscapeSequence" b"#cccac2",
-    // "label" b"#cccac2",
-    // "lifetime" b"#cccac2",
-    // "logical" b"#cccac2",
-    "macroBang" b"#f28f74",
-    // "parenthesis" b"#cccac2",
-    // "procMacro" b"#cccac2",
-    // "punctuation" b"#cccac2",
-    "selfKeyword" b"#FFAD66"  Style::ITALIC | Style::BOLD,
-    "selfTypeKeyword" b"#FFAD66"  Style::ITALIC | Style::BOLD,
-    // "semicolon" b"#cccac2",
-    // "static" b"#cccac2",
-    // "toolModule" b"#cccac2",
-    // "union" b"#cccac2",
-    // "unresolvedReference" b"#cccac2",
-    }
-    modified! { 2
-        "function" . "unsafe" b"#F28779",
-        "variable" . "mutable" b"#e6dab6",
-    }
-}
-const fn of(x: &'static str) -> usize {
-    let mut i = 0;
-    while i < NAMES.len() {
-        if NAMES[i] == x {
-            return i;
-        }
-        i += 1;
-    }
-    panic!()
 }
 
 pub const fn color_(x: &str) -> [u8; 3] {
@@ -291,99 +184,6 @@ pub struct TextArea {
     pub inlays: BTreeSet<Inlay>,
     pub tokens: RangeMap<u32, TokenD>, // TODO: fixperf
 }
-#[derive(
-    Copy, Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize,
-)]
-pub struct TokenD {
-    pub ty: u32,
-    pub modifiers: u32,
-}
-impl TokenD {
-    pub fn style(self, leg: &SemanticTokensLegend) -> Style {
-        let mut sty = Style::new(crate::FG, crate::BG);
-        let Some(tty) = leg.token_types.get(self.ty as usize) else {
-            error!(
-                "issue while loading semantic token {self:?}; couldnt \
-                 find in legend"
-            );
-            return sty;
-        };
-        if let Some(f) =
-            semantic::NAMES.iter().position(|&x| x == tty.as_str())
-        {
-            // cells
-            //     .get_range_enumerated((x1, ln as _), (x2, ln as _))
-            //     .filter(|(_, i)| {
-            //         matches!(src_map.get(i.0), Some(Mapping::Char(..)))
-            //     })
-            //     .for_each(|(x, _)| {
-            sty.fg = semantic::COLORS[f];
-            sty.flags |= semantic::STYLES[f];
-            // });
-        }
-        // println!(
-        //     "{tty:?}: {}",
-        //     slice.iter().flat_map(|x| x.letter).collect::<String>()
-        // );
-        let mut modi = self.modifiers;
-        while modi != 0 {
-            let bit = modi.trailing_zeros();
-
-            leg.token_modifiers
-                .get(bit as usize)
-                .and_then(|modi| {
-                    MODIFIED.iter().position(|&(x, y)| {
-                        (x == tty.as_str()) & (y == modi.as_str())
-                    })
-                })
-                .map(|i| {
-                    sty.fg = MCOLORS[i];
-                    sty.flags |= MSTYLE[i];
-                });
-
-            modi &= !(1 << bit);
-        }
-        sty
-    }
-}
-pub type Inlay = Marking<Box<[(char, Option<Location>)]>>;
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub struct Marking<D> {
-    /// in characters
-    pub position: u32,
-    pub data: D,
-}
-impl<D: Default> Marking<D> {
-    fn idx(x: u32) -> Self {
-        Self { position: x, ..default() }
-    }
-}
-impl<D> Ord for Marking<D> {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.position.cmp(&other.position)
-    }
-}
-impl<D> PartialOrd for Marking<D> {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.position.partial_cmp(&other.position)
-    }
-}
-impl<D> Eq for Marking<D> {}
-impl<D> PartialEq for Marking<D> {
-    fn eq(&self, other: &Self) -> bool {
-        self.position == other.position
-    }
-}
-#[derive(Clone, Debug, PartialEq)]
-pub struct Mark {
-    // pub start: usize,
-    pub relpos: usize, // to start of line
-    pub l: Box<[(char, Option<Location>)]>,
-    ty: u8,
-}
-
-const INLAY: u8 = 0;
-
 #[derive(Serialize, Deserialize)]
 pub struct CellBuffer {
     pub c: usize,
@@ -518,67 +318,6 @@ impl RopeExt for Rope {
 }
 
 impl TextArea {
-    pub fn set_toks(&mut self, toks: &[SemanticToken]) {
-        let mut ln = 0;
-        let mut ch = 0;
-        self.tokens.clear();
-        for t in toks {
-            ln += t.delta_line;
-            ch = match t.delta_line {
-                1.. => t.delta_start,
-                0 => ch + t.delta_start,
-            };
-            let Ok((x1, x2)): ropey::Result<_> = (try {
-                let p1 = self.rope.try_byte_to_char(
-                    self.rope.try_line_to_byte(ln as _)? + ch as usize,
-                )?;
-                let p2 = self.rope.try_byte_to_char(
-                    self.rope.try_line_to_byte(ln as _)?
-                        + ch as usize
-                        + t.length as usize,
-                )?;
-                (p1 as u32, p2 as u32)
-            }) else {
-                continue;
-            };
-            self.tokens.insert(
-                x1..x2,
-                TokenD {
-                    ty: t.token_type,
-                    modifiers: t.token_modifiers_bitset,
-                },
-            );
-        }
-    }
-    #[implicit_fn::implicit_fn]
-    pub fn set_inlay(&mut self, inlay: &[InlayHint]) {
-        self.inlays = inlay
-            .iter()
-            .map(|i| {
-                let mut label = match &i.label {
-                    InlayHintLabel::String(x) =>
-                        x.chars().map(|x| (x, None)).collect::<Vec<_>>(),
-                    InlayHintLabel::LabelParts(v) => v
-                        .iter()
-                        .flat_map(|x| {
-                            x.value
-                                .chars()
-                                .map(|y| (y, x.location.clone()))
-                        })
-                        .collect(),
-                };
-                if i.padding_left == Some(true) {
-                    label.insert(0, (' ', None));
-                }
-                if i.padding_right == Some(true) {
-                    label.push((' ', None));
-                }
-                let position = self.l_position(i.position).unwrap() as _;
-                Marking { position, data: label.into() }
-            })
-            .collect();
-    }
-
     pub fn visual_position(
         &self,
         r: Range<usize>,
@@ -1910,6 +1649,7 @@ impl SortTedits for [SnippetTextEdit] {
 
 #[test]
 fn inlays() {
+    use lsp_types::{InlayHint, InlayHintLabel};
     let mut t = TextArea::default();
     _ = t.insert("let x = 4;");
     t.set_inlay(&[InlayHint {
