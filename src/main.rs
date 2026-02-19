@@ -67,6 +67,7 @@ use lsp_types::*;
 use rust_fsm::StateMachine;
 use serde::{Deserialize, Serialize};
 use swash::FontRef;
+use winit::dpi::{LogicalSize, PhysicalSize};
 use winit::event::{
     ElementState, Event, Ime, MouseButton, MouseScrollDelta, WindowEvent,
 };
@@ -263,6 +264,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
         Some((.., c)) => c.take(),
         None => None,
     };
+    let (fw, fh) = dsb::dims(&fonts.bold, ls);
 
     let app = winit_app::WinitAppBuilder::with_init(
         move |elwt| {
@@ -270,6 +272,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                 x.with_title("gracilaria")
                     .with_decorations(false)
                     .with_name("com.bendn.gracilaria", "")
+                    .with_resize_increments(PhysicalSize::new(fw, fh))
                     .with_window_icon(Some(
                         Icon::from_rgba(
                             include_bytes!("../dist/icon-32").to_vec(),

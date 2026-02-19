@@ -157,6 +157,7 @@ impl Cursor {
         self.setc(r);
         self.set_ho();
     }
+    #[lower::apply(saturating)]
     pub fn at_(self, r: &Rope) -> char {
         r.get_char(*self - 1).unwrap_or('\n')
     }

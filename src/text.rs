@@ -665,8 +665,6 @@ impl TextArea {
         }
     }
     pub fn enter(&mut self) {
-        use run::Run;
-
         // let oc = self.cursor;
         ceach!(self.cursor, |cursor| {
             let n = cursor.indentation(&self.rope);
