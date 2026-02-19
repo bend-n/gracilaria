@@ -1,7 +1,6 @@
 use std::cmp::{Reverse, min};
 use std::collections::BTreeSet;
 use std::fmt::{Debug, Display};
-use std::mem::take;
 use std::ops::{Deref, Range, RangeBounds};
 use std::path::Path;
 use std::pin::pin;
@@ -19,7 +18,6 @@ use implicit_fn::implicit_fn;
 use lsp_types::{
     Location, Position, SemanticTokensLegend, SnippetTextEdit, TextEdit,
 };
-use rangemap::RangeMap;
 use ropey::{Rope, RopeSlice};
 use serde::{Deserialize, Serialize};
 use tree_house::Language;
@@ -183,7 +181,7 @@ pub struct TextArea {
     #[serde(skip)]
     pub tabstops: Option<Snippet>,
     pub inlays: BTreeSet<Inlay>,
-    pub tokens: RangeMap<u32, TokenD>, // TODO: fixperf
+    pub tokens: Vec<TokenD>, // TODO: fixperf
 }
 #[derive(Serialize, Deserialize)]
 pub struct CellBuffer {
@@ -339,22 +337,29 @@ impl TextArea {
         )
     }
 
+    #[inline(always)]
     pub fn source_map(
         &'_ self,
         l: usize,
     ) -> Option<impl Iterator<Item = Mapping<'_>>> {
         let s = self.rope.try_line_to_char(l).ok()?;
         let lin = self.rope.get_line(l)?;
-        Some(gen move {
-            for (char, i) in lin.chars().zip(s..) {
-                if let Some(x) = self.inlays.get(&Marking::idx(i as _)) {
-                    for (i, (c, _)) in x.data.iter().enumerate() {
-                        yield Mapping::Fake(x, i as u32, x.position, *c);
+        Some(
+            #[inline(always)]
+            gen move {
+                for (char, i) in lin.chars().zip(s..) {
+                    if let Some(x) = self.inlays.get(&Marking::idx(i as _))
+                    {
+                        for (i, (c, _)) in x.data.iter().enumerate() {
+                            yield Mapping::Fake(
+                                x, i as u32, x.position, *c,
+                            );
+                        }
                     }
+                    yield Mapping::Char(char, i - s, i);
                 }
-                yield Mapping::Char(char, i - s, i);
-            }
-        })
+            },
+        )
     }
     pub fn reverse_source_map_w(
         &'_ self,
@@ -437,16 +442,9 @@ impl TextArea {
             m.position -= r.len() as u32;
             self.inlays.insert(m);
         }
-        for (mut tr, d) in self
-            .tokens
-            .overlapping(r.end as _..u32::MAX)
-            .map(|(x, y)| (x.clone(), *y))
-            .collect::<Vec<_>>()
-        {
-            self.tokens.remove(tr.clone());
-            tr.start -= r.len() as u32;
-            tr.end -= r.len() as u32;
-            self.tokens.insert(tr, d);
+        for d in self.tokens.iter_mut() {
+            d.range.0 = manip(d.range.0 as _) as _;
+            d.range.1 = manip(d.range.0 as _) as _;
         }
         Ok(())
     }
@@ -477,19 +475,9 @@ impl TextArea {
             m.position += with.chars().count() as u32;
             self.inlays.insert(m);
         }
-        for (tr, d) in take(&mut self.tokens)
-            .into_iter()
-            // .overlapping(c as u32..u32::MAX)
-            // .map(|(x, y)| (x.clone(), *y))
-            .map(|(tr, d)| {
-                (manip(tr.start as _) as u32..manip(tr.end as _) as u32, d)
-            })
-        // .collect::<Vec<_>>()
-        {
-            // self.tokens.remove(tr.clone());
-            // tr.start += with.chars().count() as u32;
-            // tr.end += with.chars().count() as u32;
-            self.tokens.insert(tr, d);
+        for d in self.tokens.iter_mut() {
+            d.range.0 = manip(d.range.0 as _) as _;
+            d.range.1 = manip(d.range.1 as _) as _;
         }
         Ok(())
     }
@@ -756,7 +744,7 @@ impl TextArea {
             self.vo = y - (self.r / 2);
         }
     }
-
+    #[cold]
     pub fn tree_sit<'c>(&self, path: Option<&Path>, cell: &mut Output) {
         let language = path
             .and_then(|x| LOADER.language_for_filename(x))
@@ -883,6 +871,8 @@ impl TextArea {
         //     (self.l().max(r) + r - 1) * c
         // ];
         let lns = self.vo..self.vo + r;
+        let mut tokens = self.tokens.iter();
+        let mut curr: Option<&TokenD> = tokens.next();
         for (l, y) in lns.clone().map(self.source_map(_)).zip(lns) {
             for (e, x) in l
                 .coerce()
@@ -897,13 +887,28 @@ impl TextArea {
                     cells.get((x + self.ho, y)).unwrap().style = match e {
                         Mapping::Char(_, _, abspos)
                             if let Some(leg) = leg =>
-                            self.tokens
-                                .get(&(abspos as _))
-                                .map(|x| x.style(leg))
-                                .unwrap_or(Style::new(
-                                    crate::FG,
-                                    crate::BG,
-                                )),
+                        {
+                            if let Some(curr) = curr
+                                && (curr.range.0..curr.range.1)
+                                    .contains(&(abspos as _))
+                            {
+                                curr.style(leg)
+                            } else {
+                                while let Some(c) = curr
+                                    && c.range.0 < abspos as _
+                                {
+                                    curr = tokens.next();
+                                }
+                                if let Some(curr) = curr
+                                    && (curr.range.0..curr.range.1)
+                                        .contains(&(abspos as _))
+                                {
+                                    curr.style(leg)
+                                } else {
+                                    Style::new(crate::FG, crate::BG)
+                                }
+                            }
+                        }
                         Mapping::Char(..) =>
                             Style::new(crate::FG, crate::BG),
                         Mapping::Fake(Marking { .. }, ..) => Style::new(

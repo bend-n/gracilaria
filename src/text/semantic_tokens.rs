@@ -102,6 +102,7 @@ use crate::text::TextArea;
     Copy, Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize,
 )]
 pub struct TokenD {
+    pub range: (u32, u32),
     pub ty: u32,
     pub modifiers: u32,
 }
@@ -178,14 +179,12 @@ impl TextArea {
             }) else {
                 continue;
             };
-
-            self.tokens.insert(
-                x1..x2,
-                TokenD {
-                    ty: t.token_type,
-                    modifiers: t.token_modifiers_bitset,
-                },
-            );
+            self.tokens.push(TokenD {
+                range: (x1, x2),
+                ty: t.token_type,
+                modifiers: t.token_modifiers_bitset,
+            });
         }
+        // tokens are sorted by definition
     }
 }
