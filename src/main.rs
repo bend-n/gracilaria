@@ -53,11 +53,9 @@ use std::hash::Hash;
 use std::mem::MaybeUninit;
 use std::num::NonZeroU32;
 use std::sync::LazyLock;
-use std::time::Instant;
 
 use Default::default;
 use NamedKey::*;
-use diff_match_patch_rs::PatchInput;
 use dsb::cell::Style;
 use dsb::{Cell, F};
 use fimg::Image;
@@ -67,7 +65,7 @@ use lsp_types::*;
 use rust_fsm::StateMachine;
 use serde::{Deserialize, Serialize};
 use swash::FontRef;
-use winit::dpi::{LogicalSize, PhysicalSize};
+use winit::dpi::PhysicalSize;
 use winit::event::{
     ElementState, Event, Ime, MouseButton, MouseScrollDelta, WindowEvent,
 };
@@ -79,7 +77,7 @@ use winit::window::Icon;
 use crate::edi::Editor;
 use crate::edi::st::*;
 use crate::lsp::RqS;
-use crate::text::{Diff, TextArea, col, is_word};
+use crate::text::{TextArea, col, is_word};
 mod bar;
 pub mod com;
 pub mod hov;
@@ -97,133 +95,6 @@ fn main() {
     // lsp::x();
     entry(EventLoop::new().unwrap())
 }
-pub fn serialize_debug<S: serde::Serializer, T: Debug>(
-    s: &T,
-    ser: S,
-) -> Result<S::Ok, S::Error> {
-    ser.serialize_str(&format!("{s:?}"))
-}
-pub fn serialize_display<S: serde::Serializer, T: Display>(
-    s: &T,
-    ser: S,
-) -> Result<S::Ok, S::Error> {
-    ser.serialize_str(&format!("{s}"))
-}
-
-#[derive(serde::Deserialize, serde::Serialize, Debug)]
-struct Hist {
-    pub history: Vec<Diff>,
-    pub redo_history: Vec<Diff>,
-    pub last: TextArea,
-    #[serde(
-        skip_deserializing,
-        serialize_with = "serialize_debug",
-        default = "Instant::now"
-    )]
-    pub last_edit: std::time::Instant,
-    pub changed: bool,
-}
-impl Default for Hist {
-    fn default() -> Self {
-        Self {
-            history: vec![],
-            redo_history: vec![],
-            last: TextArea::default(),
-            last_edit: Instant::now(),
-            changed: false,
-        }
-    }
-}
-#[derive(Debug, Default, Serialize, Deserialize)]
-struct ClickHistory {
-    pub his: Vec<(usize, usize)>,
-    pub red: Vec<(usize, usize)>,
-}
-
-impl ClickHistory {
-    fn push(&mut self, x: (usize, usize)) {
-        if self.his.last() != Some(&x) {
-            self.his.push(x);
-            self.red.clear();
-        }
-    }
-    fn back(&mut self) -> Option<(usize, usize)> {
-        self.his.pop().inspect(|x| {
-            self.red.push(*x);
-        })
-    }
-    fn forth(&mut self) -> Option<(usize, usize)> {
-        self.red.pop().inspect(|x| {
-            self.his.push(*x);
-        })
-    }
-}
-impl Hist {
-    fn push(&mut self, x: &TextArea) {
-        let d = diff_match_patch_rs::DiffMatchPatch::new();
-        self.history.push(Diff {
-            forth: d
-                .patch_make(PatchInput::new_text_text(
-                    &x.rope.to_string(),
-                    &self.last.rope.to_string(),
-                ))
-                .unwrap(),
-            back: d
-                .patch_make(PatchInput::new_text_text(
-                    &self.last.rope.to_string(),
-                    &x.rope.to_string(),
-                ))
-                .unwrap(),
-            data: [
-                (self.last.cursor.clone(), self.last.vo),
-                (x.cursor.clone(), x.vo),
-            ],
-        });
-        println!("push {}", self.history.last().unwrap());
-        self.redo_history.clear();
-        self.last = x.clone();
-        self.last_edit = Instant::now();
-        self.changed = false;
-    }
-    fn undo_(&mut self) -> Option<Diff> {
-        self.history.pop().inspect(|x| self.redo_history.push(x.clone()))
-    }
-    fn redo_(&mut self) -> Option<Diff> {
-        self.redo_history.pop().inspect(|x| self.history.push(x.clone()))
-    }
-    pub fn undo(&mut self, t: &mut TextArea) {
-        self.push_if_changed(t);
-        self.undo_().map(|x| {
-            x.apply(t, false);
-            self.last = t.clone();
-        });
-    }
-    pub fn redo(&mut self, t: &mut TextArea) {
-        self.redo_().map(|x| {
-            x.apply(t, true);
-            self.last = t.clone();
-        });
-    }
-    pub fn push_if_changed(&mut self, x: &TextArea) {
-        if self.changed || x.rope != self.last.rope {
-            self.push(x);
-        }
-    }
-    pub fn test_push(&mut self, x: &TextArea) {
-        if self.last_edit.elapsed().as_millis() > 500 {
-            self.push_if_changed(x);
-        }
-    }
-    pub fn record(&mut self, new: &TextArea) -> bool {
-        // self.test_push(x);
-        if new.rope != self.last.rope {
-            self.last_edit = Instant::now();
-            self.changed = true;
-        }
-        new.rope != self.last.rope
-    }
-}
-
 static mut MODIFIERS: ModifiersState = ModifiersState::empty();
 static mut CLICKING: bool = false;
 
@@ -632,4 +503,17 @@ fn filter(text: &TextArea) -> String {
 pub fn hash(x: &impl Hash) -> u64 {
     use std::hash::BuildHasher;
     rustc_hash::FxBuildHasher::default().hash_one(x)
+}
+
+pub fn serialize_debug<S: serde::Serializer, T: Debug>(
+    s: &T,
+    ser: S,
+) -> Result<S::Ok, S::Error> {
+    ser.serialize_str(&format!("{s:?}"))
+}
+pub fn serialize_display<S: serde::Serializer, T: Display>(
+    s: &T,
+    ser: S,
+) -> Result<S::Ok, S::Error> {
+    ser.serialize_str(&format!("{s}"))
 }

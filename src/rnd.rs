@@ -4,8 +4,8 @@ use std::sync::{Arc, LazyLock};
 use std::time::Instant;
 
 use atools::prelude::*;
-use dsb::cell::Style;
 use dsb::Cell;
+use dsb::cell::Style;
 use fimg::pixels::Blend;
 use fimg::{Image, OverlayAt};
 use lsp_types::*;

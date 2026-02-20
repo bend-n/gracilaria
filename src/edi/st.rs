@@ -57,6 +57,8 @@ Default => {
     M(MouseButton::Left if alt()) => _ [InsertCursorAtMouse],
     M(MouseButton::Left if ctrl()) => _ [GoToDefinition],
     M(MouseButton::Left) => _ [MoveCursor],
+    K(Key::Character(x) if x == "-" && ctrl()) => _ [NavBack],
+    K(Key::Character(x) if x == "=" && ctrl()) => _ [NavBack],
     M(MouseButton::Back) => _ [NavBack],
     M(MouseButton::Forward) => _ [NavForward],
     C(((usize, usize)) => .. if unsafe { CLICKING }) => Selection [StartSelection],

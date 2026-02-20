@@ -22,7 +22,6 @@ run_times = "0.1.0"
 array_chunks = "1.0.0"
 rust-fsm = { git = "https://git.bendn.org/rust-fsm", features = ["diagram"] }
 clipp = "0.1.0"
-diff-match-patch-rs = { git = "https://git.bendn.org/dmp" }
 regex = { version = "1.11.3", features = ["unstable", "use_std"] }
 tree-house = { version = "0.3.0", features = ["fixtures"] }
 

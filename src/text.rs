@@ -1,6 +1,6 @@
 use std::cmp::{Reverse, min};
 use std::collections::BTreeSet;
-use std::fmt::{Debug, Display};
+use std::fmt::Debug;
 use std::iter::repeat_n;
 use std::ops::{Deref, Range, RangeBounds};
 use std::path::Path;
@@ -10,7 +10,6 @@ use std::vec::Vec;
 
 use anyhow::anyhow;
 use atools::prelude::*;
-use diff_match_patch_rs::{DiffMatchPatch, Patches};
 use dsb::Cell;
 use dsb::cell::Style;
 use helix_core::Syntax;
@@ -27,29 +26,14 @@ use cursor::{Cursor, Cursors, ceach};
 pub mod inlay;
 use inlay::{Inlay, Marking};
 pub mod semantic_tokens;
-use semantic_tokens::{TokenD, theme};
+use semantic_tokens::TokenD;
+pub mod hist;
+pub mod theme_treesitter;
+use hist::Changes;
 
 use crate::lsp::Void;
 use crate::sni::{Snippet, StopP};
-
-theme! {
-    "attribute" b"#ffd173",
-    "comment" b"#5c6773" Style::ITALIC,
-    "constant" b"#DFBFFF",
-    "function" b"#FFD173" Style::ITALIC,
-    "function.macro" b"#fbc351",
-    "variable.builtin" b"#FFAD66",
-    "keyword" b"#FFAD66"  Style::ITALIC | Style::BOLD,
-    "number" b"#dfbfff",
-    "operator" b"#F29E74",
-    "punctuation" b"#cccac2",
-    "string" b"#D5FF80",
-    "tag" b"#5CCFE6"  Style::ITALIC | Style::BOLD,
-    "type" b"#73D0FF"  Style::ITALIC | Style::BOLD,
-    "variable" b"#cccac2",
-    "variable.parameter" b"#DFBFFF",
-    "namespace" b"#73d0ff",
-}
+use crate::text::hist::Action;
 
 pub const fn color_(x: &str) -> [u8; 3] {
     let Some(x): Option<[u8; 7]> = x.as_bytes().try_into().ok() else {
@@ -82,68 +66,6 @@ macro_rules! col {
     ($($x:literal),+)=> {{
         ($(crate::text::col!($x),)+)
     }};
-}
-#[derive(Debug)]
-struct E;
-impl Display for E {
-    fn fmt(&self, _: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        Ok(())
-    }
-}
-
-fn from_t<'de, D>(de: D) -> Result<Patches<u8>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let dmp = DiffMatchPatch::new();
-    let s: &str = serde::de::Deserialize::deserialize(de)?;
-    let p =
-        dmp.patch_from_text(s).map_err(|_| serde::de::Error::custom(E))?;
-    Ok(p)
-}
-fn to_t<S: serde::Serializer>(
-    x: &Patches<u8>,
-    s: S,
-) -> Result<S::Ok, S::Error> {
-    let dmp = DiffMatchPatch::new();
-    s.serialize_str(&dmp.patch_to_text(x))
-}
-
-#[derive(
-    Clone, Debug, serde_derive::Deserialize, serde_derive::Serialize,
-)]
-pub struct Diff {
-    #[serde(deserialize_with = "from_t", serialize_with = "to_t")]
-    pub forth: Patches<u8>,
-    #[serde(deserialize_with = "from_t", serialize_with = "to_t")]
-    pub back: Patches<u8>,
-    pub data: [(Cursors, usize); 2],
-}
-
-impl Display for Diff {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let d = DiffMatchPatch::new();
-        writeln!(f, "{}", d.patch_to_text(&self.back))
-    }
-}
-impl Diff {
-    pub fn apply(self, t: &mut TextArea, redo: bool) {
-        let d = DiffMatchPatch::new();
-        // println!("{}", d.patch_to_text(&self.changes.0));
-        // causes great internal strife atm
-        t.rope = Rope::from_str(
-            &d.patch_apply(
-                &if redo { self.back } else { self.forth },
-                &t.rope.to_string(),
-            )
-            .unwrap()
-            .0,
-        );
-        let (cu, _vo) = self.data[redo as usize].clone();
-        t.cursor = cu;
-        t.scroll_to_cursor_centering();
-        // t.vo = vo;
-    }
 }
 
 pub fn deserialize_from_string<'de, D: serde::de::Deserializer<'de>>(
@@ -182,7 +104,8 @@ pub struct TextArea {
     #[serde(skip)]
     pub tabstops: Option<Snippet>,
     pub inlays: BTreeSet<Inlay>,
-    pub tokens: Vec<TokenD>, // TODO: fixperf
+    pub tokens: Vec<TokenD>,
+    pub changes: Changes,
 }
 #[derive(Serialize, Deserialize)]
 pub struct CellBuffer {
@@ -416,6 +339,15 @@ impl TextArea {
     }
 
     pub fn remove(&mut self, r: Range<usize>) -> Result<(), ropey::Error> {
+        let removed = self
+            .rope
+            .get_slice(r.clone())
+            .ok_or(ropey::Error::CharIndexOutOfBounds(4, 4))?
+            .to_string();
+        self.changes.inner.push(Action::Removed {
+            removed: Some(removed),
+            range: r.clone(),
+        });
         self.rope.try_remove(r.clone())?;
         let manip = |x| {
             // if your region gets removed, what happens to your tabstop? big question.
@@ -453,6 +385,9 @@ impl TextArea {
         with: &str,
     ) -> Result<(), ropey::Error> {
         self.rope.try_insert(c, with)?;
+        self.changes
+            .inner
+            .push(Action::Inserted { at: c, insert: with.to_string() });
         let manip = |x| {
             if x < c { x } else { x + with.chars().count() }
         };
@@ -1056,7 +991,7 @@ pub fn is_word(r: char) -> bool {
 }
 pub static LOADER: LazyLock<Loader> = LazyLock::new(|| {
     let x = helix_core::config::default_lang_loader();
-    x.set_scopes(NAMES.map(|x| x.to_string()).to_vec());
+    x.set_scopes(theme_treesitter::NAMES.map(|x| x.to_string()).to_vec());
 
     // x.languages().for_each(|(_, x)| {
     //     x.syntax_config(&LOADER).map(|x| {
@@ -1264,7 +1199,10 @@ pub fn hl(
                 yield (
                     (x1, y1),
                     (x2, y2),
-                    (STYLES[h.idx()], COLORS[h.idx()]),
+                    (
+                        theme_treesitter::STYLES[h.idx()],
+                        theme_treesitter::COLORS[h.idx()],
+                    ),
                     (text.byte_slice(at..end)),
                 )
             }
