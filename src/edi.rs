@@ -377,7 +377,7 @@ impl Editor {
             // self.text.cursor =
             // self.text.cursor.min(self.text.rope.len_chars());
             change!(self);
-            self.hist.push(&mut self.text);
+            self.hist.push_if_changed(&mut self.text);
             l.notify::<lsp_notification!("textDocument/didSave")>(
                 &DidSaveTextDocumentParams {
                     text_document: o.tid(),
