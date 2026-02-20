@@ -1098,7 +1098,7 @@ pub fn man() {
             //     .unwrap()
             //     .0
             //     .to_string(),
-            |y| NAMES[y.idx()].to_string(),
+            |y| theme_treesitter::NAMES[y.idx()].to_string(),
             &syntax.inner,
             source.slice(..),
             ..,
@@ -1117,7 +1117,7 @@ pub fn man() {
                 //     .unwrap()
                 //     .0
                 //     .to_string())
-                .map(|x| NAMES[x.idx()])
+                .map(|x| theme_treesitter::NAMES[x.idx()])
                 .collect::<Vec<_>>()
         );
         // panic!()

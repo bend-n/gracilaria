@@ -418,22 +418,23 @@ impl BoolRequest {
 #[test]
 fn history_test() {
     let mut t = TextArea::default();
-    let mut h = Hist {
+    let mut h = text::hist::Hist {
         history: vec![],
         redo_history: vec![],
-        last: t.clone(),
-        last_edit: Instant::now(),
+        last: default(),
+        lc: default(),
+        last_edit: std::time::Instant::now(),
         changed: false,
     };
     t.insert("echo");
-    h.push(&t);
+    h.push(&mut t);
     t.insert(" test");
-    h.push(&t);
+    h.push(&mut t);
     h.undo(&mut t);
     h.redo(&mut t);
     h.undo(&mut t);
     t.insert(" good");
-    h.push(&t);
+    h.push(&mut t);
     h.undo(&mut t);
     assert_eq!(t.rope.to_string(), "echo");
 }
