@@ -443,10 +443,7 @@ impl TextArea {
             m.position -= r.len() as u32;
             self.inlays.insert(m);
         }
-        for d in self.tokens.iter_mut() {
-            d.range.0 = manip(d.range.0 as _) as _;
-            d.range.1 = manip(d.range.0 as _) as _;
-        }
+        self.tokens.iter_mut().for_each(|d| d.manip(manip));
         Ok(())
     }
 
@@ -476,10 +473,7 @@ impl TextArea {
             m.position += with.chars().count() as u32;
             self.inlays.insert(m);
         }
-        for d in self.tokens.iter_mut() {
-            d.range.0 = manip(d.range.0 as _) as _;
-            d.range.1 = manip(d.range.1 as _) as _;
-        }
+        self.tokens.iter_mut().for_each(|d| d.manip(manip));
         Ok(())
     }
 

@@ -107,6 +107,10 @@ pub struct TokenD {
     pub modifiers: u32,
 }
 impl TokenD {
+    pub fn manip(&mut self, mut f: impl FnMut(usize) -> usize) {
+        self.range.0 = f(self.range.0 as _) as _;
+        self.range.1 = f(self.range.1 as _) as _;
+    }
     pub fn style(self, leg: &SemanticTokensLegend) -> Style {
         let mut sty = Style::new(crate::FG, crate::BG);
         let Some(tty) = leg.token_types.get(self.ty as usize) else {
