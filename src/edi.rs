@@ -32,7 +32,7 @@ use crate::lsp::{
     self, Anonymize, Client, Map_, PathURI, RedrawAfter, RequestError, Rq,
 };
 use crate::meta::META;
-use crate::sym::{Symbols, SymbolsType};
+use crate::sym::{Symbols, SymbolsList, SymbolsType};
 use crate::text::cursor::{Ronge, ceach};
 use crate::text::hist::{ClickHistory, Hist};
 use crate::text::{
@@ -431,7 +431,7 @@ impl Editor {
             x.poll(
                 |x, (_, p)| {
                     let Some(p) = p else { unreachable!() };
-                    x.ok().map(|r| sym::Symbols {
+                    x.ok().flatten().map(|r| sym::Symbols {
                         r,
                         selection: 0,
                         vo: 0,
@@ -899,10 +899,19 @@ impl Editor {
             }
             Some(Do::Symbols) =>
                 if let Some(lsp) = lsp!(self) {
-                    let mut q =
-                        Rq::new(lsp.runtime.spawn(window.redraw_after(
-                            lsp.symbols("".into()).map(|x| x.anonymize()),
-                        )));
+                    let mut q = Rq::new(
+                        lsp.runtime.spawn(
+                            window.redraw_after(
+                                lsp.workspace_symbols("".into())
+                                    .map(|x| x.anonymize())
+                                    .map(|x| {
+                                        x.map(|x| {
+                                            x.map(SymbolsList::Workspace)
+                                        })
+                                    }),
+                            ),
+                        ),
+                    );
                     q.result =
                         Some(Symbols::new(self.tree.as_deref().unwrap()));
                     self.state = State::Symbols(q);
@@ -920,7 +929,10 @@ impl Editor {
                     *request = Some((
                         DropH::new(lsp.runtime.spawn(
                             window.redraw_after(async move {
-                                lsp.document_symbols(&p).await.anonymize()
+                                lsp.document_symbols(&p)
+                                    .await
+                                    .anonymize()
+                                    .map(|x| x.map(SymbolsList::Document))
                             }),
                         )),
                         (),
@@ -947,10 +959,10 @@ impl Editor {
                                 DropH::new(
                                     lsp.runtime.spawn(
                                         window.redraw_after(
-                                            lsp.symbols(
+                                            lsp.workspace_symbols(
                                                 x.tedit.rope.to_string(),
                                             )
-                                            .map(|x| x.anonymize()),
+                                            .map(|x| x.anonymize().map(|x| x.map(SymbolsList::Workspace))),
                                         ),
                                     ),
                                 ),
@@ -986,22 +998,28 @@ impl Editor {
                 else {
                     unreachable!()
                 };
-                let x = x.sel().clone();
+                let x = x.sel();
                 if let Err(e) = try bikeshed anyhow::Result<()> {
-                    let f = x
-                        .location
-                        .uri
-                        .to_file_path()
-                        .map_err(|()| anyhow::anyhow!("dammit"))?
-                        .canonicalize()?;
-                    self.state = State::Default;
-                    self.requests.complete = CompletionState::None;
-                    if Some(&f) != self.origin.as_ref() {
-                        self.open(&f, window.clone())?;
-                    }
+                    let r = match x.at {
+                        sym::GoTo::Loc(x) => {
+                            let x = x.clone();
+                            let f = x
+                                .uri
+                                .to_file_path()
+                                .map_err(|()| anyhow::anyhow!("dammit"))?
+                                .canonicalize()?;
+                            self.state = State::Default;
+                            self.requests.complete = CompletionState::None;
+                            if Some(&f) != self.origin.as_ref() {
+                                self.open(&f, window.clone())?;
+                            }
+                            x.range
+                        }
+                        sym::GoTo::R(range) => range,
+                    };
                     let p = self
                         .text
-                        .l_position(x.location.range.start)
+                        .l_position(r.start)
                         .ok_or(anyhow::anyhow!("rah"))?;
                     if p != 0 {
                         self.text.cursor.just(p, &self.text.rope);

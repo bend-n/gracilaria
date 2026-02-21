@@ -1,16 +1,14 @@
-use std::cmp::Reverse;
+use std::borrow::Cow;
 use std::iter::repeat;
-use std::mem::MaybeUninit;
-use std::sync::LazyLock;
 
 use Default::default;
 use dsb::Cell;
 use dsb::cell::Style;
-use itertools::Itertools;
 use lsp_types::*;
 use serde::{Deserialize, Serialize};
 
 use crate::FG;
+use crate::menu::{Key, back, filter, next, score};
 use crate::text::{col, color_, set_a};
 
 #[derive(Serialize, Deserialize)]
@@ -29,29 +27,6 @@ impl std::fmt::Debug for Complete {
             .finish()
     }
 }
-#[lower::apply(saturating)]
-pub fn next<const N: usize>(n: usize, sel: &mut usize, vo: &mut usize) {
-    *sel += 1;
-    if *sel == n {
-        *vo = 0;
-        *sel = 0;
-    }
-    if *sel >= *vo + N {
-        *vo += 1;
-    }
-}
-#[lower::apply(saturating)]
-pub fn back<const N: usize>(n: usize, sel: &mut usize, vo: &mut usize) {
-    if *sel == 0 {
-        *vo = n - N;
-        *sel = n - 1;
-    } else {
-        *sel -= 1;
-        if *sel < *vo {
-            *vo -= 1;
-        }
-    }
-}
 impl Complete {
     pub fn next(&mut self, f: &str) {
         let n = filter_c(self, f).count();
@@ -67,71 +42,17 @@ impl Complete {
         back::<N>(n, &mut self.selection, &mut self.vo);
     }
 }
-
-pub fn score<'a, T: 'a>(
-    x: impl Iterator<Item = &'a T>,
-    f: impl Fn(&'a T) -> &'a str,
-    filter: &'_ str,
-) -> Vec<(u32, &'a T, Vec<u32>)> {
-    #[thread_local]
-    static mut MATCHER: LazyLock<nucleo::Matcher> =
-        LazyLock::new(|| nucleo::Matcher::new(nucleo::Config::DEFAULT));
-
-    let p = nucleo::pattern::Pattern::parse(
-        filter,
-        nucleo::pattern::CaseMatching::Smart,
-        nucleo::pattern::Normalization::Smart,
-    );
-    let mut v = x
-        .map(move |y| {
-            let mut utf32 = vec![];
-            // std::env::args().nth(1).unwrap().as_bytes().fi .fold(0, |acc, x| acc * 10 + x - b'0');
-            let hay = f(y);
-            let mut indices = vec![];
-            let score = p
-                .indices(
-                    nucleo::Utf32Str::new(hay, &mut utf32),
-                    unsafe { &mut *MATCHER },
-                    &mut indices,
-                )
-                .unwrap_or(0);
-            indices.sort_unstable();
-            indices.dedup();
-
-            (score, y, indices)
-        })
-        .collect::<Vec<_>>();
-    // std::fs::write(
-    //     "com",
-    //     v.iter().map(|x| x.1.label.clone() + "\n").collect::<String>(),
-    // );
-    v.sort_by_key(|x| Reverse(x.0));
-    v
+impl<'a> Key<'a> for &'a CompletionItem {
+    fn key(&self) -> impl Into<Cow<'a, str>> {
+        self.filter_text.as_deref().unwrap_or(&self.label)
+    }
 }
 
-fn com_as_str(y: &CompletionItem) -> &str {
-    y.filter_text.as_deref().unwrap_or(&y.label)
-}
 fn score_c<'a>(
     x: impl Iterator<Item = &'a CompletionItem>,
     filter: &'_ str,
 ) -> Vec<(u32, &'a CompletionItem, Vec<u32>)> {
-    score(x, com_as_str, filter)
-}
-
-pub fn filter<'a, T: 'a>(
-    i: impl Iterator<Item = &'a T>,
-    f: impl Fn(&'a T) -> &'a str,
-    filter: &'_ str,
-) -> impl Iterator<Item = &'a T> {
-    i.filter(move |y| {
-        filter.is_empty()
-            || f(y).chars().any(|x| filter.chars().contains(&x))
-        // .collect::<HashSet<_>>()
-        // .intersection(&filter.chars().collect())
-        // .count()
-        // > 0
-    })
+    score(x, filter)
 }
 
 fn filter_c<'a>(
@@ -143,7 +64,7 @@ fn filter_c<'a>(
         CompletionResponse::Array(x) => x,
         CompletionResponse::List(x) => &x.items,
     };
-    filter(y.iter(), com_as_str, f)
+    filter(y.iter(), f)
 }
 
 pub fn s(completion: &Complete, c: usize, f: &str) -> Vec<Cell> {
@@ -338,49 +259,4 @@ fn t() {
     };
     // println!("{:?}", now.elapsed());
     x.as_ref().save("x");
-}
-
-pub struct Dq<T, const N: usize> {
-    arr: [MaybeUninit<T>; N],
-    front: u8,
-    len: u8,
-}
-
-impl<T: Copy, const N: usize> Dq<T, N> {
-    pub fn new(first: T) -> Self {
-        let mut dq = Dq {
-            arr: [const { MaybeUninit::uninit() }; N],
-            front: 0,
-            len: 1,
-        };
-        dq.arr[0].write(first);
-        dq
-    }
-
-    pub fn first(&mut self) -> T {
-        unsafe {
-            self.arr.get_unchecked(self.front as usize).assume_init()
-        }
-    }
-
-    pub fn push_front(&mut self, elem: T) {
-        // sub 1
-        match self.front {
-            0 => self.front = N as u8 - 1,
-            n => self.front = n - 1,
-        }
-        self.len += 1;
-        unsafe {
-            self.arr.get_unchecked_mut(self.front as usize).write(elem)
-        };
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = T> + '_ {
-        self.arr
-            .iter()
-            .cycle()
-            .skip(self.front as _)
-            .take((self.len as usize).min(N))
-            .map(|x| unsafe { x.assume_init() })
-    }
 }

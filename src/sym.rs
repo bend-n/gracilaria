@@ -1,23 +1,79 @@
+use std::collections::VecDeque;
 use std::iter::{chain, repeat};
 use std::path::{Path, PathBuf};
 
 use Default::default;
 use dsb::Cell;
 use dsb::cell::Style;
+use itern::Iter3;
 use lsp_types::*;
 
 use crate::FG;
-use crate::com::{back, filter, next, score};
+use crate::menu::{Key, back, filter, next, score};
 use crate::text::{TextArea, col, color_, set_a};
 
 #[derive(Debug, Default)]
 pub struct Symbols {
-    pub r: Vec<SymbolInformation>,
+    pub r: SymbolsList,
     pub tree: Vec<SymbolInformation>,
     pub tedit: TextArea,
     pub selection: usize,
     pub vo: usize,
     pub ty: SymbolsType,
+}
+#[derive(Debug, Eq, PartialEq, Clone, Copy)]
+pub enum GoTo<'a> {
+    Loc(&'a Location),
+    R(Range),
+}
+#[derive(Debug, Eq, PartialEq, Clone, Copy)]
+pub struct UsedSI<'a> {
+    pub name: &'a str,
+    pub kind: SymbolKind,
+    pub tags: Option<&'a [SymbolTag]>,
+    pub at: GoTo<'a>,
+    pub right: Option<&'a str>,
+}
+impl<'a> From<&'a SymbolInformation> for UsedSI<'a> {
+    fn from(
+        SymbolInformation {
+            name,
+            kind,
+            tags,
+            location,
+            container_name,
+            ..
+        }: &'a SymbolInformation,
+    ) -> Self {
+        UsedSI {
+            name: &name,
+            kind: *kind,
+            tags: tags.as_deref(),
+            at: GoTo::Loc(location),
+            right: container_name.as_deref(),
+        }
+    }
+}
+impl<'a> From<&'a DocumentSymbol> for UsedSI<'a> {
+    fn from(
+        DocumentSymbol {
+            name,
+            detail,
+            kind,
+            tags,
+            range,
+            selection_range: _,
+            ..
+        }: &'a DocumentSymbol,
+    ) -> Self {
+        UsedSI {
+            name: &name,
+            kind: *kind,
+            tags: tags.as_deref(),
+            at: GoTo::R(*range),
+            right: detail.as_deref(),
+        }
+    }
 }
 
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq)]
@@ -25,6 +81,16 @@ pub enum SymbolsType {
     Document,
     #[default]
     Workspace,
+}
+#[derive(Debug)]
+pub enum SymbolsList {
+    Document(DocumentSymbolResponse),
+    Workspace(WorkspaceSymbolResponse),
+}
+impl Default for SymbolsList {
+    fn default() -> Self {
+        Self::Workspace(WorkspaceSymbolResponse::Flat(vec![]))
+    }
 }
 const N: usize = 30;
 impl Symbols {
@@ -58,7 +124,7 @@ impl Symbols {
         back::<N>(n, &mut self.selection, &mut self.vo);
     }
 
-    pub fn sel(&self) -> &SymbolInformation {
+    pub fn sel(&self) -> UsedSI<'_> {
         let f = self.f();
         score_c(filter_c(self, &f), &f)[self.selection].1
     }
@@ -123,39 +189,50 @@ impl Symbols {
         out
     }
 }
+
+impl<'a> Key<'a> for UsedSI<'a> {
+    fn key(&self) -> impl Into<std::borrow::Cow<'a, str>> {
+        self.name
+    }
+}
 fn score_c<'a>(
-    x: impl Iterator<Item = &'a SymbolInformation>,
+    x: impl Iterator<Item = UsedSI<'a>>,
     filter: &'_ str,
-) -> Vec<(u32, &'a SymbolInformation, Vec<u32>)> {
-    score(x, sym_as_str, filter)
+) -> Vec<(u32, UsedSI<'a>, Vec<u32>)> {
+    score(x, filter)
 }
 
 fn filter_c<'a>(
-    completion: &'a Symbols,
+    syms: &'a Symbols,
     f: &'_ str,
-) -> impl Iterator<Item = &'a SymbolInformation> {
-    let x = &completion.r;
+) -> impl Iterator<Item = UsedSI<'a>> {
+    let x = &syms.r;
     filter(
-        chain(&completion.tree, x).skip(
-            if completion.ty == SymbolsType::Document {
-                completion.tree.len()
-            } else {
-                0
-            },
-        ),
-        sym_as_str,
+        match x {
+            SymbolsList::Document(DocumentSymbolResponse::Flat(x)) =>
+                Iter3::A(x.iter().map(UsedSI::from)),
+            SymbolsList::Document(DocumentSymbolResponse::Nested(x)) =>
+                Iter3::B(x.iter().flat_map(|x| gen move {
+                    let mut q = VecDeque::with_capacity(12);
+                    q.push_back(x);
+                    while let Some(x) = q.pop_front() {
+                        q.extend(x.children.iter().flatten());
+                        yield x.into();
+                    }
+                })),
+            SymbolsList::Workspace(WorkspaceSymbolResponse::Flat(x)) =>
+                Iter3::C(chain(&syms.tree, x.iter()).map(UsedSI::from)),
+            _ => unreachable!("please no"),
+        },
         f,
     )
-}
-fn sym_as_str(x: &SymbolInformation) -> &str {
-    &x.name
 }
 fn charc(c: &str) -> usize {
     c.chars().count()
 }
 #[implicit_fn::implicit_fn]
-fn r(
-    x: &SymbolInformation,
+fn r<'a>(
+    x: UsedSI<'a>,
     workspace: &Path,
     c: usize,
     selected: bool,
@@ -203,7 +280,7 @@ fn r(
     });
     let i = &mut b[2..];
     let qualifier = x
-        .container_name
+        .right
         .as_ref()
         .into_iter()
         // .flat_map(|x| &x.detail)
@@ -211,9 +288,14 @@ fn r(
     let left = i.len() as i32
         - (charc(&x.name) as i32 + qualifier.clone().count() as i32)
         - 3;
-    let loc = x.location.uri.to_file_path().unwrap();
+    let loc = match x.at {
+        GoTo::Loc(x) => Some(x.uri.to_file_path().unwrap()),
+        GoTo::R(_) => None,
+    };
     let locs = if sty == SymbolsType::Workspace {
-        loc.strip_prefix(workspace).unwrap_or(&loc).to_str().unwrap_or("")
+        loc.as_ref()
+            .and_then(|x| x.strip_prefix(workspace).unwrap_or(&x).to_str())
+            .unwrap_or("")
     } else {
         ""
     };

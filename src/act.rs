@@ -21,7 +21,7 @@ pub struct CodeActions {
     pub vo: usize,
 }
 use crate::FG;
-use crate::com::{back, next};
+use crate::menu::{back, next};
 use crate::text::{col, set_a};
 
 const N: usize = 13;

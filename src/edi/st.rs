@@ -8,7 +8,7 @@ use winit::event::MouseButton;
 use winit::keyboard::{Key, NamedKey, SmolStr};
 
 use crate::lsp::{AQErr, Rq, RqS};
-use crate::sym::Symbols;
+use crate::sym::{Symbols, SymbolsList};
 use crate::text::TextArea;
 use crate::{
     BoolRequest, CLICKING, InputRequest, act, alt, ctrl, handle, shift,
@@ -75,7 +75,7 @@ Symbols(Rq { result: Some(_x), request: _rq }) => {
     K(Key::Named(Enter)) => _ [SymbolsSelect],
     K(Key::Named(Escape)) => Default,
 },
-Symbols(Rq::<Symbols, Vec<SymbolInformation>, (), AQErr> => _rq) => {
+Symbols(Rq::<Symbols, Option<SymbolsList>, (), AQErr> => _rq) => {
     K(Key::Character(x) if x == "d" && ctrl()) => _ [SwitchType], // crahs cond methinks
     K(Key::Named(Escape)) => Default,
     K(_) => _ [SymbolsHandleKey],

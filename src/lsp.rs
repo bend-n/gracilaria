@@ -425,7 +425,7 @@ impl Client {
         p: &Path,
     ) -> impl Future<
         Output = Result<
-            Vec<SymbolInformation>,
+            Option<DocumentSymbolResponse>,
             RequestError<lsp_request!("textDocument/documentSymbol")>,
         >,
     > {
@@ -438,26 +438,13 @@ impl Client {
         )
         .unwrap()
         .0
-        .map(|x| {
-            x.map(|x| {
-                x.map(|x| {
-                    // std::fs::write("syms", serde_json::to_string_pretty(&x).unwrap());
-                    match x {
-                        DocumentSymbolResponse::Flat(x) => x,
-                        DocumentSymbolResponse::Nested(_) =>
-                            unreachable!(),
-                    }
-                })
-                .unwrap_or_default()
-            })
-        })
     }
-    pub fn symbols(
+    pub fn workspace_symbols(
         &'static self,
         f: String,
     ) -> impl Future<
         Output = Result<
-            Vec<SymbolInformation>,
+            Option<WorkspaceSymbolResponse>,
             RequestError<lsp_request!("workspace/symbol")>,
         >,
     > {
@@ -471,19 +458,6 @@ impl Client {
         )
         .unwrap()
         .0
-        .map(|x| {
-            x.map(|x| {
-                x.map(|x| {
-                    // std::fs::write("syms", serde_json::to_string_pretty(&x).unwrap());
-                    match x {
-                        WorkspaceSymbolResponse::Flat(x) => x,
-                        WorkspaceSymbolResponse::Nested(_) =>
-                            unreachable!(),
-                    }
-                })
-                .unwrap_or_default()
-            })
-        })
     }
     pub fn matching_brace<'a>(
         &'static self,
@@ -694,6 +668,12 @@ pub fn run(
                     formatting: Some(DynamicRegistrationClientCapabilities { dynamic_registration: Some(false) }),
                     inlay_hint: Some(InlayHintClientCapabilities { dynamic_registration: None, resolve_support: Some(InlayHintResolveClientCapabilities {
                         properties: vec!["textEdits".into(), "tooltip".into(), "label.tooltip".into(), "label.command".into()], })
+                    }),
+                    document_symbol: Some(DocumentSymbolClientCapabilities {
+                        tag_support: Some(TagSupport { value_set: SymbolTag::ALL.to_vec() }),
+                        symbol_kind: Some(SymbolKindCapability { value_set: Some(SymbolKind::ALL.to_vec()) }),
+                        hierarchical_document_symbol_support: Some(true),
+                        ..default()
                     }),
                     definition: Some(GotoCapability { link_support: Some(true), ..default() }),
                     code_action: Some(
