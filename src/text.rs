@@ -16,7 +16,8 @@ use helix_core::Syntax;
 use helix_core::syntax::{HighlightEvent, Loader};
 use implicit_fn::implicit_fn;
 use lsp_types::{
-    Location, Position, SemanticTokensLegend, SnippetTextEdit, TextEdit,
+    DocumentSymbol, Location, Position, SemanticTokensLegend,
+    SnippetTextEdit, TextEdit,
 };
 use ropey::{Rope, RopeSlice};
 use serde::{Deserialize, Serialize};
@@ -177,6 +178,12 @@ pub trait RopeExt {
 
     /// or eof
     fn eol(&self, li: usize) -> usize;
+
+    fn l_pos_to_char(&self, p: Position) -> Option<(usize, usize)>;
+    fn l_position(&self, p: Position) -> Option<usize>;
+    fn to_l_position(&self, l: usize) -> Option<lsp_types::Position>;
+    fn l_range(&self, r: lsp_types::Range) -> Option<Range<usize>>;
+    fn to_l_range(&self, r: Range<usize>) -> Option<lsp_types::Range>;
 }
 impl RopeExt for Rope {
     fn position(
@@ -237,6 +244,33 @@ impl RopeExt for Rope {
             })
             .unwrap_or(usize::MAX)
             .min(self.len_chars())
+    }
+    fn l_pos_to_char(&self, p: Position) -> Option<(usize, usize)> {
+        self.l_position(p).and_then(|x| self.xy(x))
+    }
+
+    fn l_position(&self, p: Position) -> Option<usize> {
+        self.try_byte_to_char(
+            self.try_line_to_byte(p.line as _).ok()?
+                + (p.character as usize)
+                    .min(self.get_line(p.line as _)?.len_bytes()),
+        )
+        .ok()
+    }
+    fn to_l_position(&self, l: usize) -> Option<lsp_types::Position> {
+        Some(Position {
+            line: self.y(l)? as _,
+            character: self.x_bytes(l)? as _,
+        })
+    }
+    fn l_range(&self, r: lsp_types::Range) -> Option<Range<usize>> {
+        Some(self.l_position(r.start)?..self.l_position(r.end)?)
+    }
+    fn to_l_range(&self, r: Range<usize>) -> Option<lsp_types::Range> {
+        Some(lsp_types::Range {
+            start: self.to_l_position(r.start)?,
+            end: self.to_l_position(r.end)?,
+        })
     }
 }
 
@@ -739,33 +773,54 @@ impl TextArea {
         })
     }
 
-    pub fn l_pos_to_char(&self, p: Position) -> Option<(usize, usize)> {
-        self.l_position(p).and_then(|x| self.xy(x))
-    }
-
-    pub fn l_position(&self, p: Position) -> Option<usize> {
-        self.rope
-            .try_byte_to_char(
-                self.rope.try_line_to_byte(p.line as _).ok()?
-                    + (p.character as usize)
-                        .min(self.rope.get_line(p.line as _)?.len_bytes()),
-            )
-            .ok()
-    }
-    pub fn to_l_position(&self, l: usize) -> Option<lsp_types::Position> {
-        Some(Position {
-            line: self.y(l)? as _,
-            character: self.x_bytes(l)? as _,
-        })
-    }
-    pub fn l_range(&self, r: lsp_types::Range) -> Option<Range<usize>> {
-        Some(self.l_position(r.start)?..self.l_position(r.end)?)
-    }
-    pub fn to_l_range(&self, r: Range<usize>) -> Option<lsp_types::Range> {
-        Some(lsp_types::Range {
-            start: self.to_l_position(r.start)?,
-            end: self.to_l_position(r.end)?,
-        })
+    pub gen fn colored_lines(
+        &self,
+        slice: impl Iterator<Item = usize>,
+        leg: Option<&SemanticTokensLegend>,
+    ) -> (usize, usize, Cell) {
+        let mut tokens = self.tokens.iter();
+        let mut curr: Option<&TokenD> = tokens.next();
+        // for ln in self.rope.slice(slice) {}
+        // let s = self.rope.char_to_line(slice.start);
+        for l in slice {
+            // let c = 0;
+            // let l = self.char_to_line(c);
+            // let relative = c - self.rope.line_to_char(l);
+            for (e, i) in self.source_map(l).coerce().zip(0..) {
+                if e.c() == '\n' {
+                    continue;
+                }
+                let mut c = Cell::default();
+                c.letter = Some(e.c());
+                c.style = match e {
+                    Mapping::Char(_, _, abspos) if let Some(leg) = leg =>
+                        if let Some(curr) = curr
+                            && (curr.range.0..curr.range.1)
+                                .contains(&(abspos as _))
+                        {
+                            curr.style(leg)
+                        } else {
+                            while let Some(c) = curr
+                                && c.range.0 < abspos as _
+                            {
+                                curr = tokens.next();
+                            }
+                            if let Some(curr) = curr
+                                && (curr.range.0..curr.range.1)
+                                    .contains(&(abspos as _))
+                            {
+                                curr.style(leg)
+                            } else {
+                                Style::new(crate::FG, crate::BG)
+                            }
+                        },
+                    Mapping::Char(..) => Style::new(crate::FG, crate::BG),
+                    Mapping::Fake(Marking { .. }, ..) =>
+                        Style::new(const { color_("#536172") }, crate::BG),
+                };
+                yield (l, i, c)
+            }
+        }
     }
 
     #[implicit_fn]
@@ -983,6 +1038,46 @@ impl TextArea {
                 _ = self.insert_at(c + at, "// ");
             }
         }
+    }
+    pub fn sticky_context<'local, 'further>(
+        &'local self,
+        syms: &'further [DocumentSymbol],
+        at: usize,
+    ) -> Option<(
+        &'further DocumentSymbol,
+        std::ops::Range<usize>,
+        Vec<&'further DocumentSymbol>,
+    )> {
+        /// for the shortest range
+        fn search<'local, 'further>(
+            x: &'further DocumentSymbol,
+            best: &'local mut Option<(
+                &'further DocumentSymbol,
+                std::ops::Range<usize>,
+                Vec<&'further DocumentSymbol>,
+            )>,
+            look: usize,
+            r: &'_ Rope,
+            mut path: Vec<&'further DocumentSymbol>,
+        ) {
+            path.push(x);
+            if let Some(y) = r.l_range(x.range)
+                && y.contains(&look)
+            {
+                if best.as_ref().is_none_or(|(_, r, _)| r.len() > y.len())
+                {
+                    *best = Some((x, y, path.clone()))
+                }
+                for lem in x.children.as_ref().coerce() {
+                    search(lem, best, look, r, path.clone())
+                }
+            }
+        }
+        let mut best = None;
+        for sym in syms {
+            search(sym, &mut best, at, &self.rope, vec![]);
+        }
+        best
     }
 }
 

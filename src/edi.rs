@@ -113,6 +113,13 @@ pub struct Requests {
         RequestError<lsp_request!("textDocument/definition")>,
     >,
     #[serde(skip)]
+    pub document_symbols: Rq<
+        Option<Vec<DocumentSymbol>>,
+        Option<DocumentSymbolResponse>,
+        (),
+        RequestError<lsp_request!("textDocument/documentSymbol")>,
+    >,
+    #[serde(skip)]
     pub git_diff: Rq<imara_diff::Diff, imara_diff::Diff, (), ()>,
 }
 #[derive(
@@ -195,7 +202,12 @@ macro_rules! change {
                     }
                     .ok_or(())
                 });
+            let origin = origin.to_owned();
             $self.requests.git_diff.request(t);
+            if $self.requests.document_symbols.result != Some(None) {
+                let h = x.runtime.spawn(async move { x.document_symbols(&origin).await });
+                $self.requests.document_symbols.request(h);
+            }
         });
     };
 }
@@ -493,6 +505,15 @@ impl Editor {
         );
         self.requests.hovering.poll(|x, _| x.ok().flatten(), &r);
         self.requests.git_diff.poll(|x, _| x.ok(), &r);
+        self.requests.document_symbols.poll(
+            |x, _| {
+                x.ok().flatten().map(|x| match x {
+                    DocumentSymbolResponse::Flat(_) => None,
+                    DocumentSymbolResponse::Nested(x) => Some(x),
+                })
+            },
+            &r,
+        );
     }
     #[implicit_fn]
     pub fn cursor_moved(

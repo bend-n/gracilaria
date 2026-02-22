@@ -32,7 +32,7 @@ use tokio_util::task::AbortOnDropHandle;
 use winit::window::Window;
 
 use crate::text::cursor::ceach;
-use crate::text::{SortTedits, TextArea};
+use crate::text::{RopeExt, SortTedits, TextArea};
 #[derive(Debug)]
 pub struct Client {
     pub runtime: tokio::runtime::Runtime,
@@ -478,6 +478,10 @@ impl Client {
         ) {
             t.cursor.first_mut().position = t.l_position(x).unwrap();
         }
+    }
+
+    pub fn legend(&self) -> Option<&SemanticTokensLegend> {
+        match &self.initialized{Some(lsp_types::InitializeResult {capabilities: ServerCapabilities {semantic_tokens_provider:Some(SemanticTokensServerCapabilities::SemanticTokensOptions(SemanticTokensOptions{legend,..})),..}, ..})=> {Some(legend)},_ => None,}
     }
     pub fn inlay(
         &'static self,

@@ -1,4 +1,4 @@
-use std::iter::once;
+use std::iter::{chain, once, repeat_n};
 use std::os::fd::AsFd;
 use std::sync::{Arc, LazyLock};
 use std::time::Instant;
@@ -19,7 +19,7 @@ use winit::window::Window;
 use crate::edi::st::State;
 use crate::edi::{Editor, lsp_m};
 use crate::lsp::Rq;
-use crate::text::{CoerceOption, RopeExt, col};
+use crate::text::{CoerceOption, RopeExt, col, color_};
 use crate::{
     BG, BORDER, CompletionAction, CompletionState, FG, FONT, com, filter,
     lsp, sig,
@@ -143,7 +143,6 @@ pub fn render(
                                 diag.iter().flat_map(|diag| {
                                     let sev =  diag.severity.unwrap_or(DiagnosticSeverity::ERROR);
                                     let sev_ = match sev {
-                                    
                                         DiagnosticSeverity::ERROR => EType::Error,
                                         DiagnosticSeverity::WARNING => EType::Warning,
                                         DiagnosticSeverity::HINT => EType::Hint,
@@ -357,7 +356,7 @@ pub fn render(
             );
             let is_above = position.1.checked_sub(h).is_some();
             let top = position.1.checked_sub(h).unwrap_or(
-                ((((_y + 1) as f32) * (fh + ls * fac)).round() + toy)
+                ((((_y/*+ 1*/) as f32) * (fh + ls * fac)).round() + toy)
                     as usize,
             );
             let (_, y) = dsb::fit(
@@ -395,6 +394,98 @@ pub fn render(
             };
             Ok((is_above, left, top, w, h))
         };
+        // dbg!(&ed.requests.document_symbols);
+
+        if let Some(Some(x)) = &ed.requests.document_symbols.result
+            && let Some((_, y, z)) = text.sticky_context(
+                &x,
+                text.line_to_char(text.vo.saturating_sub(1)),
+            )
+            && let Ok(l) = text.try_line_to_char(text.vo + 4)
+            && y.contains(&l)
+        // && text.cursor.iter().any(|x| y.contains(&*x))
+        {
+            let mut cells = vec![];
+            for e in z {
+                let p = text.l_position(e.selection_range.start).unwrap();
+                if text.char_to_line(text.l_position(e.range.end).unwrap())
+                    == text.vo
+                {
+                    continue;
+                }
+
+                let r = if let Some(r) = e.sticky_range {
+                    let r = text.l_range(r).unwrap();
+                    text.char_to_line(r.start)..=text.char_to_line(r.end)
+                } else {
+                    let x = text.char_to_line(p);
+                    x..=x
+                };
+
+                let d = Cell {
+                    style: Style {
+                        fg: crate::FG,
+                        bg: col!("#191d27"),
+                        ..Default::default()
+                    },
+                    letter: None,
+                };
+
+                // let mut cells =
+                // chain([Cell::default()], x.to_string().chars().map(Cell::basic)).chain([Cell::default()]).collect();
+
+                for (x, rel, mut cell) in text
+                    .colored_lines(r, lsp_m!(ed).and_then(|x| x.legend()))
+                {
+                    if rel == 0 {
+                        let rem = cells.len() % c;
+                        if rem != 0 {
+                            cells.extend(repeat_n(d, c - rem));
+                        }
+                        cells.extend(
+                            chain(
+                                [d],
+                                x.to_string().chars().map(|x| {
+                                    Style::new(
+                                        [67, 76, 87],
+                                        col!("#191d27"),
+                                    )
+                                    .basic(x)
+                                }),
+                            )
+                            .chain([d]),
+                        );
+                    }
+                    cell.style.bg = col!("#191d27");
+                    cells.push(cell);
+                }
+
+                let rem = cells.len() % c;
+                if rem != 0 {
+                    cells.extend(repeat_n(d, c - rem));
+                }
+            }
+
+            if let Ok((.., w, h)) = place_around(
+                (0, 0),
+                i.copy(),
+                &cells,
+                c,
+                14.0,
+                -200.,
+                0.,
+                0.,
+                0.,
+            ) {
+                i.filled_box(
+                    (w as u32, 0),
+                    i.width() - w as u32,
+                    h as _,
+                    color_("#191d27"),
+                );
+            }
+            // dbg    !(x);
+        }
         let mut pass = true;
         if let Some((lsp, p)) = lsp_m!(ed + p)
             && let Some(diag) = lsp.diagnostics.get(
@@ -627,6 +718,7 @@ pub fn render(
             }
             _ => None,
         };
+
         'out: {
             if let Rq { result: Some((ref x, vo, ref mut max)), .. } =
                 ed.requests.sig_help

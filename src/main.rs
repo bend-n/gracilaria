@@ -32,7 +32,6 @@
     coroutine_trait,
     cell_get_cloned,
     import_trait_associated_functions,
-    if_let_guard,
     deref_patterns,
     generic_const_exprs,
     const_trait_impl,

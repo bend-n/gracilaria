@@ -2,7 +2,7 @@ use Default::default;
 use lsp_types::{InlayHint, InlayHintLabel, Location};
 use serde_derive::{Deserialize, Serialize};
 
-use crate::text::TextArea;
+use crate::text::{RopeExt, TextArea};
 
 pub type Inlay = Marking<Box<[(char, Option<Location>)]>>;
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
