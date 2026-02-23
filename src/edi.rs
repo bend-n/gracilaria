@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::fs::OpenOptions;
 use std::mem::take;
 use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
@@ -1647,20 +1648,25 @@ impl Editor {
         ControlFlow::Continue(())
     }
     pub fn apply_wsedit(&mut self, x: WorkspaceEdit, f: &Path) {
-        let mut f_ = |edits: &mut [SnippetTextEdit]| {
-            edits.sort_tedits();
-            // let mut first = false;
-            for edit in edits {
-                self.text.apply_snippet_tedit(edit).unwrap();
-            }
-        };
         let mut f2 =
-            |TextDocumentEdit { edits, text_document, .. }| {
+            |TextDocumentEdit { mut edits, text_document, .. }| {
+                edits.sort_tedits();
                 if text_document.uri != f.tid().uri {
-                    log::error!("didnt apply to {}", text_document.uri);
-                    return;
+                    let mut f = OpenOptions::new()
+                        .write(true)
+                        .read(true)
+                        .open(text_document.uri.path())
+                        .unwrap();
+                    let mut r = Rope::from_reader(&mut f).unwrap();
+                    for edit in &edits {
+                        TextArea::apply_snippet_tedit_raw(edit, &mut r);
+                    }
+                    r.write_to(f).unwrap();
+                } else {
+                    for edit in &edits {
+                        self.text.apply_snippet_tedit(edit).unwrap();
+                    }
                 }
-                f_(&mut { edits });
             };
         match x {
             WorkspaceEdit {

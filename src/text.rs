@@ -478,6 +478,28 @@ impl TextArea {
         }
         Ok(())
     }
+    pub fn apply_snippet_tedit_raw(
+        SnippetTextEdit { text_edit: x, insert_text_format, .. }: &SnippetTextEdit,
+        text: &'_ mut Rope,
+    ) -> Option<()> {
+        match insert_text_format {
+            Some(lsp_types::InsertTextFormat::SNIPPET) => {
+                let begin = text.l_position(x.range.start)?;
+                let end = text.l_position(x.range.end)?;
+                text.try_remove(begin..end).ok()?;
+                let (_, tex) =
+                    crate::sni::Snippet::parse(&x.new_text, begin)?;
+                text.try_insert(begin, &tex).ok()?;
+            }
+            _ => {
+                let begin = text.l_position(x.range.start)?;
+                let end = text.l_position(x.range.end)?;
+                text.try_remove(begin..end).ok()?;
+                text.try_insert(begin, &x.new_text).ok()?;
+            }
+        }
+        Some(())
+    }
     pub fn apply_snippet_tedit(
         &mut self,
         SnippetTextEdit { text_edit, insert_text_format, .. }: &SnippetTextEdit,
@@ -491,6 +513,7 @@ impl TextArea {
         }
         Ok(())
     }
+
     pub fn apply_snippet(&mut self, x: &TextEdit) -> anyhow::Result<()> {
         let begin = self
             .l_position(x.range.start)
