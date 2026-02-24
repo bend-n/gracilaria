@@ -1005,6 +1005,13 @@ impl Editor {
                     unreachable!()
                 };
                 x.next();
+                match x.sel().at {
+                    sym::GoTo::R(x) => {
+                        let x = self.text.l_range(x).unwrap();
+                        self.text.vo = self.text.char_to_line(x.start);
+                    }
+                    _ => {}
+                }
             }
             Some(Do::SymbolsSelectPrev) => {
                 let State::Symbols(Rq { result: Some(x), .. }) =
@@ -1013,6 +1020,13 @@ impl Editor {
                     unreachable!()
                 };
                 x.back();
+                match x.sel().at {
+                    sym::GoTo::R(x) => {
+                        let x = self.text.l_range(x).unwrap();
+                        self.text.vo = self.text.char_to_line(x.start);
+                    }
+                    _ => {}
+                }
             }
             Some(Do::SymbolsSelect) => {
                 let State::Symbols(Rq { result: Some(x), .. }) =
