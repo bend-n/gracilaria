@@ -97,6 +97,16 @@ impl Bar {
                         }
                     });
             }
+            State::Command(x) => {
+                chain(['>'], x.tedit.rope.chars()).zip(row).for_each(
+                    |(x, y)| {
+                        *y = Cell {
+                            letter: Some(x),
+                            style: Style { flags: 0, ..y.style },
+                        }
+                    },
+                );
+            }
             State::Symbols(Rq {
                 result: Some(Symbols { tedit, .. }),
                 request,

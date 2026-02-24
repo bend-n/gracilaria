@@ -8,12 +8,16 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 use Default::default;
+use anyhow::anyhow;
 use implicit_fn::implicit_fn;
 use lsp_server::{Connection, Request as LRq, ResponseError};
 use lsp_types::request::*;
 use lsp_types::*;
 use regex::Regex;
 use ropey::Rope;
+use rust_analyzer::lsp::ext::{
+    MoveItemDirection, MoveItemParams, ParentModule, ReloadWorkspace,
+};
 use rust_fsm::StateMachine;
 use serde_derive::{Deserialize, Serialize};
 use tokio::sync::oneshot::Sender;
@@ -27,7 +31,8 @@ pub mod st;
 use st::*;
 
 use crate::bar::Bar;
-use crate::com::Complete;
+use crate::commands::Cmd;
+use crate::complete::Complete;
 use crate::hov::{self, Hovr};
 use crate::lsp::{
     self, Anonymize, Client, Map_, PathURI, RedrawAfter, RequestError, Rq,
@@ -799,23 +804,8 @@ impl Editor {
                 self.hist.lc = text.cursor.clone();
             }
             Some(Do::GoToDefinition) => {
-                if let Some(LocationLink {
-                    ref target_uri,
-                    target_range,
-                    ..
-                }) = self.requests.def.result
-                {
-                    self.open(
-                        &target_uri.to_file_path().unwrap(),
-                        w.clone(),
-                    )
-                    .unwrap();
-
-                    self.text.cursor.just(
-                        self.text.l_position(target_range.start).unwrap(),
-                        &self.text.rope,
-                    );
-                    self.text.scroll_to_cursor();
+                if let Some(x) = self.requests.def.result.clone() {
+                    self.open_loclink(&x, w.clone());
                 }
             }
             Some(Do::InsertCursorAtMouse) => {
@@ -831,6 +821,7 @@ impl Editor {
             _ => unreachable!(),
         }
     }
+
     pub fn nav_back(&mut self) {
         self.chist.back().map(|x| {
             self.text.cursor.just(
@@ -960,6 +951,73 @@ impl Editor {
                         (),
                     ));
                 },
+            Some(Do::ProcessCommand(x)) => 'out: {
+                _ = try bikeshed anyhow::Result<()> {
+                    let z = x.sel();
+                    if z.needs_lsp()
+                        && let Some((l, o)) = lsp!(self + p)
+                    {
+                        match z {
+                            Cmd::RAMoveIU | Cmd::RAMoveID => {
+                                let r = self
+                                    .text
+                                    .to_l_position(
+                                        *self.text.cursor.first(),
+                                    )
+                                    .unwrap();
+                                let mut x = l.runtime.block_on(l.request::<rust_analyzer::lsp::ext::MoveItem>(&MoveItemParams {
+                                direction: if let Cmd::RAMoveIU = z { MoveItemDirection::Up } else { MoveItemDirection::Down },
+                                text_document: o.tid(),
+                                range: Range { start : r, end : r},
+                            })?.0)?;
+
+                                x.sort_tedits();
+                                for t in x {
+                                    self.text.apply_snippet_tedit(&t)?;
+                                }
+                            }
+                            Cmd::RARestart => {
+                                _ = l.request::<ReloadWorkspace>(&())?.0;
+                            }
+                            Cmd::RAParent => {
+                                let Some(GotoDefinitionResponse::Link(
+                                    [ref x],
+                                )) = l.runtime.block_on(
+                                    l.request::<ParentModule>(
+                                        &TextDocumentPositionParams {
+                                            text_document: o.tid(),
+                                            position: self
+                                                .text
+                                                .to_l_position(
+                                                    *self
+                                                        .text
+                                                        .cursor
+                                                        .first(),
+                                                )
+                                                .unwrap(),
+                                        },
+                                    )?
+                                    .0,
+                                )?
+                                else {
+                                    self.bar.last_action =
+                                        "no such parent".into();
+                                    break 'out;
+                                };
+                                self.open_loclink(x, window.clone());
+                            }
+                        }
+                        break 'out;
+                    }
+
+                    // match x.sel() {
+                    //     Cmd::RAMoveID => {}
+                    //     Cmd::RAMoveIU => todo!(),
+                    //     Cmd::RARestart => todo!(),
+                    //     Cmd::RAParent => todo!(),
+                    // }
+                };
+            }
             Some(Do::SymbolsHandleKey) => {
                 if let Some(lsp) = lsp!(self) {
                     let State::Symbols(Rq { result: Some(x), request }) =
@@ -1666,16 +1724,24 @@ impl Editor {
             |TextDocumentEdit { mut edits, text_document, .. }| {
                 edits.sort_tedits();
                 if text_document.uri != f.tid().uri {
-                    let mut f = OpenOptions::new()
-                        .write(true)
+                    let f = OpenOptions::new()
                         .read(true)
+                        .create(true)
+                        .write(true)
                         .open(text_document.uri.path())
                         .unwrap();
-                    let mut r = Rope::from_reader(&mut f).unwrap();
+                    let mut r = Rope::from_reader(f).unwrap();
                     for edit in &edits {
                         TextArea::apply_snippet_tedit_raw(edit, &mut r);
                     }
-                    r.write_to(f).unwrap();
+                    r.write_to(
+                        OpenOptions::new()
+                            .write(true)
+                            .truncate(true)
+                            .open(text_document.uri.path())
+                            .unwrap(),
+                    )
+                    .unwrap();
                 } else {
                     for edit in &edits {
                         self.text.apply_snippet_tedit(edit).unwrap();
@@ -1835,6 +1901,20 @@ impl Editor {
             std::fs::write(p.join(STORE), &b)?;
         }
         Ok(())
+    }
+
+    fn open_loclink(
+        &mut self,
+        LocationLink { target_uri, target_range, .. }: &LocationLink,
+        w: Arc<Window>,
+    ) {
+        self.open(&target_uri.to_file_path().unwrap(), w.clone()).unwrap();
+
+        self.text.cursor.just(
+            self.text.l_position(target_range.start).unwrap(),
+            &self.text.rope,
+        );
+        self.text.scroll_to_cursor();
     }
 }
 use NamedKey::*;

@@ -7,6 +7,8 @@ use regex::Regex;
 use winit::event::MouseButton;
 use winit::keyboard::{Key, NamedKey, SmolStr};
 
+use crate::commands::Commands;
+use crate::edi::handle2;
 use crate::lsp::{AQErr, Rq, RqS};
 use crate::sym::{Symbols, SymbolsList};
 use crate::text::TextArea;
@@ -48,6 +50,7 @@ Default => {
     K(Key::Character(x) if x == "0" && ctrl()) => _ [MatchingBrace],
     K(Key::Character(x) if x == "`" && ctrl()) => _ [SpawnTerminal],
     K(Key::Character(y) if y == "/" && ctrl()) => Default [Comment(State => State::Default)],
+    K(Key::Character(x) if x == "p" && ctrl()) => Command(Commands => Commands::default()),
     K(Key::Named(F1)) => Procure((default(), InputRequest::RenameSymbol)),
     K(Key::Named(k @ (ArrowUp | ArrowDown)) if alt()) => _ [InsertCursor(Direction => {
         if k == ArrowUp {Direction::Above} else { Direction::Below }
@@ -68,6 +71,13 @@ Default => {
     K(_) => _ [Edit],
     M(_) => _,
 },
+Command(_) => K(Key::Named(Escape)) => Default,
+Command(t) => K(Key::Named(Enter)) => Default [ProcessCommand(Commands => t)],
+Command(t) => K(Key::Named(Tab) if shift()) => Command(t.back()),
+Command(t) => K(Key::Named(Tab)) => Command(t.next()),
+Command(mut t) => K(k) => Command({ handle2(&k, &mut t.tedit, None); t }),
+Command(t) => C(_) => _,
+Command(t) => K(_) => _,
 Symbols(Rq { result: Some(_x), request: _rq }) => {
     K(Key::Named(Tab) if shift()) => _ [SymbolsSelectNext],
     K(Key::Named(ArrowDown)) => _ [SymbolsSelectNext],

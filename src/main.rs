@@ -78,7 +78,8 @@ use crate::edi::st::*;
 use crate::lsp::RqS;
 use crate::text::{TextArea, col, is_word};
 mod bar;
-mod com;
+mod commands;
+mod complete;
 pub mod hov;
 mod lsp;
 pub mod menu;
@@ -476,7 +477,7 @@ rust_fsm::state_machine! {
     Complete(_x) => K(_) => _ [Request(CompletionContext { trigger_kind: CompletionTriggerKind::TRIGGER_FOR_INCOMPLETE_COMPLETIONS, trigger_character:None })],
 }
 
-use com::Complete;
+use complete::Complete;
 impl Default for CompletionState {
     fn default() -> Self {
         Self::None

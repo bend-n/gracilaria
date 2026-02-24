@@ -21,6 +21,7 @@ use lsp_server::{
     ErrorCode, Message, Notification as N, Request as LRq, Response as Re,
     ResponseError,
 };
+use rust_analyzer::lsp::ext::*;
 use lsp_types::notification::*;
 use lsp_types::request::*;
 use lsp_types::*;
@@ -449,10 +450,10 @@ impl Client {
         >,
     > {
         self.request::<lsp_request!("workspace/symbol")>(
-            &WorkspaceSymbolParams {
+            &lsp_types::WorkspaceSymbolParams {
                 query: f,
-                search_scope: Some(WorkspaceSymbolSearchScope::Workspace),
-                search_kind: Some(WorkspaceSymbolSearchKind::AllSymbols),
+                search_scope: Some(lsp_types::WorkspaceSymbolSearchScope::Workspace),
+                search_kind: Some(lsp_types::WorkspaceSymbolSearchKind::AllSymbols),
                 ..Default::default()
             },
         )
@@ -464,8 +465,8 @@ impl Client {
         f: &Path,
         t: &'a mut TextArea,
     ) {
-        if let Ok(Some([x])) = self.runtime.block_on(
-            self.request::<lsp_request!("experimental/matchingBrace")>(
+        if let Ok([x]) = self.runtime.block_on(
+            self.request::<MatchingBrace>(
                 &MatchingBraceParams {
                     text_document: f.tid(),
                     positions: vec![
@@ -593,7 +594,7 @@ impl Client {
             let r = self
                 .runtime
                 .block_on(
-                    self.request::<lsp_request!("experimental/onEnter")>(
+                    self.request::<OnEnter>(
                         &TextDocumentPositionParams {
                             text_document: f.tid(),
                             position: t.to_l_position(*c).unwrap(),

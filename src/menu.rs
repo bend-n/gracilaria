@@ -91,3 +91,9 @@ pub trait Key<'a> {
 pub fn charc(c: &str) -> usize {
     c.chars().count()
 }
+
+impl<'a> crate::menu::Key<'a> for &'a str {
+    fn key(&self) -> impl Into<std::borrow::Cow<'a, str>> {
+        *self
+    }
+}

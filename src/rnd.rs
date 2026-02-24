@@ -21,7 +21,7 @@ use crate::edi::{Editor, lsp_m};
 use crate::lsp::Rq;
 use crate::text::{CoerceOption, RopeExt, col, color_};
 use crate::{
-    BG, BORDER, CompletionAction, CompletionState, FG, FONT, com, filter,
+    BG, BORDER, CompletionAction, CompletionState, FG, FONT, complete, filter,
     lsp, sig,
 };
 
@@ -669,6 +669,36 @@ pub fn render(
                     BORDER,
                 );
             }
+            State::Command(x) => 'out: {
+                let ws = ed.workspace.as_deref().unwrap();
+                let c = x.cells(50, ws);
+                // let (_x, _y) = text.cursor_visual();
+                let _x = 0;
+                let _y = r - 1;
+                let Ok((is_above, left, top, w, mut h)) = place_around(
+                    (_x, _y),
+                    i.copy(),
+                    &c,
+                    50,
+                    ppem,
+                    ls,
+                    0.,
+                    0.,
+                    0.,
+                ) else {
+                    println!("ra?");
+                    break 'out;
+                };
+                i.r#box(
+                    (
+                        left.saturating_sub(1) as _,
+                        top.saturating_sub(1) as _,
+                    ),
+                    w as _,
+                    h as _,
+                    BORDER,
+                );
+           }
             State::Symbols(Rq { result: Some(x), .. }) => 'out: {
                 let ws = ed.workspace.as_deref().unwrap();
                 let c = x.cells(50, ws);
@@ -705,7 +735,7 @@ pub fn render(
             CompletionState::Complete(Rq {
                 result: Some(ref x), ..
             }) => {
-                let c = com::s(x, 40, &filter(&text));
+                let c = complete::s(x, 40, &filter(&text));
                 if c.len() == 0 {
                     ed.requests
                         .complete

@@ -479,36 +479,44 @@ impl TextArea {
         Ok(())
     }
     pub fn apply_snippet_tedit_raw(
-        SnippetTextEdit { text_edit: x, insert_text_format, .. }: &SnippetTextEdit,
+        SnippetTextEdit { range,new_text, insert_text_format, .. }: &SnippetTextEdit,
         text: &'_ mut Rope,
     ) -> Option<()> {
         match insert_text_format {
             Some(lsp_types::InsertTextFormat::SNIPPET) => {
-                let begin = text.l_position(x.range.start)?;
-                let end = text.l_position(x.range.end)?;
+                let begin = text.l_position(range.start)?;
+                let end = text.l_position(range.end)?;
                 text.try_remove(begin..end).ok()?;
                 let (_, tex) =
-                    crate::sni::Snippet::parse(&x.new_text, begin)?;
+                    crate::sni::Snippet::parse(&new_text, begin)?;
                 text.try_insert(begin, &tex).ok()?;
             }
             _ => {
-                let begin = text.l_position(x.range.start)?;
-                let end = text.l_position(x.range.end)?;
+                let begin = text.l_position(range.start)?;
+                let end = text.l_position(range.end)?;
                 text.try_remove(begin..end).ok()?;
-                text.try_insert(begin, &x.new_text).ok()?;
+                text.try_insert(begin, &new_text).ok()?;
             }
         }
         Some(())
     }
     pub fn apply_snippet_tedit(
         &mut self,
-        SnippetTextEdit { text_edit, insert_text_format, .. }: &SnippetTextEdit,
+        SnippetTextEdit { range,new_text, insert_text_format, .. }: &SnippetTextEdit,
     ) -> anyhow::Result<()> {
         match insert_text_format {
-            Some(lsp_types::InsertTextFormat::SNIPPET) =>
-                self.apply_snippet(&text_edit).unwrap(),
+            Some(lsp_types::InsertTextFormat::SNIPPET) => self
+                .apply_snippet(&TextEdit {
+                    range: range.clone(),
+                    new_text: new_text.clone(),
+                })
+                .unwrap(),
             _ => {
-                self.apply_adjusting(text_edit).unwrap();
+                self.apply_adjusting(&TextEdit {
+                    range: range.clone(),
+                    new_text: new_text.clone(),
+                })
+                .unwrap();
             }
         }
         Ok(())
@@ -1700,7 +1708,7 @@ impl SortTedits for [TextEdit] {
 }
 impl SortTedits for [SnippetTextEdit] {
     fn sort_tedits(&mut self) {
-        self.as_mut().sort_by_key(|t| Reverse(t.text_edit.range.start));
+        self.as_mut().sort_by_key(|t| Reverse(t.range.start));
     }
 }
 
