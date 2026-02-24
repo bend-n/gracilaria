@@ -9,7 +9,7 @@ use itern::Iter3;
 use lsp_types::*;
 
 use crate::FG;
-use crate::menu::{Key, back, filter, next, score};
+use crate::menu::{Key, back, charc, filter, next, score};
 use crate::text::{TextArea, col, color_, set_a};
 
 #[derive(Debug, Default)]
@@ -140,48 +140,6 @@ impl Symbols {
         let vlen = v.len();
         let i = v.into_iter().zip(0..vlen).skip(self.vo).take(N).rev();
 
-        // let Some((s, x)) = i.next() else {
-        //     return vec![];
-        // };
-
-        // let mut q = Dq::<_, 13>::new((s, x));
-        // for (s, x) in i {
-        //     if q.first().0 <= s {
-        //         q.push_front((s, x));
-        //     }
-        // }
-
-        // fuzzy_aho_corasick::FuzzyAhoCorasickBuilder::new()
-        //     .fuzzy(
-        //         FuzzyLimits::new()
-        //             .insertions(20)
-        //             .deletions(2)
-        //             .edits(4)
-        //             .substitutions(5)
-        //             .swaps(3),
-        //     .penalties(FuzzyPenalties {
-        //     )
-        //         insertion: 0.0,
-        //         deletion: 1.0,
-        //         substitution: 0.5,
-        //         swap: 0.5,
-        //     })
-        //     .build(
-        //         y.iter().map(|x| x.filter_text.as_deref().unwrap_or(&x.label)),
-        //     )
-        //     .search(filter, 0.25)
-        //     .into_iter()
-        //     .map(|x| &y[x.pattern_index])
-        //     //     .take(13);
-        //     // for x in y
-        //     //     .iter()
-        //     //     .filter(|x| {
-        //     //         x.filter_text
-        //     //             .as_deref()
-        //     //             .unwrap_or(&x.label)
-        //     //             .starts_with(filter)
-        //     //     })
-        //     .take(13)
         i.for_each(|((_, x, indices), i)| {
             r(x, ws, c, i == self.selection, &indices, &mut out, self.ty)
         });
@@ -226,9 +184,6 @@ fn filter_c<'a>(
         },
         f,
     )
-}
-fn charc(c: &str) -> usize {
-    c.chars().count()
 }
 #[implicit_fn::implicit_fn]
 fn r<'a>(

@@ -88,3 +88,6 @@ pub trait Key<'a> {
         self.key().into()
     }
 }
+pub fn charc(c: &str) -> usize {
+    c.chars().count()
+}
