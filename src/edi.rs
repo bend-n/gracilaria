@@ -15,6 +15,7 @@ use lsp_types::request::*;
 use lsp_types::*;
 use regex::Regex;
 use ropey::Rope;
+use rust_analyzer::lsp::ext::OnTypeFormatting;
 use rust_fsm::StateMachine;
 use serde_derive::{Deserialize, Serialize};
 use tokio::sync::oneshot::Sender;
@@ -179,6 +180,11 @@ macro_rules! change {
     ($self:ident, $w:expr) => {
         change!(@$self, Some($w))
     };
+    (just $self:ident) => {
+        lsp!($self + p).map(|(x, origin)| {
+            x.edit(&origin, $self.text.rope.to_string()).unwrap();
+        })
+    };
     (@$self:ident, $w:expr) => {
         lsp!($self + p).map(|(x, origin)| {
             x.edit(&origin, $self.text.rope.to_string()).unwrap();
@@ -213,6 +219,7 @@ macro_rules! change {
         });
     };
 }
+
 fn rooter(x: &Path) -> Option<PathBuf> {
     for f in std::fs::read_dir(&x).unwrap().filter_map(Result::ok) {
         if f.file_name() == "Cargo.toml" {
@@ -383,8 +390,10 @@ impl Editor {
         self.bar.last_action = "saved".into();
         lsp!(self + p).map(|(l, o)| {
             let v = l.runtime.block_on(l.format(o)).unwrap();
-            for v in v.coerce() {
-                if let Err(()) = self.text.apply_adjusting(&v) {
+            if let Some(v) = v {
+                if let Err(()) =
+                    self.text.apply_tedits_adjusting(&mut { v })
+                {
                     eprintln!("unhappy fmt")
                 }
             }
@@ -1229,14 +1238,58 @@ impl Editor {
                         self.requests.complete
                 {
                 } else {
-                    handle2(
-                        &event.logical_key,
-                        &mut self.text,
-                        lsp!(self + p),
-                    );
+                    if let Some(x) = handle2(
+                    &event.logical_key,
+                    &mut self.text,
+                    lsp!(self + p),
+                ) && let Some((l, p)) = lsp!(self + p)
+                    && let Some(
+                        InitializeResult {
+                            capabilities:
+                                ServerCapabilities {
+                                    document_on_type_formatting_provider:
+                                        Some(DocumentOnTypeFormattingOptions {
+                                            first_trigger_character,
+                                            more_trigger_character: Some(t),
+                                        }),
+                                    ..
+                                },
+                            ..
+                        },
+                        ..,
+                    ) = &l.initialized
+                    && (first_trigger_character == first_trigger_character
+                        || t.iter().any(|y| y == x))
+                    && self.text.cursor.inner.len() == 1
+                    && change!(just self).is_some()
+                    && let Ok(Some(mut x)) = l
+                        .request_immediate::<OnTypeFormatting>(
+                            &DocumentOnTypeFormattingParams {
+                                text_document_position:
+                                    TextDocumentPositionParams {
+                                        text_document: p.tid(),
+                                        position: self
+                                            .text
+                                            .to_l_position(
+                                                *self.text.cursor.first(),
+                                            )
+                                            .unwrap(),
+                                    },
+                                ch: x.into(),
+                                options: FormattingOptions {
+                                    tab_size: 4,
+                                    ..default()
+                                },
+                            },
+                        )
+                {
+                    x.sort_tedits();
+                    for x in x {
+                        self.text.apply_snippet_tedit(&x).unwrap();
+                    }
                 }
+                };
                 self.text.scroll_to_cursor();
-                inlay!(self);
                 if cb4 != self.text.cursor.first()
                     && let CompletionState::Complete(Rq {
                         result: Some(c),

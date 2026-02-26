@@ -555,14 +555,6 @@ impl Client {
         )
         .unwrap()
         .0
-        .map(|x| {
-            x.map(|x| {
-                x.map(|mut x| {
-                    x.sort_tedits();
-                    x
-                })
-            })
-        })
     }
     pub fn rq_semantic_tokens(
         &'static self,
@@ -684,6 +676,9 @@ pub fn run(
                     ..default()
                 }),
                 text_document: Some(TextDocumentClientCapabilities {
+                    on_type_formatting: Some(DocumentOnTypeFormattingClientCapabilities {
+                        dynamic_registration: Some(false),
+                    }),
                     document_highlight: Some(default()),
                     formatting: Some(DynamicRegistrationClientCapabilities { dynamic_registration: Some(false) }),
                     inlay_hint: Some(InlayHintClientCapabilities { dynamic_registration: None, resolve_support: Some(InlayHintResolveClientCapabilities {
