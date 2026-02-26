@@ -1,5 +1,6 @@
 #![feature(
     btree_set_entry,
+    array_try_map,
     tuple_trait,
     unboxed_closures,
     fn_traits,
@@ -137,7 +138,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
         None => None,
     };
     let (fw, fh) = dsb::dims(&fonts.bold, ls);
-
+    let title = ed.title();
     let app = winit_app::WinitAppBuilder::with_init(
         move |elwt| {
             let window = winit_app::make_window(elwt, |x| {
@@ -157,7 +158,8 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
             if let Some(x) = w.take() {
                 x.send(window.clone()).unwrap();
             }
-
+            let w_ = window.clone();
+            title.as_deref().map(move |x| w_.set_title(x));
             window.set_ime_allowed(true);
             window.set_ime_purpose(winit::window::ImePurpose::Terminal);
             let context =

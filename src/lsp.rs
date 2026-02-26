@@ -622,6 +622,25 @@ impl Client {
             }
         });
     }
+    pub fn runnables(
+        &self,
+        t: &Path,
+        c: Option<Position>,
+    ) -> Result<
+        impl Future<
+            Output = Result<
+                Vec<Runnable>,
+                RequestError<Runnables>,
+            >,
+        >,
+        SendError<Message>,
+    > {
+        self.request::<Runnables>(&RunnablesParams {
+            text_document: t.tid(),
+            position: c,
+        })
+        .map(|(x, _)| x)
+    }
 }
 pub fn run(
     (tx, rx): (Sender<Message>, Receiver<Message>),
@@ -873,7 +892,7 @@ pub fn run(
                     "rangeExclusiveHints": { "enable": true },
                     "closureCaptureHints": { "enable": true },
                 },
-                "typing": { "triggerChars": ".=<>{(|+" },
+                "typing": { "triggerChars": ".=<>{(+" },
                 "assist": { "preferSelf": true },
                 "checkOnSave": true,
                 "diagnostics": { "enable": true },

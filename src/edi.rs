@@ -1859,7 +1859,22 @@ impl Editor {
                 .unwrap();
             });
         }
+        self.set_title(w);
         Ok(())
+    }
+    pub fn set_title(&self, w: Option<Arc<Window>>) {
+        if let Some(x) = w
+            && let Some(t) = self.title()
+        {
+            x.set_title(&t);
+        }
+    }
+    pub fn title(&self) -> Option<String> {
+        [self.workspace.as_deref(), self.origin.as_deref()]
+            .try_map(|x| {
+                x.and_then(Path::file_name).and_then(|x| x.to_str())
+            })
+            .map(|[wo, or]| format!("gracilaria - {wo} - {or}"))
     }
 
     pub fn store(&mut self) -> anyhow::Result<()> {

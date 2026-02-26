@@ -63,7 +63,9 @@ commands!(
     /// Cancels current running rust-analyzer check process
     @ RACancelFlycheck: "cancel-flycheck",
     /// Opens Cargo.toml file for this workspace
-    @ RAOpenCargoToml: "open-cargo-toml"
+    @ RAOpenCargoToml: "open-cargo-toml",
+    /// Runs the test at the cursor
+    @ RARunTest: "run-test",
 );
 
 #[derive(Debug, Default)]
