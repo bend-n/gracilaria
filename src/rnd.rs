@@ -684,7 +684,7 @@ pub fn render(
                 // let (_x, _y) = text.cursor_visual();
                 let _x = 0;
                 let _y = r - 1;
-                let Ok((is_above, left, top, w, mut h)) = place_around(
+                let Ok((_, left, top, w, h)) = place_around(
                     (_x, _y),
                     i.copy(),
                     &c,

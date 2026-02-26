@@ -860,6 +860,11 @@ pub fn run(
                     "enable": true,
                     "attributes": { "enable": true }
                 },
+                "hover": {
+                    "documentation": {
+                        "keywords": { "enable": false },
+                    },
+                },
                 "inlayHints": {
                     "closureReturnTypeHints": { "enable": "with_block" },
                     "closingBraceHints": { "minLines": 5 },
@@ -868,6 +873,7 @@ pub fn run(
                     "rangeExclusiveHints": { "enable": true },
                     "closureCaptureHints": { "enable": true },
                 },
+                "typing": { "triggerChars": ".=<>{(|+" },
                 "assist": { "preferSelf": true },
                 "checkOnSave": true,
                 "diagnostics": { "enable": true },

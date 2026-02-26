@@ -38,9 +38,7 @@ use crate::meta::META;
 use crate::sym::{Symbols, SymbolsList, SymbolsType};
 use crate::text::cursor::{Ronge, ceach};
 use crate::text::hist::{ClickHistory, Hist};
-use crate::text::{
-    self, CoerceOption, Mapping, RopeExt, SortTedits, TextArea,
-};
+use crate::text::{self, Mapping, RopeExt, SortTedits, TextArea};
 use crate::{
     BoolRequest, CDo, CompletionAction, CompletionState, act, alt, ctrl,
     filter, hash, shift, sig, sym, trm,
