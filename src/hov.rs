@@ -306,6 +306,8 @@ fn t() {
 pub struct Hovr {
     pub(crate) span: Option<[(VisualX, usize); 2]>,
     pub(crate) item: crate::text::CellBuffer,
+    #[serde(skip)]
+    pub(crate) range: Option<lsp_types::Range>,
 }
 
 pub type VisualX = usize;

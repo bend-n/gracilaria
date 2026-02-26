@@ -15,9 +15,6 @@ use lsp_types::request::*;
 use lsp_types::*;
 use regex::Regex;
 use ropey::Rope;
-use rust_analyzer::lsp::ext::{
-    MoveItemDirection, MoveItemParams, ParentModule, ReloadWorkspace,
-};
 use rust_fsm::StateMachine;
 use serde_derive::{Deserialize, Serialize};
 use tokio::sync::oneshot::Sender;
@@ -31,7 +28,6 @@ pub mod st;
 use st::*;
 
 use crate::bar::Bar;
-use crate::commands::Cmd;
 use crate::complete::Complete;
 use crate::hov::{self, Hovr};
 use crate::lsp::{
@@ -725,6 +721,8 @@ impl Editor {
                                 vo: 0,
                                 cells: cells.into(),
                             },
+                            range: x.range,
+                            // range: x.range.and_then(|x| text.l_range(x)),
                         }
                         .into(),
                     ))
@@ -951,72 +949,11 @@ impl Editor {
                         (),
                     ));
                 },
-            Some(Do::ProcessCommand(x)) => 'out: {
-                _ = try bikeshed anyhow::Result<()> {
-                    let z = x.sel();
-                    if z.needs_lsp()
-                        && let Some((l, o)) = lsp!(self + p)
-                    {
-                        match z {
-                            Cmd::RAMoveIU | Cmd::RAMoveID => {
-                                let r = self
-                                    .text
-                                    .to_l_position(
-                                        *self.text.cursor.first(),
-                                    )
-                                    .unwrap();
-                                let mut x = l.runtime.block_on(l.request::<rust_analyzer::lsp::ext::MoveItem>(&MoveItemParams {
-                                direction: if let Cmd::RAMoveIU = z { MoveItemDirection::Up } else { MoveItemDirection::Down },
-                                text_document: o.tid(),
-                                range: Range { start : r, end : r},
-                            })?.0)?;
-
-                                x.sort_tedits();
-                                for t in x {
-                                    self.text.apply_snippet_tedit(&t)?;
-                                }
-                            }
-                            Cmd::RARestart => {
-                                _ = l.request::<ReloadWorkspace>(&())?.0;
-                            }
-                            Cmd::RAParent => {
-                                let Some(GotoDefinitionResponse::Link(
-                                    [ref x],
-                                )) = l.runtime.block_on(
-                                    l.request::<ParentModule>(
-                                        &TextDocumentPositionParams {
-                                            text_document: o.tid(),
-                                            position: self
-                                                .text
-                                                .to_l_position(
-                                                    *self
-                                                        .text
-                                                        .cursor
-                                                        .first(),
-                                                )
-                                                .unwrap(),
-                                        },
-                                    )?
-                                    .0,
-                                )?
-                                else {
-                                    self.bar.last_action =
-                                        "no such parent".into();
-                                    break 'out;
-                                };
-                                self.open_loclink(x, window.clone());
-                            }
-                        }
-                        break 'out;
-                    }
-
-                    // match x.sel() {
-                    //     Cmd::RAMoveID => {}
-                    //     Cmd::RAMoveIU => todo!(),
-                    //     Cmd::RARestart => todo!(),
-                    //     Cmd::RAParent => todo!(),
-                    // }
-                };
+            Some(Do::ProcessCommand(x)) => {
+                let z = x.sel();
+                if let Err(e) = self.handle_command(z, window.clone()) {
+                    self.bar.last_action = format!("{e}");
+                }
             }
             Some(Do::SymbolsHandleKey) => {
                 if let Some(lsp) = lsp!(self) {
@@ -1100,7 +1037,7 @@ impl Editor {
                             let f = x
                                 .uri
                                 .to_file_path()
-                                .map_err(|()| anyhow::anyhow!("dammit"))?
+                                .map_err(|()| anyhow!("dammit"))?
                                 .canonicalize()?;
                             self.state = State::Default;
                             self.requests.complete = CompletionState::None;
@@ -1114,7 +1051,7 @@ impl Editor {
                     let p = self
                         .text
                         .l_position(r.start)
-                        .ok_or(anyhow::anyhow!("rah"))?;
+                        .ok_or(anyhow!("rah"))?;
                     if p != 0 {
                         self.text.cursor.just(p, &self.text.rope);
                     }
@@ -1902,8 +1839,21 @@ impl Editor {
         }
         Ok(())
     }
+    /// this is so dumb
+    pub fn open_loc(
+        &mut self,
+        Location { uri, range }: &Location,
+        w: Arc<Window>,
+    ) {
+        self.open(&uri.to_file_path().unwrap(), w.clone()).unwrap();
 
-    fn open_loclink(
+        self.text.cursor.just(
+            self.text.l_position(range.start).unwrap(),
+            &self.text.rope,
+        );
+        self.text.scroll_to_cursor();
+    }
+    pub fn open_loclink(
         &mut self,
         LocationLink { target_uri, target_range, .. }: &LocationLink,
         w: Arc<Window>,

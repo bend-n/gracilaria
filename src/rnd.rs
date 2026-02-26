@@ -21,8 +21,8 @@ use crate::edi::{Editor, lsp_m};
 use crate::lsp::Rq;
 use crate::text::{CoerceOption, RopeExt, col, color_};
 use crate::{
-    BG, BORDER, CompletionAction, CompletionState, FG, FONT, complete, filter,
-    lsp, sig,
+    BG, BORDER, CompletionAction, CompletionState, FG, FONT, complete,
+    filter, lsp, sig,
 };
 
 #[implicit_fn::implicit_fn]
@@ -134,6 +134,15 @@ pub fn render(
                                     x.style.fg = col!("#FFD173");
                                 });
                             } }
+                            if let Some(crate::hov::Hovr{ range:Some(r),..} ) = &ed.requests.hovering.result {
+                               x.get_range(text.map_to_visual((r.start.character as _, r.start.line as _)),
+                                                        text.map_to_visual((r.end.character as usize, r.end.line as _)))
+                                                .for_each(|x| {
+                                                x.style.secondary_color = col!("#73d0ff");
+                                                x.style.flags |= Style::UNDERCURL;
+                                                });
+                                // x.range;
+                            }
                             if let Some((lsp, p)) = lsp_m!(ed + p) && let uri = Url::from_file_path(p).unwrap() && let Some(diag) = lsp.diagnostics.get(&uri, &lsp.diagnostics.guard()) {
                                 #[derive(Copy, Clone, Debug)]
                                 enum EType {
@@ -698,7 +707,7 @@ pub fn render(
                     h as _,
                     BORDER,
                 );
-           }
+            }
             State::Symbols(Rq { result: Some(x), .. }) => 'out: {
                 let ws = ed.workspace.as_deref().unwrap();
                 let c = x.cells(50, ws);

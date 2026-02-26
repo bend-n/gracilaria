@@ -948,7 +948,7 @@ impl TextArea {
         //     arc_swap::Guard<Arc<Box<[SemanticToken]>>>,
         //     &SemanticTokensLegend,
         // )>;
-        if leg.is_none() {
+        if leg.is_none() || self.tokens.is_empty() {
             self.tree_sit(path, &mut cells);
         }
         if let Some(tabstops) = &self.tabstops {
@@ -1109,6 +1109,28 @@ impl TextArea {
             search(sym, &mut best, at, &self.rope, vec![]);
         }
         best
+    }
+
+    pub(crate) fn apply_tedits_adjusting(
+        &mut self,
+        teds: &mut [TextEdit],
+    ) -> Result<(), ()> {
+        teds.sort_tedits();
+        for ted in teds {
+            self.apply_adjusting(ted)?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn apply_tedits(
+        &mut self,
+        teds: &mut [TextEdit],
+    ) -> Result<(), ()> {
+        teds.sort_tedits();
+        for ted in teds {
+            self.apply(ted)?;
+        }
+        Ok(())
     }
 }
 

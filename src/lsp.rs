@@ -21,10 +21,10 @@ use lsp_server::{
     ErrorCode, Message, Notification as N, Request as LRq, Response as Re,
     ResponseError,
 };
-use rust_analyzer::lsp::ext::*;
 use lsp_types::notification::*;
 use lsp_types::request::*;
 use lsp_types::*;
+use rust_analyzer::lsp::ext::*;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::sync::oneshot;
@@ -64,6 +64,7 @@ pub enum RequestError<X> {
     Rx(PhantomData<X>),
     Failure(Re, #[serde(skip)] Option<Backtrace>),
     Cancelled(Re, DiagnosticServerCancellationData),
+    Send(Message),
 }
 pub type AQErr = RequestError<LSPError>;
 impl Request for LSPError {
@@ -79,6 +80,7 @@ pub trait Anonymize<T> {
 impl<T, E> Anonymize<T> for Result<T, RequestError<E>> {
     fn anonymize(self) -> Result<T, RequestError<LSPError>> {
         self.map_err(|e| match e {
+            RequestError::Send(x) => RequestError::Send(x),
             RequestError::Rx(_) => RequestError::Rx(PhantomData),
             RequestError::Failure(r, b) => RequestError::Failure(r, b),
             RequestError::Cancelled(r, d) => RequestError::Cancelled(r, d),
@@ -97,9 +99,16 @@ impl<X: Request + std::fmt::Debug> std::error::Error for RequestError<X> {
         None
     }
 }
+impl<X> From<SendError<Message>> for RequestError<X> {
+    fn from(x: SendError<Message>) -> Self {
+        Self::Send(x.into_inner())
+    }
+}
 impl<X: Request> Display for RequestError<X> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::Send(x) =>
+                write!(f, "{} failed; couldnt send {x:?}", X::METHOD),
             Self::Rx(_) =>
                 write!(f, "{} failed; couldnt get from thingy", X::METHOD),
             Self::Failure(x, bt) => write!(
@@ -124,6 +133,12 @@ impl Client {
     }
     pub fn cancel(&self, rid: i32) {
         _ = self.notify::<Cancel>(&CancelParams { id: rid.into() });
+    }
+    pub fn request_immediate<'me, X: Request>(
+        &'me self,
+        y: &X::Params,
+    ) -> Result<X::Result, RequestError<X>> {
+        self.runtime.block_on(self.request::<X>(y)?.0)
     }
     #[must_use]
     pub fn request<'me, X: Request>(
@@ -452,8 +467,12 @@ impl Client {
         self.request::<lsp_request!("workspace/symbol")>(
             &lsp_types::WorkspaceSymbolParams {
                 query: f,
-                search_scope: Some(lsp_types::WorkspaceSymbolSearchScope::Workspace),
-                search_kind: Some(lsp_types::WorkspaceSymbolSearchKind::AllSymbols),
+                search_scope: Some(
+                    lsp_types::WorkspaceSymbolSearchScope::Workspace,
+                ),
+                search_kind: Some(
+                    lsp_types::WorkspaceSymbolSearchKind::AllSymbols,
+                ),
                 ..Default::default()
             },
         )
@@ -466,14 +485,12 @@ impl Client {
         t: &'a mut TextArea,
     ) {
         if let Ok([x]) = self.runtime.block_on(
-            self.request::<MatchingBrace>(
-                &MatchingBraceParams {
-                    text_document: f.tid(),
-                    positions: vec![
-                        t.to_l_position(*t.cursor.first()).unwrap(),
-                    ],
-                },
-            )
+            self.request::<MatchingBrace>(&MatchingBraceParams {
+                text_document: f.tid(),
+                positions: vec![
+                    t.to_l_position(*t.cursor.first()).unwrap(),
+                ],
+            })
             .unwrap()
             .0,
         ) {
@@ -594,12 +611,10 @@ impl Client {
             let r = self
                 .runtime
                 .block_on(
-                    self.request::<OnEnter>(
-                        &TextDocumentPositionParams {
-                            text_document: f.tid(),
-                            position: t.to_l_position(*c).unwrap(),
-                        },
-                    )
+                    self.request::<OnEnter>(&TextDocumentPositionParams {
+                        text_document: f.tid(),
+                        position: t.to_l_position(*c).unwrap(),
+                    })
                     .unwrap()
                     .0,
                 )
@@ -834,6 +849,7 @@ pub fn run(
                     "hoverActions": true,
                     "workspaceSymbolScopeKindFiltering": true,
                     "onEnter": true,
+                    "localDocs": true,
                 }}),
                 ..default()
             },
@@ -882,6 +898,9 @@ pub fn run(
                     "termSearch": { "enable": true, },
                     "autoself": { "enable": true, },
                     "privateEditable": { "enable": true },
+                },
+                "imports": {
+                    "granularity": "group",
                 },
             }}),
             trace: None,
