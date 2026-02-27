@@ -453,7 +453,7 @@ impl Editor {
                 |x, (_, p)| {
                     let Some(p) = p else { unreachable!() };
                     x.ok().flatten().map(|r| sym::Symbols {
-                        r,
+                        data: (r, p.data.1, p.data.2),
                         selection: 0,
                         vo: 0,
                         ..p
@@ -941,9 +941,9 @@ impl Editor {
                     else {
                         unreachable!()
                     };
-                    x.ty = sym::SymbolsType::Document;
+                    x.data.2 = sym::SymbolsType::Document;
                     let p = p.to_owned();
-                    take(&mut x.r);
+                    take(&mut x.data.0);
                     *request = Some((
                         DropH::new(lsp.runtime.spawn(
                             window.redraw_after(async move {
@@ -978,7 +978,7 @@ impl Editor {
                     .is_some()
                         || ptedit != x.tedit.rope
                     {
-                        if x.ty == SymbolsType::Workspace {
+                        if x.data.2 == SymbolsType::Workspace {
                             *request = Some((
                                 DropH::new(
                                     lsp.runtime.spawn(

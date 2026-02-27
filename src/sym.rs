@@ -9,18 +9,50 @@ use itern::Iter3;
 use lsp_types::*;
 
 use crate::FG;
-use crate::menu::{Key, back, charc, filter, next, score};
-use crate::text::{TextArea, col, color_, set_a};
+use crate::menu::generic::{GenericMenu, MenuData};
+use crate::menu::{Key, charc};
+use crate::text::{col, color_, set_a};
+pub enum Symb {}
+impl MenuData for Symb {
+    type Data = (SymbolsList, Vec<SymbolInformation>, SymbolsType);
 
-#[derive(Debug, Default)]
-pub struct Symbols {
-    pub r: SymbolsList,
-    pub tree: Vec<SymbolInformation>,
-    pub tedit: TextArea,
-    pub selection: usize,
-    pub vo: usize,
-    pub ty: SymbolsType,
+    type Element<'a> = UsedSI<'a>;
+
+    fn gn(
+        (r, tree, _): &Self::Data,
+    ) -> impl Iterator<Item = Self::Element<'_>> {
+        match r {
+            SymbolsList::Document(DocumentSymbolResponse::Flat(x)) =>
+                Iter3::A(x.iter().map(UsedSI::from)),
+            SymbolsList::Document(DocumentSymbolResponse::Nested(x)) =>
+                Iter3::B(x.iter().flat_map(|x| gen move {
+                    let mut q = VecDeque::with_capacity(12);
+                    q.push_back(x);
+                    while let Some(x) = q.pop_front() {
+                        q.extend(x.children.iter().flatten());
+                        yield x.into();
+                    }
+                })),
+            SymbolsList::Workspace(WorkspaceSymbolResponse::Flat(x)) =>
+                Iter3::C(chain(tree, x.iter()).map(UsedSI::from)),
+            _ => unreachable!("please no"),
+        }
+    }
+
+    fn r(
+        &(.., sty): &Self::Data,
+        x: Self::Element<'_>,
+        workspace: &Path,
+        c: usize,
+        selected: bool,
+        indices: &[u32],
+        to: &mut Vec<Cell>,
+    ) {
+        r(x, workspace, c, selected, indices, to, sty)
+    }
 }
+pub type Symbols = GenericMenu<Symb>;
+
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
 pub enum GoTo<'a> {
     Loc(&'a Location),
@@ -92,8 +124,8 @@ impl Default for SymbolsList {
         Self::Workspace(WorkspaceSymbolResponse::Flat(vec![]))
     }
 }
-const N: usize = 30;
-impl Symbols {
+
+impl GenericMenu<Symb> {
     pub fn new(tree: &[PathBuf]) -> Self {
         let tree = tree
             .iter()
@@ -113,38 +145,7 @@ impl Symbols {
                 tags: None,
             })
             .collect();
-        Self { tree, ..Default::default() }
-    }
-    fn f(&self) -> String {
-        self.tedit.rope.to_string()
-    }
-    pub fn next(&mut self) {
-        let n = filter_c(self, &self.f()).count();
-        // coz its bottom up
-        back::<N>(n, &mut self.selection, &mut self.vo);
-    }
-
-    pub fn sel(&self) -> UsedSI<'_> {
-        let f = self.f();
-        score_c(filter_c(self, &f), &f)[self.selection].1
-    }
-
-    pub fn back(&mut self) {
-        let n = filter_c(self, &self.f()).count();
-        next::<N>(n, &mut self.selection, &mut self.vo);
-    }
-    pub fn cells(&self, c: usize, ws: &Path) -> Vec<Cell> {
-        let f = self.f();
-        let mut out = vec![];
-        let v = score_c(filter_c(self, &f), &f);
-        let vlen = v.len();
-        let i = v.into_iter().zip(0..vlen).skip(self.vo).take(N).rev();
-
-        i.for_each(|((_, x, indices), i)| {
-            r(x, ws, c, i == self.selection, &indices, &mut out, self.ty)
-        });
-
-        out
+        Self { data: (default(), tree, default()), ..default() }
     }
 }
 
@@ -152,38 +153,6 @@ impl<'a> Key<'a> for UsedSI<'a> {
     fn key(&self) -> impl Into<std::borrow::Cow<'a, str>> {
         self.name
     }
-}
-fn score_c<'a>(
-    x: impl Iterator<Item = UsedSI<'a>>,
-    filter: &'_ str,
-) -> Vec<(u32, UsedSI<'a>, Vec<u32>)> {
-    score(x, filter)
-}
-
-fn filter_c<'a>(
-    syms: &'a Symbols,
-    f: &'_ str,
-) -> impl Iterator<Item = UsedSI<'a>> {
-    let x = &syms.r;
-    filter(
-        match x {
-            SymbolsList::Document(DocumentSymbolResponse::Flat(x)) =>
-                Iter3::A(x.iter().map(UsedSI::from)),
-            SymbolsList::Document(DocumentSymbolResponse::Nested(x)) =>
-                Iter3::B(x.iter().flat_map(|x| gen move {
-                    let mut q = VecDeque::with_capacity(12);
-                    q.push_back(x);
-                    while let Some(x) = q.pop_front() {
-                        q.extend(x.children.iter().flatten());
-                        yield x.into();
-                    }
-                })),
-            SymbolsList::Workspace(WorkspaceSymbolResponse::Flat(x)) =>
-                Iter3::C(chain(&syms.tree, x.iter()).map(UsedSI::from)),
-            _ => unreachable!("please no"),
-        },
-        f,
-    )
 }
 #[implicit_fn::implicit_fn]
 fn r<'a>(

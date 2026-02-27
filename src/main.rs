@@ -1,5 +1,6 @@
 #![feature(
     btree_set_entry,
+    associated_type_defaults,
     array_try_map,
     tuple_trait,
     unboxed_closures,

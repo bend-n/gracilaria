@@ -48,16 +48,6 @@ impl CodeActions {
     }
 
     pub fn down(&mut self) {
-        // let mut adj = |y: &mut usize, max| {
-        //     *y += 1;
-        //     if *y == max {
-        //         self.vo = 0;
-        //         *y = 0;
-        //     }
-        //     if *y >= self.vo + 13 {
-        //         self.vo += 1;
-        //     }
-        // };
         match &mut self.inner {
             N::Many(x, Entry::Outside(y), _) => {
                 let n = x.len();

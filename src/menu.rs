@@ -1,3 +1,4 @@
+pub mod generic;
 use std::borrow::Cow;
 use std::cmp::Reverse;
 use std::sync::LazyLock;
