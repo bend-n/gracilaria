@@ -75,9 +75,27 @@ Command(_) => K(Key::Named(Escape)) => Default,
 Command(t) => K(Key::Named(Enter)) => Default [ProcessCommand(Commands => t)],
 Command(mut t) => K(Key::Named(Tab) if shift()) => Command({ t.back();t }),
 Command(mut t) => K(Key::Named(Tab)) => Command({ t.next(); t }),
-Command(mut t) => K(k) => Command({ handle2(&k, &mut t.tedit, None); t }),
+Command(mut t) => K(k) => Command({ if let Some(_) = handle2(&k, &mut t.tedit, None) {
+    t.selection = 0; t.vo = 0;
+}; t }),
 Command(t) => C(_) => _,
 Command(t) => K(_) => _,
+Runnables(_x) => {
+    K(Key::Named(Escape)) => Default,
+},
+Runnables(RqS::<crate::runnables::Runnables, rust_analyzer::lsp::ext::Runnables> => Rq { result: Some(mut x), request }) => {
+    K(Key::Named(Tab) if shift()) => Runnables({ x.next(); Rq { result: Some(x), request }}),
+    K(Key::Named(ArrowDown)) => Runnables({ x.next(); Rq { result: Some(x), request }}),
+    K(Key::Named(ArrowUp | Tab)) => Runnables({ x.back(); Rq { result: Some(x), request }}),
+    K(k) => Runnables({
+ if let Some(_) = handle2(&k, &mut x.tedit, None) {
+    x.selection = 0; x.vo = 0;
+}; Rq { result: Some(x), request } }),
+},
+Runnables(_x) => {
+    C(_) => _,
+    M(_) => _,
+},
 Symbols(Rq { result: Some(_x), request: _rq }) => {
     K(Key::Named(Tab) if shift()) => _ [SymbolsSelectNext],
     K(Key::Named(ArrowDown)) => _ [SymbolsSelectNext],

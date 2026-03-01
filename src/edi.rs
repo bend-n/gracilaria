@@ -35,6 +35,7 @@ use crate::lsp::{
     self, Anonymize, Client, Map_, PathURI, RedrawAfter, RequestError, Rq,
 };
 use crate::meta::META;
+use crate::runnables::Runnables;
 use crate::sym::{Symbols, SymbolsList, SymbolsType};
 use crate::text::cursor::{Ronge, ceach};
 use crate::text::hist::{ClickHistory, Hist};
@@ -411,7 +412,7 @@ impl Editor {
         std::fs::write(self.origin.as_ref().unwrap(), &t).unwrap();
         self.mtime = Self::modify(self.origin.as_deref());
     }
-    pub fn poll(&mut self) {
+    pub fn poll(&mut self, w: Option<&Arc<Window>>) {
         let Some((l, ..)) = self.lsp else { return };
         for rq in l.req_rx.try_iter() {
             match rq {
@@ -431,11 +432,11 @@ impl Editor {
             },
             r,
         );
-        self.requests.document_highlights.poll(|x, _| x.ok(), r);
-        self.requests.diag.poll(|x, _| x.ok().flatten(), r);
+        self.requests.document_highlights.poll_r(|x, _| x.ok(), r, w);
+        self.requests.diag.poll_r(|x, _| x.ok().flatten(), r, w);
         if let CompletionState::Complete(rq) = &mut self.requests.complete
         {
-            rq.poll(
+            rq.poll_r(
                 |f, (c, _)| {
                     f.ok().flatten().map(|x| Complete {
                         r: x,
@@ -445,46 +446,63 @@ impl Editor {
                     })
                 },
                 r,
+                w,
             );
         };
-
-        if let State::Symbols(x) = &mut self.state {
-            x.poll(
-                |x, (_, p)| {
-                    let Some(p) = p else { unreachable!() };
-                    x.ok().flatten().map(|r| sym::Symbols {
-                        data: (r, p.data.1, p.data.2),
-                        selection: 0,
-                        vo: 0,
-                        ..p
-                    })
-                },
-                &r,
-            );
-        }
-        if let State::CodeAction(x) = &mut self.state {
-            x.poll(
-                |x, _| {
-                    let lems: Vec<CodeAction> = x
-                        .ok()??
-                        .into_iter()
-                        .map(|x| match x {
-                            CodeActionOrCommand::CodeAction(x) => x,
-                            _ => panic!("alas we dont like these"),
+        match &mut self.state {
+            State::Symbols(x) => {
+                x.poll_r(
+                    |x, (_, p)| {
+                        let Some(p) = p else { unreachable!() };
+                        x.ok().flatten().map(|r| sym::Symbols {
+                            data: (r, p.data.1, p.data.2),
+                            selection: 0,
+                            vo: 0,
+                            ..p
                         })
-                        .collect();
-                    if lems.is_empty() {
-                        self.bar.last_action =
-                            "no code actions available".into();
-                        None
-                    } else {
-                        Some(act::CodeActions::new(lems))
-                    }
-                },
-                &r,
-            );
+                    },
+                    r,
+                    w,
+                );
+            }
+            State::CodeAction(x) => {
+                x.poll_r(
+                    |x, _| {
+                        let lems: Vec<CodeAction> = x
+                            .ok()??
+                            .into_iter()
+                            .map(|x| match x {
+                                CodeActionOrCommand::CodeAction(x) => x,
+                                _ => panic!("alas we dont like these"),
+                            })
+                            .collect();
+                        if lems.is_empty() {
+                            self.bar.last_action =
+                                "no code actions available".into();
+                            None
+                        } else {
+                            Some(act::CodeActions::new(lems))
+                        }
+                    },
+                    r,
+                    w,
+                );
+            }
+            State::Runnables(x) => {
+                x.poll_r(
+                    |x, ((), old)| {
+                        Some(Runnables {
+                            data: x.ok()?,
+                            ..old.unwrap_or_default()
+                        })
+                    },
+                    r,
+                    w,
+                );
+            }
+            _ => {}
         }
-        self.requests.def.poll(
+        self.requests.def.poll_r(
             |x, _| {
                 x.ok().flatten().and_then(|x| match &x {
                     GotoDefinitionResponse::Link([x, ..]) =>
@@ -492,13 +510,15 @@ impl Editor {
                     _ => None,
                 })
             },
-            &r,
+            r,
+            w,
         );
-        self.requests.semantic_tokens.poll(
+        self.requests.semantic_tokens.poll_r(
             |x, _| x.ok().inspect(|x| self.text.set_toks(&x)),
             &l.runtime,
+            w,
         );
-        self.requests.sig_help.poll(
+        self.requests.sig_help.poll_r(
             |x, ((), y)| {
                 x.ok().flatten().map(|x| {
                     if let Some((old_sig, vo, max)) = y
@@ -510,18 +530,20 @@ impl Editor {
                     }
                 })
             },
-            &r,
+            r,
+            w,
         );
-        self.requests.hovering.poll(|x, _| x.ok().flatten(), &r);
-        self.requests.git_diff.poll(|x, _| x.ok(), &r);
-        self.requests.document_symbols.poll(
+        self.requests.hovering.poll_r(|x, _| x.ok().flatten(), r, w);
+        self.requests.git_diff.poll_r(|x, _| x.ok(), r, w);
+        self.requests.document_symbols.poll_r(
             |x, _| {
                 x.ok().flatten().map(|x| match x {
                     DocumentSymbolResponse::Flat(_) => None,
                     DocumentSymbolResponse::Nested(x) => Some(x),
                 })
             },
-            &r,
+            r,
+            w,
         );
     }
     #[implicit_fn]
@@ -618,11 +640,22 @@ impl Editor {
                         .as_ref()
                         .is_none_or(|&(_, x)| x != cursor_position)
                     {
-                        let handle = cl.runtime.spawn(w.redraw_after(cl.request::<lsp_request!("textDocument/definition")>(&GotoDefinitionParams {
-                            text_document_position_params: z.clone(),
-                            work_done_progress_params: default(),
-                            partial_result_params: default(),
-                        }).unwrap().0));
+                        let handle =
+                            cl.runtime.spawn(
+                                cl.request::<lsp_request!(
+                                    "textDocument/definition"
+                                )>(
+                                    &GotoDefinitionParams {
+                                        text_document_position_params: z
+                                            .clone(),
+                                        work_done_progress_params: default(
+                                        ),
+                                        partial_result_params: default(),
+                                    },
+                                )
+                                .unwrap()
+                                .0,
+                            );
                         self.requests.def.request =
                             Some((DropH::new(handle), cursor_position));
                     } else if self

@@ -1,6 +1,6 @@
 use std::backtrace::Backtrace;
 use std::collections::HashMap;
-use std::fmt::Display;
+use std::fmt::{Debug, Display};
 use std::marker::PhantomData;
 use std::mem::forget;
 use std::path::{Path, PathBuf};
@@ -94,7 +94,7 @@ impl<X> From<oneshot::error::RecvError> for RequestError<X> {
         Self::Rx(PhantomData)
     }
 }
-impl<X: Request + std::fmt::Debug> std::error::Error for RequestError<X> {
+impl<X: Request + Debug> std::error::Error for RequestError<X> {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         None
     }
@@ -623,16 +623,12 @@ impl Client {
         });
     }
     pub fn runnables(
-        &self,
+        &'static self,
         t: &Path,
         c: Option<Position>,
     ) -> Result<
-        impl Future<
-            Output = Result<
-                Vec<Runnable>,
-                RequestError<Runnables>,
-            >,
-        >,
+        impl Future<Output = Result<Vec<Runnable>, RequestError<Runnables>>>
+        + use<>,
         SendError<Message>,
     > {
         self.request::<Runnables>(&RunnablesParams {
@@ -1109,7 +1105,7 @@ impl<T, U, F: FnMut(T) -> U, Fu: Future<Output = T>> Map_<T, U, F> for Fu {
     }
 }
 
-impl<R: Request> std::fmt::Debug for RequestError<R> {
+impl<R: Request> Debug for RequestError<R> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         std::fmt::Display::fmt(&self, f)
     }
@@ -1123,13 +1119,20 @@ impl<T: Clone, R, D, E> Clone for Rq<T, R, D, E> {
         Self { result: self.result.clone(), request: None }
     }
 }
-#[derive(Debug, serde_derive::Serialize, serde_derive::Deserialize)]
-
+#[derive(serde_derive::Serialize, serde_derive::Deserialize)]
 pub struct Rq<T, R, D = (), E = RequestError<R>> {
     #[serde(skip_serializing_if = "Option::is_none", default = "none")]
     pub result: Option<T>,
     #[serde(skip, default = "none")]
     pub request: Option<(AbortOnDropHandle<Result<R, E>>, D)>,
+}
+impl<T: Debug, R, D: Debug, E> Debug for Rq<T, R, D, E> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(&format!("Rq<{}>", std::any::type_name::<R>()))
+            .field("result", &self.result)
+            .field("request", &self.request)
+            .finish()
+    }
 }
 
 pub type RqS<T, R: Request, D = ()> = Rq<T, R::Result, D, RequestError<R>>;
@@ -1175,6 +1178,22 @@ impl<T, R, D, E> Rq<T, R, D, E> {
             };
             self.result = f(x, (d, self.result.take()));
         }
+    }
+
+    pub fn poll_r(
+        &mut self,
+        f: impl FnOnce(Result<R, E>, (D, Option<T>)) -> Option<T>,
+        runtime: &tokio::runtime::Runtime,
+        w: Option<&Arc<Window>>,
+    ) {
+        self.poll(
+            |x, y| {
+                f(x, y).inspect(|_| {
+                    w.map(|x| x.request_redraw());
+                })
+            },
+            runtime,
+        )
     }
 }
 

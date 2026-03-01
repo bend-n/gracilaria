@@ -644,6 +644,35 @@ pub fn render(
                 );
             })
         });
+        let mut drawb = |cells, c| {
+             // let ws = ed.workspace.as_deref().unwrap();
+                // let (_x, _y) = text.cursor_visual();
+                let _x = 0;
+                let _y = r - 1;
+                let Ok((_, left, top, w, h)) = place_around(
+                    (_x, _y),
+                    i.copy(),
+                    cells,
+                    c,
+                    ppem,
+                    ls,
+                    0.,
+                    0.,
+                    0.,
+                ) else {
+                    println!("ra?");
+                    return;
+                };
+                i.r#box(
+                    (
+                        left.saturating_sub(1) as _,
+                        top.saturating_sub(1) as _,
+                    ),
+                    w as _,
+                    h as _,
+                    BORDER,
+                );
+        };
         match &ed.state {
             State::CodeAction(Rq { result: Some(x), .. }) => 'out: {
                 let m = x.maxc();
@@ -678,65 +707,20 @@ pub fn render(
                     BORDER,
                 );
             }
-            State::Command(x) => 'out: {
+            State::Command(x) => {
                 let ws = ed.workspace.as_deref().unwrap();
                 let c = x.cells(50, ws);
-                // let (_x, _y) = text.cursor_visual();
-                let _x = 0;
-                let _y = r - 1;
-                let Ok((_, left, top, w, h)) = place_around(
-                    (_x, _y),
-                    i.copy(),
-                    &c,
-                    50,
-                    ppem,
-                    ls,
-                    0.,
-                    0.,
-                    0.,
-                ) else {
-                    println!("ra?");
-                    break 'out;
-                };
-                i.r#box(
-                    (
-                        left.saturating_sub(1) as _,
-                        top.saturating_sub(1) as _,
-                    ),
-                    w as _,
-                    h as _,
-                    BORDER,
-                );
+                drawb(&c, 50);
             }
-            State::Symbols(Rq { result: Some(x), .. }) => 'out: {
+            State::Symbols(Rq { result: Some(x), .. }) => {
                 let ws = ed.workspace.as_deref().unwrap();
                 let c = x.cells(50, ws);
-                // let (_x, _y) = text.cursor_visual();
-                let _x = 0;
-                let _y = r - 1;
-                let Ok((_is_above, left, top, w, h)) = place_around(
-                    (_x, _y),
-                    i.copy(),
-                    &c,
-                    50,
-                    ppem,
-                    ls,
-                    0.,
-                    0.,
-                    0.,
-                ) else {
-                    println!("ra?");
-                    break 'out;
-                };
-                i.r#box(
-                    (
-                        left.saturating_sub(1) as _,
-                        top.saturating_sub(1) as _,
-                    ),
-                    w as _,
-                    h as _,
-                    BORDER,
-                );
+                drawb(&c, 50);
+            }
+            State::Runnables(Rq { result:Some(x), .. }) => {
+                let ws = ed.workspace.as_deref().unwrap();
+                let c = x.cells(50, ws);
+                drawb(&c, 50);
             }
             _ => {}
         }

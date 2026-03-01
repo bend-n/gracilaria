@@ -46,6 +46,7 @@ mod edi;
 mod git;
 mod meta;
 mod rnd;
+mod runnables;
 mod sym;
 mod trm;
 
@@ -192,7 +193,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                 ed.state.consume(Action::Changed).unwrap();
                 window.request_redraw();
             }
-            ed.poll();
+            ed.poll(Some(window));
 
             match event {
                 Event::AboutToWait => {}
