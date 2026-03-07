@@ -13,7 +13,7 @@ use rust_analyzer::lsp::ext::*;
 
 use crate::FG;
 use crate::edi::{Editor, lsp_m};
-use crate::lsp::{Anonymize, PathURI, Rq};
+use crate::lsp::{PathURI, Rq};
 use crate::menu::charc;
 use crate::menu::generic::{GenericMenu, MenuData};
 use crate::text::{RopeExt, SortTedits, col, color_};
@@ -266,7 +266,7 @@ impl Editor {
             Cmd::RARunnables => {
                 let p = self.text.to_l_position(*self.text.cursor.first());
                 let o = o.to_owned();
-                let x = l.runtime.spawn(l.runnables(&o, None)?);
+                let x = l.runtime.spawn(l.runnables(&o, p)?);
                 self.state = crate::edi::st::State::Runnables(Rq::new(x));
             }
             _ => unimplemented!(),

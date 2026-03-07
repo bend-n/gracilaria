@@ -1,9 +1,10 @@
-#![allow(unused_parens, unused_variables, dead_code)]
+#![allow(dead_code, unused)]
 
 use Default::default;
 use NamedKey::*;
 use lsp_types::*;
 use regex::Regex;
+use rust_analyzer::lsp::ext::Runnable;
 use winit::event::MouseButton;
 use winit::keyboard::{Key, NamedKey, SmolStr};
 
@@ -87,6 +88,7 @@ Runnables(RqS::<crate::runnables::Runnables, rust_analyzer::lsp::ext::Runnables>
     K(Key::Named(Tab) if shift()) => Runnables({ x.next(); Rq { result: Some(x), request }}),
     K(Key::Named(ArrowDown)) => Runnables({ x.next(); Rq { result: Some(x), request }}),
     K(Key::Named(ArrowUp | Tab)) => Runnables({ x.back(); Rq { result: Some(x), request }}),
+    K(Key::Named(Enter)) => Default [Run(Runnable => x.sel().clone())],
     K(k) => Runnables({
  if let Some(_) = handle2(&k, &mut x.tedit, None) {
     x.selection = 0; x.vo = 0;

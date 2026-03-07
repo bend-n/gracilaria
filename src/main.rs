@@ -1,4 +1,5 @@
 #![feature(
+    random,
     btree_set_entry,
     associated_type_defaults,
     array_try_map,
@@ -435,12 +436,12 @@ fn history_test() {
     h.push(&mut t);
     t.insert(" test");
     h.push(&mut t);
-    h.undo(&mut t);
-    h.redo(&mut t);
-    h.undo(&mut t);
+    h.undo(&mut t).unwrap();
+    h.redo(&mut t).unwrap();
+    h.undo(&mut t).unwrap();
     t.insert(" good");
     h.push(&mut t);
-    h.undo(&mut t);
+    h.undo(&mut t).unwrap();
     assert_eq!(t.rope.to_string(), "echo");
 }
 pub trait M<T> {

@@ -1736,6 +1736,14 @@ impl Editor {
                 let position = self.text.line_to_char(y);
                 self.text.cursor.add(position + x, &self.text.rope);
             }
+            Some(Do::Run(x)) =>
+                if let Some((l, ws)) =
+                    lsp!(self).zip(self.workspace.as_deref())
+                {
+                    l.runtime
+                        .block_on(crate::runnables::run(x, ws))
+                        .unwrap();
+                },
             None => {}
         }
         ControlFlow::Continue(())

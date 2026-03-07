@@ -1,14 +1,18 @@
-use std::iter::{empty, repeat};
+use std::iter::{chain, empty, repeat};
 
 use Default::default;
+use Into::into;
 use dsb::Cell;
 use dsb::cell::Style;
+use itertools::Itertools;
+use kitty_rc::LaunchCommand;
 use lsp_types::LocationLink;
-use rust_analyzer::lsp::ext::{Runnable, RunnableKind};
+use rust_analyzer::lsp::ext::{Runnable, RunnableArgs, RunnableKind};
 
 use crate::menu::generic::{GenericMenu, MenuData};
 use crate::menu::{Key, charc};
 use crate::text::{col, color_, set_a};
+use crate::trm;
 
 pub enum Runb {}
 impl MenuData for Runb {
@@ -135,5 +139,56 @@ pub type Runnables = GenericMenu<Runb>;
 impl<'a> Key<'a> for &'a Runnable {
     fn key(&self) -> impl Into<std::borrow::Cow<'a, str>> {
         &self.label
+    }
+}
+
+pub fn run(
+    run: Runnable,
+    ws: &std::path::Path,
+) -> impl Future<Output = Result<(), kitty_rc::KittyError>> {
+    match run.args {
+        RunnableArgs::Cargo(x) => {
+            // let mut a = x.cargo_args;
+            let a = if !x.executable_args.is_empty() {
+                [x.cargo_args, vec!["--".into()], x.executable_args]
+                    .concat()
+            } else {
+                x.cargo_args
+            };
+            let x = LaunchCommand::new()
+                .args([
+                    "bash",
+                    "-c",
+                    &format!(
+                        "{}; exec xonsh",
+                        chain(
+                            [x.override_cargo.unwrap_or("cargo".into())],
+                            a
+                        )
+                        .join(" ")
+                    ),
+                ])
+                .window_type("tab")
+                .tab_title(run.label)
+                // .keep_focus(true)
+                .cwd(
+                    x.workspace_root
+                        .as_ref()
+                        .map(|x| x.as_str())
+                        .unwrap_or("."),
+                )
+                .env(serde_json::Map::from_iter(
+                    x.environment
+                        .into_iter()
+                        .chain([["RUST_BACKTRACE", "short"]
+                            .map(into)
+                            .into()])
+                        .map(|(x, y)| (x, serde_json::Value::from(y))),
+                ));
+            trm::launch(x, ws)
+        }
+        RunnableArgs::Shell(x) => {
+            todo!("{x:?}")
+        }
     }
 }
