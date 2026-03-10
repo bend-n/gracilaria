@@ -2045,6 +2045,10 @@ pub fn handle2<'a>(
             text.right();
             text.backspace()
         }
+        Character(x) if x == "a" && alt() => text.left(),
+        Character(x) if x == "w" && alt() => text.up(),
+        Character(x) if x == "s" && alt() => text.down(),
+        Character(x) if x == "d" && alt() => text.right(),
         Named(ArrowLeft) if ctrl() => text.word_left(),
         Named(ArrowRight) if ctrl() => text.word_right(),
         Named(ArrowLeft) => text.left(),
