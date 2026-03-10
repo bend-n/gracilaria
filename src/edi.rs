@@ -33,7 +33,7 @@ use crate::commands::Cmds;
 use crate::complete::Complete;
 use crate::hov::{self, Hovr};
 use crate::lsp::{
-    self, Anonymize, Client, Map_, PathURI, RedrawAfter, RequestError, Rq,
+    self, Anonymize, Client, Map_, PathURI, RequestError, Rq,
 };
 use crate::menu::generic::MenuData;
 use crate::meta::META;
@@ -489,6 +489,9 @@ impl Editor {
                     r,
                     w,
                 );
+                if x.result.is_none() {
+                    self.state = State::Default;
+                }
             }
             State::Runnables(x) => {
                 x.poll_r(
@@ -695,7 +698,7 @@ impl Editor {
                 // println!("rq hov of {hover:?} (cur {})", requests.hovering.request.is_some());
                 let handle: tokio::task::JoinHandle<
                     Result<Option<Hovr>, anyhow::Error>,
-                > = cl.runtime.spawn(w.redraw_after(async move {
+                > = cl.runtime.spawn(async move {
                     let Some(x) = rx.await? else {
                         return Ok(None::<Hovr>);
                     };
@@ -768,7 +771,7 @@ impl Editor {
                         }
                         .into(),
                     ))
-                }));
+                });
                 self.requests.hovering.request =
                     (DropH::new(handle), cursor_position).into();
                 // requests.hovering.result = None;
@@ -806,21 +809,16 @@ impl Editor {
                 );
                 if let Some((lsp, path)) = lsp!(self + p) {
                     self.requests.sig_help.request(lsp.runtime.spawn(
-                        w.redraw_after(lsp.request_sig_help(
-                            path,
-                            text.primary_cursor(),
-                        )),
+                        lsp.request_sig_help(path, text.primary_cursor()),
                     ));
                     self.requests.document_highlights.request(
                         lsp.runtime.spawn(
-                            w.redraw_after(
-                                lsp.document_highlights(
-                                    path,
-                                    text.to_l_position(
-                                        text.cursor.first().position,
-                                    )
-                                    .unwrap(),
-                                ),
+                            lsp.document_highlights(
+                                path,
+                                text.to_l_position(
+                                    text.cursor.first().position,
+                                )
+                                .unwrap(),
                             ),
                         ),
                     );
@@ -982,15 +980,13 @@ impl Editor {
                 if let Some(lsp) = lsp!(self) {
                     let mut q = Rq::new(
                         lsp.runtime.spawn(
-                            window.redraw_after(
-                                lsp.workspace_symbols("".into())
-                                    .map(|x| x.anonymize())
-                                    .map(|x| {
-                                        x.map(|x| {
-                                            x.map(SymbolsList::Workspace)
-                                        })
-                                    }),
-                            ),
+                            lsp.workspace_symbols("".into())
+                                .map(|x| x.anonymize())
+                                .map(|x| {
+                                    x.map(|x| {
+                                        x.map(SymbolsList::Workspace)
+                                    })
+                                }),
                         ),
                     );
                     q.result =
@@ -1008,14 +1004,12 @@ impl Editor {
                     let p = p.to_owned();
                     take(&mut x.data.0);
                     *request = Some((
-                        DropH::new(lsp.runtime.spawn(
-                            window.redraw_after(async move {
-                                lsp.document_symbols(&p)
-                                    .await
-                                    .anonymize()
-                                    .map(|x| x.map(SymbolsList::Document))
-                            }),
-                        )),
+                        DropH::new(lsp.runtime.spawn(async move {
+                            lsp.document_symbols(&p)
+                                .await
+                                .anonymize()
+                                .map(|x| x.map(SymbolsList::Document))
+                        })),
                         (),
                     ));
                 },
@@ -1065,12 +1059,16 @@ impl Editor {
                             *request = Some((
                                 DropH::new(
                                     lsp.runtime.spawn(
-                                        window.redraw_after(
-                                            lsp.workspace_symbols(
-                                                x.tedit.rope.to_string(),
-                                            )
-                                            .map(|x| x.anonymize().map(|x| x.map(SymbolsList::Workspace))),
-                                        ),
+                                        lsp.workspace_symbols(
+                                            x.tedit.rope.to_string(),
+                                        )
+                                        .map(|x| {
+                                            x.anonymize().map(|x| {
+                                                x.map(
+                                                    SymbolsList::Workspace,
+                                                )
+                                            })
+                                        }),
                                     ),
                                 ),
                                 (),
@@ -1383,14 +1381,12 @@ impl Editor {
                 {
                     self.requests.sig_help.request(
                         lsp.runtime.spawn(
-                            window.redraw_after(
-                                lsp.request_sig_help(
-                                    path,
-                                    self.text
-                                        .cursor
-                                        .first()
-                                        .cursor(&self.text.rope),
-                                ),
+                            lsp.request_sig_help(
+                                path,
+                                self.text
+                                    .cursor
+                                    .first()
+                                    .cursor(&self.text.rope),
                             ),
                         ),
                     );
@@ -1411,14 +1407,12 @@ impl Editor {
                         {
                             self.requests.sig_help.request(
                                 lsp.runtime.spawn(
-                                    window.redraw_after(
-                                        lsp.request_sig_help(
-                                            o,
-                                            self.text
-                                                .cursor
-                                                .first()
-                                                .cursor(&self.text.rope),
-                                        ),
+                                    lsp.request_sig_help(
+                                        o,
+                                        self.text
+                                            .cursor
+                                            .first()
+                                            .cursor(&self.text.rope),
                                     ),
                                 ),
                             );
@@ -1436,15 +1430,13 @@ impl Editor {
                         Some(CDo::Request(ctx)) => {
                             let h = DropH::new(
                                 lsp.runtime.spawn(
-                                    window.redraw_after(
-                                        lsp.request_complete(
-                                            o,
-                                            self.text
-                                                .cursor
-                                                .first()
-                                                .cursor(&self.text.rope),
-                                            ctx,
-                                        ),
+                                    lsp.request_complete(
+                                        o,
+                                        self.text
+                                            .cursor
+                                            .first()
+                                            .cursor(&self.text.rope),
+                                        ctx,
                                     ),
                                 ),
                             );
@@ -1530,14 +1522,12 @@ impl Editor {
                             }
                             self.requests.sig_help = Rq::new(
                                 lsp.runtime.spawn(
-                                    window.redraw_after(
-                                        lsp.request_sig_help(
-                                            o,
-                                            self.text
-                                                .cursor
-                                                .first()
-                                                .cursor(&self.text.rope),
-                                        ),
+                                    lsp.request_sig_help(
+                                        o,
+                                        self.text
+                                            .cursor
+                                            .first()
+                                            .cursor(&self.text.rope),
                                     ),
                                 ),
                             );

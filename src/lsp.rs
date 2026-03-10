@@ -1211,25 +1211,6 @@ impl<T, R, D, E> Rq<T, R, D, E> {
     }
 }
 
-pub trait RedrawAfter {
-    fn redraw_after<T, F: Future<Output = T>>(
-        &self,
-        f: F,
-    ) -> impl Future<Output = T> + use<Self, T, F>;
-}
-impl RedrawAfter for Arc<Window> {
-    fn redraw_after<T, F: Future<Output = T>>(
-        &self,
-        f: F,
-    ) -> impl Future<Output = T> + use<T, F> {
-        let w: Arc<Window> = self.clone();
-        f.map(move |x| {
-            w.request_redraw();
-            x
-        })
-    }
-}
-
 pub trait PathURI {
     fn tid(&self) -> TextDocumentIdentifier;
 }
