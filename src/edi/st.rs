@@ -52,6 +52,7 @@ Default => {
     K(Key::Character(x) if x == "`" && ctrl()) => _ [SpawnTerminal],
     K(Key::Character(y) if y == "/" && ctrl()) => Default [Comment(State => State::Default)],
     K(Key::Character(x) if x == "p" && ctrl()) => Command(Commands => Commands::default()),
+    K(Key::Named(Backspace) if alt()) => _ [DeleteBracketPair],
     K(Key::Named(F1)) => Procure((default(), InputRequest::RenameSymbol)),
     K(Key::Named(k @ (ArrowUp | ArrowDown)) if alt()) => _ [InsertCursor(Direction => {
         if k == ArrowUp {Direction::Above} else { Direction::Below }

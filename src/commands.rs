@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::iter::repeat;
 use std::path::Path;
 use std::process::Stdio;

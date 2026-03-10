@@ -950,6 +950,34 @@ impl Editor {
                     l.matching_brace(f, &mut self.text);
                 }
             }
+            Some(Do::DeleteBracketPair) => {
+                if let Some((l, f)) = lsp!(self + p) {
+                    if let Ok(x) = l.matching_brace_at(
+                        f,
+                        self.text.cursor.positions(&self.text.rope),
+                    ) {
+                        use itertools::Itertools;
+                        for p in
+                            // self.text.cursor.iter()
+                            x
+                                .iter()
+                                .flatten()
+                                .flat_map(|(a, b)| {
+                                    [a, b].map(|c| {
+                                        self.text
+                                            .rope
+                                            .l_position(*c)
+                                            .unwrap()
+                                    })
+                                })
+                                .sorted()
+                                .rev()
+                        {
+                            self.text.remove(p..p + 1).unwrap();
+                        }
+                    }
+                }
+            }
             Some(Do::Symbols) =>
                 if let Some(lsp) = lsp!(self) {
                     let mut q = Rq::new(

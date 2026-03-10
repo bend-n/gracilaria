@@ -479,22 +479,34 @@ impl Client {
         .unwrap()
         .0
     }
+
+    pub fn matching_brace_at(
+        &self,
+        f: &Path,
+        x: Vec<Position>,
+    ) -> Result<
+        Vec<Option<(Position, Position)>>,
+        RequestError<MatchingBrace>,
+    > {
+        self.request_immediate::<MatchingBrace>(&MatchingBraceParams {
+            text_document: f.tid(),
+            positions: x,
+        })
+    }
+
     pub fn matching_brace<'a>(
         &'static self,
         f: &Path,
         t: &'a mut TextArea,
     ) {
-        if let Ok([x]) = self.runtime.block_on(
-            self.request::<MatchingBrace>(&MatchingBraceParams {
-                text_document: f.tid(),
-                positions: vec![
-                    t.to_l_position(*t.cursor.first()).unwrap(),
-                ],
-            })
-            .unwrap()
-            .0,
-        ) {
-            t.cursor.first_mut().position = t.l_position(x).unwrap();
+        if let Ok(x) =
+            self.matching_brace_at(f, t.cursor.positions(&t.rope))
+        {
+            for (c, p) in t.cursor.inner.iter_mut().zip(x) {
+                if let Some(p) = p {
+                    c.position = t.rope.l_position(p.1).unwrap();
+                }
+            }
         }
     }
 

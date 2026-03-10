@@ -396,6 +396,9 @@ impl Cursor {
     }
 }
 impl Cursors {
+    pub fn positions(&self, r: &Rope) -> Vec<lsp_types::Position> {
+        self.iter().map(|x| r.to_l_position(*x).unwrap()).collect()
+    }
     pub fn clear_selections(&mut self) {
         self.each(|x| x.sel = None);
     }
