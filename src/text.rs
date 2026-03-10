@@ -728,14 +728,15 @@ impl TextArea {
             }
         }
     }
-
     #[lower::apply(saturating)]
-    pub fn scroll_to_cursor_centering(&mut self) {
-        let (_, y) = self.primary_cursor();
-
+    pub fn scroll_to_ln_centering(&mut self, y: usize) {
         if !(self.vo..self.vo + self.r).contains(&y) {
             self.vo = y - (self.r / 2);
         }
+    }
+    pub fn scroll_to_cursor_centering(&mut self) {
+        let (_, y) = self.primary_cursor();
+        self.scroll_to_ln_centering(y);
     }
     #[cold]
     pub fn tree_sit<'c>(&self, path: Option<&Path>, cell: &mut Output) {

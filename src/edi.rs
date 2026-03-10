@@ -29,11 +29,13 @@ pub mod st;
 use st::*;
 
 use crate::bar::Bar;
+use crate::commands::Cmds;
 use crate::complete::Complete;
 use crate::hov::{self, Hovr};
 use crate::lsp::{
     self, Anonymize, Client, Map_, PathURI, RedrawAfter, RequestError, Rq,
 };
+use crate::menu::generic::MenuData;
 use crate::meta::META;
 use crate::runnables::Runnables;
 use crate::sym::{Symbols, SymbolsList, SymbolsType};
@@ -989,10 +991,30 @@ impl Editor {
                         (),
                     ));
                 },
-            Some(Do::ProcessCommand(x)) => {
-                let z = x.sel();
-                if let Err(e) = self.handle_command(z, window.clone()) {
-                    self.bar.last_action = format!("{e}");
+            Some(Do::ProcessCommand(mut x, z)) =>
+                match Cmds::complete_or_accept(z) {
+                    crate::menu::generic::CorA::Complete => {
+                        x.tedit.rope =
+                            Rope::from_str(&format!("{} ", z.name()));
+                        x.tedit.cursor.end(&x.tedit.rope);
+                        self.state = State::Command(x);
+                    }
+                    crate::menu::generic::CorA::Accept => {
+                        if let Err(e) =
+                            self.handle_command(z, window.clone())
+                        {
+                            self.bar.last_action = format!("{e}");
+                        }
+                    }
+                },
+            Some(Do::CmdTyped) => {
+                let State::Command(x) = &self.state else {
+                    unreachable!()
+                };
+                if let Some(Ok(crate::commands::Cmd::GoTo(Some(x)))) =
+                    x.sel()
+                {
+                    self.text.scroll_to_ln_centering(x as _);
                 }
             }
             Some(Do::SymbolsHandleKey) => {
@@ -1040,12 +1062,14 @@ impl Editor {
                     unreachable!()
                 };
                 x.next();
-                match x.sel().at {
-                    sym::GoTo::R(x) => {
-                        let x = self.text.l_range(x).unwrap();
-                        self.text.vo = self.text.char_to_line(x.start);
+                if let Some(Ok(x)) = x.sel() {
+                    match x.at {
+                        sym::GoTo::R(x) => {
+                            let x = self.text.l_range(x).unwrap();
+                            self.text.vo = self.text.char_to_line(x.start);
+                        }
+                        _ => {}
                     }
-                    _ => {}
                 }
             }
             Some(Do::SymbolsSelectPrev) => {
@@ -1055,12 +1079,14 @@ impl Editor {
                     unreachable!()
                 };
                 x.back();
-                match x.sel().at {
-                    sym::GoTo::R(x) => {
-                        let x = self.text.l_range(x).unwrap();
-                        self.text.vo = self.text.char_to_line(x.start);
+                if let Some(Ok(x)) = x.sel() {
+                    match x.at {
+                        sym::GoTo::R(x) => {
+                            let x = self.text.l_range(x).unwrap();
+                            self.text.vo = self.text.char_to_line(x.start);
+                        }
+                        _ => {}
                     }
-                    _ => {}
                 }
             }
             Some(Do::SymbolsSelect) => {
@@ -1069,41 +1095,43 @@ impl Editor {
                 else {
                     unreachable!()
                 };
-                let x = x.sel();
-                if let Err(e) = try bikeshed anyhow::Result<()> {
-                    let r = match x.at {
-                        sym::GoTo::Loc(x) => {
-                            let x = x.clone();
-                            let f = x
-                                .uri
-                                .to_file_path()
-                                .map_err(|()| anyhow!("dammit"))?
-                                .canonicalize()?;
-                            self.state = State::Default;
-                            self.requests.complete = CompletionState::None;
-                            if Some(&f) != self.origin.as_ref() {
-                                self.open(&f, window.clone())?;
+                if let Some(Ok(x)) = x.sel()
+                    && let Err(e) = try bikeshed anyhow::Result<()> {
+                        let r = match x.at {
+                            sym::GoTo::Loc(x) => {
+                                let x = x.clone();
+                                let f = x
+                                    .uri
+                                    .to_file_path()
+                                    .map_err(|()| anyhow!("dammit"))?
+                                    .canonicalize()?;
+                                self.state = State::Default;
+                                self.requests.complete =
+                                    CompletionState::None;
+                                if Some(&f) != self.origin.as_ref() {
+                                    self.open(&f, window.clone())?;
+                                }
+                                x.range
                             }
-                            x.range
+                            sym::GoTo::R(range) => range,
+                        };
+                        let p = self
+                            .text
+                            .l_position(r.start)
+                            .ok_or(anyhow!("rah"))?;
+                        if p != 0 {
+                            self.text.cursor.just(p, &self.text.rope);
                         }
-                        sym::GoTo::R(range) => range,
-                    };
-                    let p = self
-                        .text
-                        .l_position(r.start)
-                        .ok_or(anyhow!("rah"))?;
-                    if p != 0 {
-                        self.text.cursor.just(p, &self.text.rope);
+                        self.text.scroll_to_cursor_centering();
                     }
-                    self.text.scroll_to_cursor_centering();
-                } {
+                {
                     log::error!("alas! {e}");
                 }
             }
             Some(Do::RenameSymbol(to)) => {
                 if let Some((lsp, f)) = lsp!(self + p) {
-                    let t = lsp
-                        .request::<lsp_request!("textDocument/rename")>(
+                    let x = lsp
+                        .request_immediate::<lsp_request!("textDocument/rename")>(
                             &RenameParams {
                                 text_document_position:
                                     TextDocumentPositionParams {
@@ -1121,21 +1149,8 @@ impl Editor {
                                 new_name: to,
                                 work_done_progress_params: default(),
                             },
-                        )
-                        .unwrap()
-                        .0;
-                    let mut t = Box::pin(t);
-                    let mut ctx = std::task::Context::from_waker(
-                        std::task::Waker::noop(),
-                    );
-                    let x = loop {
-                        match Future::poll(t.as_mut(), &mut ctx) {
-                            std::task::Poll::Ready(x) => break x,
-                            std::task::Poll::Pending => {
-                                std::hint::spin_loop();
-                            }
-                        }
-                    };
+                        );
+
                     match x {
                         Ok(Some(x)) => self.apply_wsedit(x, &f.to_owned()),
                         Err(RequestError::Failure(

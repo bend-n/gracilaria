@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::fmt::Debug;
 use std::path::Path;
 
@@ -46,11 +47,28 @@ impl<T: MenuData<Data: Debug>> Debug for GenericMenu<T> {
         .finish()
     }
 }
-pub trait MenuData {
+pub enum CorA {
+    Complete,
+    Accept,
+}
+pub trait MenuData: Sized {
     const HEIGHT: usize = 30;
     type Data;
     type Element<'a>: Key<'a>;
+    type E = !;
 
+    fn complete_or_accept<'a>(x: Self::Element<'a>) -> CorA {
+        CorA::Accept
+    }
+    fn map<'a>(
+        _m: &GenericMenu<Self>,
+        x: Self::Element<'a>,
+    ) -> Result<Self::Element<'a>, Self::E> {
+        Ok(x)
+    }
+    fn should_complete<'a>(_m: &GenericMenu<Self>) -> bool {
+        true
+    }
     fn gn<'a>(
         x: &'a Self::Data,
     ) -> impl Iterator<Item = Self::Element<'a>>;
@@ -75,11 +93,22 @@ pub trait MenuData {
     ) -> Vec<(u32, Self::Element<'a>, Vec<u32>)> {
         score(x, f)
     }
+
+    fn f(m: &GenericMenu<Self>) -> String {
+        m.tedit.rope.to_string()
+    }
 }
 
 impl<T: MenuData> GenericMenu<T> {
-    fn f(&self) -> String {
-        self.tedit.rope.to_string()
+    pub type I = T;
+    pub fn should_render(&self) -> bool {
+        T::should_complete(self)
+    }
+    // pub fn valid(&self) -> Result<(), Cow<'static, str>> {
+    //     T::valid(self)
+    // }
+    pub fn f(&self) -> String {
+        T::f(self)
     }
     pub fn next(&mut self)
     where
@@ -90,11 +119,14 @@ impl<T: MenuData> GenericMenu<T> {
         back::<{ T::HEIGHT }>(n, &mut self.selection, &mut self.vo);
     }
 
-    pub fn sel(&self) -> T::Element<'_> {
+    pub fn sel(
+        &self,
+    ) -> Option<Result<<T as MenuData>::Element<'_>, T::E>> {
         let f = self.f();
+
         T::score_c(T::filter_c(&self.data, &f), &f)
-            .swap_remove(self.selection)
-            .1
+            .try_remove(self.selection)
+            .map(|(_, x, _)| T::map(&self, x))
     }
 
     pub fn back(&mut self)

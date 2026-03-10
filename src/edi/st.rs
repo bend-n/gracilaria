@@ -1,5 +1,4 @@
 #![allow(dead_code, unused)]
-
 use Default::default;
 use NamedKey::*;
 use lsp_types::*;
@@ -11,6 +10,7 @@ use winit::keyboard::{Key, NamedKey, SmolStr};
 use crate::commands::Commands;
 use crate::edi::handle2;
 use crate::lsp::{AQErr, Rq, RqS};
+use crate::menu::generic::{GenericMenu, MenuData};
 use crate::sym::{Symbols, SymbolsList};
 use crate::text::TextArea;
 use crate::{
@@ -73,12 +73,13 @@ Default => {
     M(_) => _,
 },
 Command(_) => K(Key::Named(Escape)) => Default,
-Command(t) => K(Key::Named(Enter)) => Default [ProcessCommand(Commands => t)],
+Command(t) => K(Key::Named(Enter) if let Some(Ok(x)) = t.sel()) => Default [ProcessCommand((Commands, crate::commands::Cmd) => (t, x))],
+Command(t) => K(Key::Named(Enter)) => _,
 Command(mut t) => K(Key::Named(Tab) if shift()) => Command({ t.back();t }),
 Command(mut t) => K(Key::Named(Tab)) => Command({ t.next(); t }),
 Command(mut t) => K(k) => Command({ if let Some(_) = handle2(&k, &mut t.tedit, None) {
     t.selection = 0; t.vo = 0;
-}; t }),
+}; t }) [CmdTyped],
 Command(t) => C(_) => _,
 Command(t) => K(_) => _,
 Runnables(_x) => {
@@ -88,7 +89,7 @@ Runnables(RqS::<crate::runnables::Runnables, rust_analyzer::lsp::ext::Runnables>
     K(Key::Named(Tab) if shift()) => Runnables({ x.next(); Rq { result: Some(x), request }}),
     K(Key::Named(ArrowDown)) => Runnables({ x.next(); Rq { result: Some(x), request }}),
     K(Key::Named(ArrowUp | Tab)) => Runnables({ x.back(); Rq { result: Some(x), request }}),
-    K(Key::Named(Enter)) => Default [Run(Runnable => x.sel().clone())],
+    K(Key::Named(Enter) if let Some(Ok(x_)) = x.clone().sel()) => Default [Run(Runnable => x_.clone())],
     K(k) => Runnables({
  if let Some(_) = handle2(&k, &mut x.tedit, None) {
     x.selection = 0; x.vo = 0;

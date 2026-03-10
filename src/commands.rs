@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::iter::repeat;
 use std::path::Path;
 use std::process::Stdio;
@@ -15,30 +16,44 @@ use crate::FG;
 use crate::edi::{Editor, lsp_m};
 use crate::lsp::{PathURI, Rq};
 use crate::menu::charc;
-use crate::menu::generic::{GenericMenu, MenuData};
+use crate::menu::generic::{CorA, GenericMenu, MenuData};
 use crate::text::{RopeExt, SortTedits, col, color_};
 
+macro_rules! repl {
+    ($x:ty, $($with:tt)+) => {
+        $($with)+
+    };
+}
 macro_rules! commands {
-    ($(#[doc = $d: literal] $t:tt $identifier: ident: $c:literal),+ $(,)?) => {
-        #[derive(Copy, Clone, PartialEq, Eq)]
+    ($(#[doc = $d: literal] $t:tt $identifier: ident$(($($thing:ty),+))?: $c:literal),+ $(,)?) => {
+        #[derive(Copy, Clone, PartialEq, Eq, Debug)]
         pub enum Cmd {
-            $(#[doc = $d] $identifier),+
+            $(#[doc = $d] $identifier $( ( $(Option<$thing>,)+ ) )?
+
+            ),+
         }
         impl Cmd {
-            pub const ALL: [Cmd; { [$($c),+].len() }] = [$(Self::$identifier,)+];
+            pub const ALL: [Cmd; { [$($c),+].len() }] = [$(Self::$identifier
+                $( ( $(None::<$thing>,)+) )?
+            ,)+];
             pub fn name(self) -> &'static str {
             match self {
-                $(Self::$identifier => $c,)+
+                $(Self::$identifier $( ( $(repl!($thing, _),)+ ) )? => $c,)+
             }
             }
+            // pub fn wants(self) -> &'static [wants] {
+            // match self {
+                // $(Self::$identifier => &[$($(wants::$thing as u8,)+)?],)+
+            // }
+            // }
             pub fn desc(self) -> &'static str {
             match self {
-                $(Self::$identifier => $d,)+
+                $(Self::$identifier $( ( $(repl!($thing, _),)+ ) )? => $d,)+
             }
             }
             pub fn needs_lsp(self) -> bool {
                 match self {
-                    $(Self::$identifier => stringify!($t) == "@",)+
+                    $(Self::$identifier $( ( $(repl!($thing, _),)+ ) )? => stringify!($t) == "@",)+
                 }
             }
         }
@@ -67,6 +82,8 @@ commands!(
     @ RAOpenCargoToml: "open-cargo-toml",
     /// Runs the test at the cursor
     @ RARunTest: "run-test",
+    /// GoTo line,
+    | GoTo(u32): "g",
 );
 
 pub enum Cmds {}
@@ -74,10 +91,45 @@ impl MenuData for Cmds {
     const HEIGHT: usize = 30;
     type Data = ();
     type Element<'a> = Cmd;
+    type E = &'static str;
     fn gn((): &()) -> impl Iterator<Item = Cmd> {
         Cmd::ALL.into_iter()
     }
+    fn should_complete<'a>(m: &GenericMenu<Self>) -> bool {
+        !Cmd::ALL.iter().any(|x| m.tedit.to_string().starts_with(x.name()))
+    }
 
+    fn map<'a>(
+        m: &GenericMenu<Self>,
+        x: Self::Element<'a>,
+    ) -> Result<Self::Element<'a>, Self::E> {
+        if let Cmd::GoTo(_) = x {
+            if !m.tedit.to_string().starts_with(Cmd::GoTo(None).name()) {
+                return Ok(Cmd::GoTo(None));
+            }
+            if let Some((_, x)) = m.tedit.to_string().split_once(" ")
+                // && x.chars().all(|x| x.is_numeric())
+                && let Ok(n) = x.parse()
+            {
+                Ok(Cmd::GoTo(Some(n)))
+            } else {
+                Err("supply number")
+            }
+        } else {
+            Ok(x)
+        }
+    }
+    fn complete_or_accept<'a>(x: Self::Element<'a>) -> CorA {
+        if let Cmd::GoTo(None) = x { CorA::Complete } else { CorA::Accept }
+    }
+    fn f(m: &GenericMenu<Self>) -> String {
+        m.tedit
+            .to_string()
+            .split_once(" ")
+            .map(|x| x.0)
+            .unwrap_or(&m.tedit.to_string())
+            .into()
+    }
     fn r(
         _: &Self::Data,
         x: Cmd,
@@ -144,6 +196,15 @@ impl Editor {
         z: Cmd,
         w: Arc<winit::window::Window>,
     ) -> anyhow::Result<()> {
+        match z {
+            Cmd::GoTo(Some(x)) =>
+                if let Ok(x) = self.text.try_line_to_char(x as _) {
+                    self.text.cursor.just(x, &self.text.rope);
+                    self.text.scroll_to_cursor_centering();
+                },
+            x if x.needs_lsp() => {}
+            x => unimplemented!("{x:?}"),
+        }
         if !z.needs_lsp() {
             return Ok(());
         }

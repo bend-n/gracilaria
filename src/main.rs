@@ -1,4 +1,6 @@
 #![feature(
+    inherent_associated_types,
+    never_type,
     random,
     btree_set_entry,
     associated_type_defaults,

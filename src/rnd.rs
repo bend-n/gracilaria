@@ -707,7 +707,7 @@ pub fn render(
                     BORDER,
                 );
             }
-            State::Command(x) => {
+            State::Command(x) if x.should_render() => {
                 let ws = ed.workspace.as_deref().unwrap();
                 let c = x.cells(50, ws);
                 drawb(&c, 50);
