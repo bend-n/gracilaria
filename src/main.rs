@@ -1,4 +1,5 @@
 #![feature(
+    adt_const_params,
     inherent_associated_types,
     never_type,
     random,
@@ -70,14 +71,17 @@ use lsp_types::*;
 use rust_fsm::StateMachine;
 use serde::{Deserialize, Serialize};
 use swash::FontRef;
-use winit::dpi::PhysicalSize;
+use winit::dpi::{PhysicalPosition, PhysicalSize};
 use winit::event::{
-    ElementState, Event, Ime, MouseButton, MouseScrollDelta, WindowEvent,
+    ButtonSource, ElementState, Ime, MouseButton, MouseScrollDelta,
+    WindowEvent,
 };
 use winit::event_loop::{ControlFlow, EventLoop};
+use winit::icon::RgbaIcon;
 use winit::keyboard::{Key, ModifiersState, NamedKey};
-use winit::platform::wayland::WindowAttributesExtWayland;
-use winit::window::Icon;
+use winit::window::{
+    ImeCapabilities, ImeEnableRequest, ImeHint, ImeRequestData,
+};
 
 use crate::edi::Editor;
 use crate::edi::st::*;
@@ -119,7 +123,7 @@ extern "C" fn sigint(_: i32) {
 }
 
 #[implicit_fn::implicit_fn]
-pub(crate) fn entry(event_loop: EventLoop<()>) {
+pub(crate) fn entry(event_loop: EventLoop) {
     unsafe { __ED.write(Editor::new()) };
     assert_eq!(unsafe { atexit(cleanup) }, 0);
     unsafe { signal(libc::SIGINT, sigint as *const () as usize) };
@@ -148,16 +152,17 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
         move |elwt| {
             let window = winit_app::make_window(elwt, |x| {
                 x.with_title("gracilaria")
+                    .with_platform_attributes(Box::new(winit::platform::wayland::WindowAttributesWayland::default().with_name("com.bendn.gracilaria", "com.bendn.gracilaria")))
                     .with_decorations(false)
-                    .with_name("com.bendn.gracilaria", "")
-                    .with_resize_increments(PhysicalSize::new(fw, fh))
+                    // .with_name("com.bendn.gracilaria", "")
+                    // .with_resize_increments(PhysicalSize::new(fw, fh))
                     .with_window_icon(Some(
-                        Icon::from_rgba(
+                        RgbaIcon::new(
                             include_bytes!("../dist/icon-32").to_vec(),
                             32,
                             32,
                         )
-                        .unwrap(),
+                        .unwrap().into()
                     ))
             });
             if let Some(x) = w.take() {
@@ -165,8 +170,21 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
             }
             let w_ = window.clone();
             title.as_deref().map(move |x| w_.set_title(x));
-            window.set_ime_allowed(true);
-            window.set_ime_purpose(winit::window::ImePurpose::Terminal);
+            window.request_redraw();
+            window.request_ime_update(winit::window::ImeRequest::Enable(
+                ImeEnableRequest::new(
+                    ImeCapabilities::default()
+                        .with_hint_and_purpose()
+                        .with_cursor_area(),
+                        // .with_surrounding_text(),
+                    ImeRequestData::default().with_hint_and_purpose(
+                        ImeHint::NONE,
+                        winit::window::ImePurpose::Terminal,
+                    ).with_cursor_area(winit::dpi::Position::Physical(PhysicalPosition::new(0, 0)), winit::dpi::Size::Physical(PhysicalSize::new(0,0))),
+                )
+                .unwrap(),
+            )).unwrap();
+            // window.set_ime_purpose(winit::window::ImePurpose::Terminal);
             let context =
                 softbuffer::Context::new(window.clone()).unwrap();
 
@@ -177,7 +195,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
         },
     )
     .with_event_handler(
-        move |(window, _context), surface, event, elwt| {
+        move |(window, _context), surface, window_id, event, elwt| {
             elwt.set_control_flow(ControlFlow::Wait);
             let (fw, fh) = dsb::dims(&FONT, ppem);
             let (c, r) = dsb::fit(
@@ -185,8 +203,8 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                 ppem,
                 ls,
                 (
-                    window.inner_size().width as _,
-                    window.inner_size().height as _,
+                    window.surface_size().width as _,
+                    window.surface_size().height as _,
                 ),
             );
             if let t = Editor::modify(ed.origin.as_deref())
@@ -196,14 +214,17 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                 ed.state.consume(Action::Changed).unwrap();
                 window.request_redraw();
             }
+            // let before = ed.state.name();
             ed.poll(Some(window));
-
+            // println!("{before} -> poll -> {}", ed.state.name());
+            // let before = ed.state.name();
+            // let ev = format!("{event:?}");
+            // use WindowEvent as Event;
             match event {
-                Event::AboutToWait => {}
-                Event::WindowEvent {
-                    window_id,
-                    event: WindowEvent::Resized(size),
-                } if window_id == window.id() => {
+                // Event::AboutToWait => {}
+                
+                
+                WindowEvent::SurfaceResized(size) if window_id == window.id() => {
                     let Some(surface) = surface else {
                         eprintln!(
                             "Resized fired before Resumed or after \
@@ -232,21 +253,12 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                         ]
                     }
                 }
-                Event::WindowEvent {
-                    event: WindowEvent::Ime(Ime::Preedit(..)),
-                    ..
-                } => {}
-                Event::WindowEvent {
-                    event: WindowEvent::Ime(Ime::Commit(x)),
-                    ..
-                } => {
+                WindowEvent::Ime(Ime::Preedit(..)) => {}
+                WindowEvent::Ime(Ime::Commit(x)) => {
                     ed.text.insert(&x);
                     window.request_redraw();
                 }
-                Event::WindowEvent {
-                    window_id,
-                    event: WindowEvent::RedrawRequested,
-                } if window_id == window.id() => {
+                WindowEvent::RedrawRequested if window_id == window.id() => {
                     rnd::render(
                         ed,
                         &mut cells,
@@ -264,16 +276,10 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                     );
                 }
 
-                Event::WindowEvent {
-                    event: WindowEvent::CloseRequested,
-                    window_id,
-                } if window_id == window.id() => {
+                 WindowEvent::CloseRequested => {
                     elwt.exit();
                 }
-                Event::WindowEvent {
-                    event: WindowEvent::CursorMoved { position, .. },
-                    ..
-                } => {
+                WindowEvent::PointerMoved { position, .. } => {
                     let met = FONT.metrics(&[]);
                     let fac = ppem / met.units_per_em as f32;
                     cursor_position = (
@@ -283,10 +289,13 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                     );
                     ed.cursor_moved(cursor_position, window.clone(), c);
                 }
-                Event::WindowEvent {
-                    event:
-                        WindowEvent::MouseInput { state: bt, button, .. },
-                    ..
+                
+                        WindowEvent::PointerButton {
+                            state: bt,
+                            button: ButtonSource::Mouse(button),
+                            ..
+                        
+                
                 } if bt.is_pressed() => {
                     if button == MouseButton::Left {
                         unsafe { CLICKING = true };
@@ -294,42 +303,31 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                     ed.click(button, cursor_position, window.clone());
                     window.request_redraw();
                 }
-                Event::WindowEvent {
-                    event:
-                        WindowEvent::MouseInput {
-                            button: MouseButton::Left,
+                
+                        WindowEvent::PointerButton {
+                            button: ButtonSource::Mouse(MouseButton::Left),
                             ..
-                        },
-                    ..
-                } => unsafe { CLICKING = false },
-                Event::WindowEvent {
-                    window_id: _,
-                    event:
+                        }
+                    
+                 => unsafe { CLICKING = false },
+                
                         WindowEvent::MouseWheel {
                             device_id: _,
                             delta: MouseScrollDelta::LineDelta(_, rows),
                             phase: _,
-                        },
-                } => {
+                        } => {
                     ed.scroll(rows);
                     window.request_redraw();
                 }
-                Event::WindowEvent {
-                    event: WindowEvent::ModifiersChanged(modifiers),
-                    ..
-                } => {
+                WindowEvent::ModifiersChanged(modifiers) => {
                     unsafe { MODIFIERS = modifiers.state() };
                     window.request_redraw();
                 }
-                Event::WindowEvent {
-                    event:
-                        WindowEvent::KeyboardInput {
+                WindowEvent::KeyboardInput {
                             event,
                             is_synthetic: false,
                             ..
-                        },
-                    ..
-                } if event.state == ElementState::Pressed => {
+                        } if event.state == ElementState::Pressed => {
                     // if event.logical_key == Key::Named(NamedKey::F12) {
                     //     lsp.unwrap().runtime.spawn(async move {
                     //         lsp.unwrap().symbols().await;
@@ -337,7 +335,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                     // }
                     if matches!(
                         event.logical_key,
-                        Key::Named(Shift | Alt | Control | Super)
+                        Key::Named(Shift | Alt | Control | Meta)
                     ) {
                         return;
                     }
@@ -348,6 +346,7 @@ pub(crate) fn entry(event_loop: EventLoop<()>) {
                 }
                 _ => {}
             };
+            // println!("{before} -> {ev} -> {}", ed.state.name());
         },
     );
     winit_app::run_app(event_loop, app);
@@ -462,8 +461,9 @@ rust_fsm::state_machine! {
     None => K(Key<&'i str> => Key::Character(k @ ("." | ":"))) => Complete(
         RqS<Complete, lsp_types::request::Completion, usize> => default()
     ) [Request(CompletionContext => CompletionContext {trigger_kind: CompletionTriggerKind::TRIGGER_CHARACTER, trigger_character:Some(k.to_string()) })],
-    None => K(Key::Named(NamedKey::Space) if ctrl()) => Complete(default()) [Request(CompletionContext { trigger_kind: CompletionTriggerKind::INVOKED, trigger_character:None })],
-    None => K(Key::Character(x) if x.chars().all(char::is_alphabetic)) => Complete(default()) [Request(CompletionContext { trigger_kind: CompletionTriggerKind::INVOKED, trigger_character:None })],
+    None => K(Key::Character(" ") if ctrl()) => Complete(default()) [Request(CompletionContext { trigger_kind: CompletionTriggerKind::INVOKED, trigger_character:None })],
+    None => K(Key::Character(x) if x.chars().all(char::is_alphabetic)
+        && !matches!(x, "w"|"a"|"s"|"d" if alt())) => Complete(default()) [Request(CompletionContext { trigger_kind: CompletionTriggerKind::INVOKED, trigger_character:None })],
     None => K(_) => _,
 
     // when

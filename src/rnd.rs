@@ -14,7 +14,7 @@ use rust_fsm::StateMachine;
 use softbuffer::Surface;
 use url::Url;
 use winit::dpi::{PhysicalPosition, PhysicalSize};
-use winit::window::Window;
+use winit::window::{ImeRequestData, Window};
 
 use crate::edi::st::State;
 use crate::edi::{Editor, lsp_m};
@@ -30,13 +30,13 @@ pub fn render(
     ed: &mut Editor,
     cells: &mut [Cell],
     ppem: f32,
-    window: &mut Arc<Window>,
+    window: &mut Arc<dyn Window>,
     fw: f32,
     fh: f32,
     ls: f32,
     c: usize,
     r: usize,
-    surface: Option<&mut Surface<Arc<Window>, Arc<Window>>>,
+    surface: Option<&mut Surface<Arc<dyn Window>, Arc<dyn Window>>>,
     cursor_position: (usize, usize),
     fonts: &mut dsb::Fonts,
     mut i: Image<&mut [u8], 3>,
@@ -45,22 +45,30 @@ pub fn render(
     let (cx, cy) = text.primary_cursor_visual();
     let met = super::FONT.metrics(&[]);
     let fac = ppem / met.units_per_em as f32;
-    window.set_ime_cursor_area(
-        PhysicalPosition::new(
-            ((cx + text.line_number_offset()) as f64 * (fw) as f64)
-                .round(),
-            ((cy.saturating_sub(text.vo)) as f64 * (fh + ls * fac) as f64)
-                .floor(),
-        ),
-        PhysicalSize::new(fw, fh),
-    );
+    window
+        .request_ime_update(winit::window::ImeRequest::Update(
+            ImeRequestData::default().with_cursor_area(
+                PhysicalPosition::new(
+                    ((cx + text.line_number_offset()) as f64
+                        * (fw) as f64)
+                        .round(),
+                    ((cy.saturating_sub(text.vo)) as f64
+                        * (fh + ls * fac) as f64)
+                        .floor(),
+                )
+                .into(),
+                PhysicalSize::new(fw, fh).into(),
+            ),
+        ))
+        .unwrap();
+
     let Some(surface) = surface else {
         eprintln!(
             "RedrawRequested fired before Resumed or after Suspended"
         );
         return;
     };
-    let size = window.inner_size();
+    let size = window.surface_size();
 
     if size.height != 0 && size.width != 0 {
         let now = Instant::now();
@@ -360,8 +368,8 @@ pub fn render(
                 return Err(());
             }
             assert!(
-                w < window.inner_size().width as _
-                    && h < window.inner_size().height as _
+                w < window.surface_size().width as _
+                    && h < window.surface_size().height as _
             );
             let is_above = position.1.checked_sub(h).is_some();
             let top = position.1.checked_sub(h).unwrap_or(
@@ -373,17 +381,17 @@ pub fn render(
                 ppem,
                 ls,
                 (
-                    window.inner_size().width as _, /* - left */
-                    ((window.inner_size().height as usize)
+                    window.surface_size().width as _, /* - left */
+                    ((window.surface_size().height as usize)
                         .saturating_sub(top)),
                 ),
             ); /* suspicious saturation */
             r = r.min(y);
 
             let left = if position.0 + w as usize
-                > window.inner_size().width as usize
+                > window.surface_size().width as usize
             {
-                window.inner_size().width as usize - w as usize
+                window.surface_size().width as usize - w as usize
             } else {
                 position.0
             };
@@ -645,33 +653,30 @@ pub fn render(
             })
         });
         let mut drawb = |cells, c| {
-             // let ws = ed.workspace.as_deref().unwrap();
-                // let (_x, _y) = text.cursor_visual();
-                let _x = 0;
-                let _y = r - 1;
-                let Ok((_, left, top, w, h)) = place_around(
-                    (_x, _y),
-                    i.copy(),
-                    cells,
-                    c,
-                    ppem,
-                    ls,
-                    0.,
-                    0.,
-                    0.,
-                ) else {
-                    println!("ra?");
-                    return;
-                };
-                i.r#box(
-                    (
-                        left.saturating_sub(1) as _,
-                        top.saturating_sub(1) as _,
-                    ),
-                    w as _,
-                    h as _,
-                    BORDER,
-                );
+            // let ws = ed.workspace.as_deref().unwrap();
+            // let (_x, _y) = text.cursor_visual();
+            let _x = 0;
+            let _y = r - 1;
+            let Ok((_, left, top, w, h)) = place_around(
+                (_x, _y),
+                i.copy(),
+                cells,
+                c,
+                ppem,
+                ls,
+                0.,
+                0.,
+                0.,
+            ) else {
+                println!("ra?");
+                return;
+            };
+            i.r#box(
+                (left.saturating_sub(1) as _, top.saturating_sub(1) as _),
+                w as _,
+                h as _,
+                BORDER,
+            );
         };
         match &ed.state {
             State::CodeAction(Rq { result: Some(x), .. }) => 'out: {
@@ -717,7 +722,7 @@ pub fn render(
                 let c = x.cells(50, ws);
                 drawb(&c, 50);
             }
-            State::Runnables(Rq { result:Some(x), .. }) => {
+            State::Runnables(Rq { result: Some(x), .. }) => {
                 let ws = ed.workspace.as_deref().unwrap();
                 let c = x.cells(50, ws);
                 drawb(&c, 50);

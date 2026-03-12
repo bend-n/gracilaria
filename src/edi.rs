@@ -24,6 +24,7 @@ use tokio_util::task::AbortOnDropHandle as DropH;
 use winit::event::{KeyEvent, MouseButton};
 use winit::keyboard::{Key, NamedKey};
 use winit::window::Window;
+
 pub mod st;
 
 use st::*;
@@ -142,7 +143,7 @@ pub struct Editor {
     pub lsp: Option<(
         &'static Client,
         std::thread::JoinHandle<()>,
-        Option<Sender<Arc<Window>>>,
+        Option<Sender<Arc<dyn Window>>>,
     )>,
     // #[serde(skip)]
     pub requests: Requests,
@@ -192,7 +193,6 @@ macro_rules! change {
             x.rq_semantic_tokens(
                 &mut $self.requests.semantic_tokens,
                 origin,
-                $w,
             )
             .unwrap();
             inlay!($self);
@@ -343,7 +343,6 @@ impl Editor {
                     c.rq_semantic_tokens(
                         &mut me.requests.semantic_tokens,
                         origin,
-                        None,
                     )
                     .unwrap()
                 },
@@ -414,7 +413,7 @@ impl Editor {
         std::fs::write(self.origin.as_ref().unwrap(), &t).unwrap();
         self.mtime = Self::modify(self.origin.as_deref());
     }
-    pub fn poll(&mut self, w: Option<&Arc<Window>>) {
+    pub fn poll(&mut self, w: Option<&Arc<dyn Window>>) {
         let Some((l, ..)) = self.lsp else { return };
         for rq in l.req_rx.try_iter() {
             match rq {
@@ -468,7 +467,7 @@ impl Editor {
                 );
             }
             State::CodeAction(x) => {
-                x.poll_r(
+                if x.poll_r(
                     |x, _| {
                         let lems: Vec<CodeAction> = x
                             .ok()??
@@ -483,13 +482,15 @@ impl Editor {
                                 "no code actions available".into();
                             None
                         } else {
+                            self.bar.last_action =
+                                format!("{} code actions", lems.len());
                             Some(act::CodeActions::new(lems))
                         }
                     },
                     r,
                     w,
-                );
-                if x.result.is_none() {
+                ) && x.result.is_none()
+                {
                     self.state = State::Default;
                 }
             }
@@ -555,7 +556,7 @@ impl Editor {
     pub fn cursor_moved(
         &mut self,
         cursor_position: (usize, usize),
-        w: Arc<Window>,
+        w: Arc<dyn Window>,
         c: usize,
     ) {
         match self.state.consume(Action::C(cursor_position)).unwrap() {
@@ -793,7 +794,7 @@ impl Editor {
         &mut self,
         bt: MouseButton,
         cursor_position: (usize, usize),
-        w: Arc<Window>,
+        w: Arc<dyn Window>,
     ) {
         let text = &mut self.text;
         _ = self
@@ -900,12 +901,13 @@ impl Editor {
     pub fn keyboard(
         &mut self,
         event: KeyEvent,
-        window: &mut Arc<Window>,
+        window: &mut Arc<dyn Window>,
     ) -> ControlFlow<()> {
         let mut o: Option<Do> = self
             .state
             .consume(Action::K(event.logical_key.clone()))
             .unwrap();
+
         match o {
             Some(Do::Reinsert) =>
                 o = self
@@ -1251,12 +1253,7 @@ impl Editor {
                 self.hist.lc = self.text.cursor.clone();
                 self.hist.test_push(&mut self.text);
                 let act = lsp
-                    .runtime
-                    .block_on(
-                        lsp.request::<CodeActionResolveRequest>(&act)
-                            .unwrap()
-                            .0,
-                    )
+                    .request_immediate::<CodeActionResolveRequest>(&act)
                     .unwrap();
                 let f = f.to_owned();
                 act.edit.map(|x| self.apply_wsedit(x, &f));
@@ -1395,7 +1392,6 @@ impl Editor {
                     change!(self, window.clone());
                 }
                 lsp!(self + p).map(|(lsp, o)| {
-                    let window = window.clone();
                     match event.logical_key.as_ref() {
                         Key::Character(y)
                             if let Some(x) = &lsp.initialized
@@ -1839,7 +1835,7 @@ impl Editor {
     pub fn open(
         &mut self,
         x: &Path,
-        w: Arc<Window>,
+        w: Arc<dyn Window>,
     ) -> anyhow::Result<()> {
         let x = x.canonicalize()?.to_path_buf();
         if Some(&*x) == self.origin.as_deref() {
@@ -1872,9 +1868,9 @@ impl Editor {
         lsp: Option<(
             &'static Client,
             std::thread::JoinHandle<()>,
-            Option<Sender<Arc<Window>>>,
+            Option<Sender<Arc<dyn Window>>>,
         )>,
-        w: Option<Arc<Window>>,
+        w: Option<Arc<dyn Window>>,
         ws: Option<PathBuf>,
     ) -> anyhow::Result<()> {
         if let Some(x) = self.files.remove(x) {
@@ -1928,7 +1924,6 @@ impl Editor {
                 x.rq_semantic_tokens(
                     &mut self.requests.semantic_tokens,
                     origin,
-                    w.clone(),
                 )
                 .unwrap();
             });
@@ -1936,7 +1931,7 @@ impl Editor {
         self.set_title(w);
         Ok(())
     }
-    pub fn set_title(&self, w: Option<Arc<Window>>) {
+    pub fn set_title(&self, w: Option<Arc<dyn Window>>) {
         if let Some(x) = w
             && let Some(t) = self.title()
         {
@@ -1983,7 +1978,7 @@ impl Editor {
     pub fn open_loc(
         &mut self,
         Location { uri, range }: &Location,
-        w: Arc<Window>,
+        w: Arc<dyn Window>,
     ) {
         self.open(&uri.to_file_path().unwrap(), w.clone()).unwrap();
 
@@ -1996,7 +1991,7 @@ impl Editor {
     pub fn open_loclink(
         &mut self,
         LocationLink { target_uri, target_range, .. }: &LocationLink,
-        w: Arc<Window>,
+        w: Arc<dyn Window>,
     ) {
         self.open(&target_uri.to_file_path().unwrap(), w.clone()).unwrap();
 
@@ -2017,7 +2012,7 @@ pub fn handle2<'a>(
     use Key::*;
 
     match key {
-        Named(Space) => text.insert(" "),
+        Character(" ") => text.insert(" "),
         Named(Backspace) if ctrl() => text.backspace_word(),
         Named(Backspace) => text.backspace(),
         Named(Home) if ctrl() => {
@@ -2035,10 +2030,12 @@ pub fn handle2<'a>(
             text.right();
             text.backspace()
         }
-        Character(x) if x == "a" && alt() => text.left(),
-        Character(x) if x == "w" && alt() => text.up(),
-        Character(x) if x == "s" && alt() => text.down(),
-        Character(x) if x == "d" && alt() => text.right(),
+        Character("d") if alt() && ctrl() => text.word_left(),
+        Character("a") if alt() && ctrl() => text.word_right(),
+        Character("a") if alt() => text.left(),
+        Character("w") if alt() => text.up(),
+        Character("s") if alt() => text.down(),
+        Character("d") if alt() => text.right(),
         Named(ArrowLeft) if ctrl() => text.word_left(),
         Named(ArrowRight) if ctrl() => text.word_right(),
         Named(ArrowLeft) => text.left(),

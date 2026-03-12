@@ -193,7 +193,7 @@ impl Editor {
     pub fn handle_command(
         &mut self,
         z: Cmd,
-        w: Arc<winit::window::Window>,
+        w: Arc<dyn winit::window::Window>,
     ) -> anyhow::Result<()> {
         match z {
             Cmd::GoTo(Some(x)) =>

@@ -42,7 +42,7 @@ pub struct Client {
     pub id: AtomicI32,
     pub initialized: Option<InitializeResult>,
     // pub pending: HashMap<i32, oneshot::Sender<Re>>,
-    pub send_to: Sender<(i32, oneshot::Sender<Re>)>,
+    pub send_to: Sender<(i32, oneshot::Sender<Re>, BehaviourAfter)>,
     pub progress: &'static papaya::HashMap<
         ProgressToken,
         Option<(WorkDoneProgress, WorkDoneProgressBegin)>,
@@ -138,9 +138,9 @@ impl Client {
         &'me self,
         y: &X::Params,
     ) -> Result<X::Result, RequestError<X>> {
-        self.runtime.block_on(self.request::<X>(y)?.0)
+        self.runtime.block_on(self.request_::<X, { Nil }>(y)?.0)
     }
-    #[must_use]
+
     pub fn request<'me, X: Request>(
         &'me self,
         y: &X::Params,
@@ -148,6 +148,20 @@ impl Client {
         (
             impl Future<Output = Result<X::Result, RequestError<X>>>
             + use<'me, X>,
+            i32,
+        ),
+        SendError<Message>,
+    > {
+        self.request_::<X, { Redraw }>(y)
+    }
+    #[must_use]
+    fn request_<'me, X: Request, const THEN: BehaviourAfter>(
+        &'me self,
+        y: &X::Params,
+    ) -> Result<
+        (
+            impl Future<Output = Result<X::Result, RequestError<X>>>
+            + use<'me, X, THEN>,
             i32,
         ),
         SendError<Message>,
@@ -161,7 +175,7 @@ impl Client {
         let (tx, rx) = oneshot::channel();
         if self.initialized.is_some() {
             debug!("sent request {} ({id})'s handler", X::METHOD);
-            self.send_to.send((id, tx)).expect("oughtnt really fail");
+            self.send_to.send((id, tx, THEN)).expect("oughtnt really fail");
         }
         Ok((
             async move {
@@ -268,7 +282,7 @@ impl Client {
         >,
     > + use<'me> {
         let (rx, _) = self
-            .request::<Completion>(&CompletionParams {
+            .request_::<Completion, { Redraw }>(&CompletionParams {
                 text_document_position: TextDocumentPositionParams {
                     text_document: f.tid(),
                     position: Position { line: y as _, character: x as _ },
@@ -291,7 +305,7 @@ impl Client {
             RequestError<SignatureHelpRequest>,
         >,
     > + use<'me> {
-        self.request::<SignatureHelpRequest>(&SignatureHelpParams {
+        self.request_::<SignatureHelpRequest, { Redraw }>(&SignatureHelpParams {
             context: None,
             text_document_position_params: TextDocumentPositionParams {
                 text_document: f.tid(),
@@ -431,7 +445,7 @@ impl Client {
             work_done_progress_params: default(),
             partial_result_params: default(),
         };
-        self.request::<lsp_request!("textDocument/documentHighlight")>(&p)
+        self.request_::<lsp_request!("textDocument/documentHighlight"), {Redraw}>(&p)
             .unwrap()
             .0
             .map(|x| x.map(|x| x.unwrap_or_default()))
@@ -445,7 +459,7 @@ impl Client {
             RequestError<lsp_request!("textDocument/documentSymbol")>,
         >,
     > {
-        self.request::<lsp_request!("textDocument/documentSymbol")>(
+        self.request_::<lsp_request!("textDocument/documentSymbol"), { Redraw }>(
             &DocumentSymbolParams {
                 text_document: p.tid(),
                 work_done_progress_params: default(),
@@ -464,7 +478,7 @@ impl Client {
             RequestError<lsp_request!("workspace/symbol")>,
         >,
     > {
-        self.request::<lsp_request!("workspace/symbol")>(
+        self.request_::<lsp_request!("workspace/symbol"), {Redraw}>(
             &lsp_types::WorkspaceSymbolParams {
                 query: f,
                 search_scope: Some(
@@ -523,7 +537,7 @@ impl Client {
             RequestError<lsp_request!("textDocument/inlayHint")>,
         >,
     > + use<> {
-        self.request::<lsp_request!("textDocument/inlayHint")>(&InlayHintParams {
+        self.request_::<lsp_request!("textDocument/inlayHint"), { Redraw }>(&InlayHintParams {
             work_done_progress_params: default(),
             text_document: f.tid(),
             range: t.to_l_range(lower::saturating::math!{
@@ -577,7 +591,6 @@ impl Client {
             RequestError<SemanticTokensFullRequest>,
         >,
         f: &Path,
-        w: Option<Arc<Window>>,
     ) -> anyhow::Result<()> {
         debug!("requested semantic tokens");
 
@@ -585,7 +598,7 @@ impl Client {
         else {
             return Ok(());
         };
-        let (rx, _) = self.request::<SemanticTokensFullRequest>(
+        let (rx, _) = self.request_::<SemanticTokensFullRequest, {Redraw}>(
             &SemanticTokensParams {
                 work_done_progress_params: default(),
                 partial_result_params: default(),
@@ -602,7 +615,6 @@ impl Client {
                 SemanticTokensResult::Tokens(x) =>
                     x.data.into_boxed_slice(),
             };
-            w.map(|x| x.request_redraw());
             Ok(r)
         });
         to.request(x);
@@ -612,17 +624,11 @@ impl Client {
 
     pub fn enter<'a>(&self, f: &Path, t: &'a mut TextArea) {
         ceach!(t.cursor, |c| {
-            let r = self
-                .runtime
-                .block_on(
-                    self.request::<OnEnter>(&TextDocumentPositionParams {
+            let r = self.request_immediate::<OnEnter>(&TextDocumentPositionParams {
                         text_document: f.tid(),
                         position: t.to_l_position(*c).unwrap(),
                     })
-                    .unwrap()
-                    .0,
-                )
-                .unwrap();
+                    .unwrap();
             match r {
                 None => t.enter(),
                 Some(mut r) => {
@@ -653,13 +659,14 @@ impl Client {
 pub fn run(
     (tx, rx): (Sender<Message>, Receiver<Message>),
     workspace: WorkspaceFolder,
-) -> (Client, std::thread::JoinHandle<()>, oneshot::Sender<Arc<Window>>) {
+) -> (Client, std::thread::JoinHandle<()>, oneshot::Sender<Arc<dyn Window>>)
+{
     let now = Instant::now();
     let (req_tx, req_rx) = unbounded();
     let (not_tx, not_rx) = unbounded();
     let (_req_tx, _req_rx) = unbounded();
-    let (window_tx, window_rx) = oneshot::channel::<Arc<Window>>();
-    let mut c: Client = Client {
+    let (window_tx, window_rx) = oneshot::channel::<Arc<dyn Window>>();
+    let mut c = Client {
         tx,
         progress: Box::leak(Box::new(papaya::HashMap::new())),
         runtime: tokio::runtime::Builder::new_multi_thread()
@@ -965,9 +972,9 @@ pub fn run(
         loop {
             crossbeam::select! {
                 recv(req_rx) -> x => match x {
-                    Ok((x, y)) => {
+                    Ok((x, y, and)) => {
                         debug!("received request {x}");
-                        assert!(map.insert(x, (y, Instant::now())).is_none());
+                        assert!(map.insert(x, (y, Instant::now(), and)).is_none());
                     }
                     Err(RecvError) => return,
                 },
@@ -994,20 +1001,22 @@ pub fn run(
                         if let Some(e) = &x.error {
                             if e.code == ErrorCode::RequestCanceled as i32 {}
                             else if e.code == ErrorCode::ServerCancelled as i32 {
-                                if let Some((s, _)) = map.remove(&x.id.i32()) {
+                                if let Some((s, _, t)) = map.remove(&x.id.i32()) {
                                     log::info!("request {} cancelled", x.id);
                                     _ = s.send(x);
+                                    if t == Redraw { w.request_redraw() }
                                 }
                             } else {
-                                if let Some((s, _)) = map.remove(&x.id.i32()) {
+                                if let Some((s, _, t)) = map.remove(&x.id.i32()) {
                                     _ = s.send(x.clone());
+                                    if t == Redraw { w.request_redraw() }
                                     trace!("received error from lsp for response {x:?}");
                                 } else {
                                     error!("received error from lsp for response {x:?}");
                                 }
                             }
                         }
-                        else if let Some((s, took)) = map.remove(&x.id.i32()) {
+                        else if let Some((s, took, t)) = map.remove(&x.id.i32()) {
                             log::info!("request {} took {:?}", x.id, took.elapsed());
                             match s.send(x) {
                                 Ok(()) => {}
@@ -1017,6 +1026,9 @@ pub fn run(
                                     );
                                 }
                             }
+                            // w.request_redraw();
+                            dbg!(t);
+                            if t == Redraw { w.request_redraw() }
                         } else {
                             error!("request {x:?} was dropped.")
                         }
@@ -1056,7 +1068,13 @@ pub fn run(
     });
     (c, h, window_tx)
 }
-
+#[derive(Copy, Clone, PartialEq, Eq, std::marker::ConstParamTy, Debug)]
+pub enum BehaviourAfter {
+    Redraw,
+    // Poll, ? how impl.
+    Nil,
+}
+pub use BehaviourAfter::*;
 // trait RecvEepy<T>: Sized {
 //     fn recv_eepy(self) -> Result<T, RecvError> {
 //         self.recv_sleepy(100)
@@ -1177,7 +1195,7 @@ impl<T, R, D, E> Rq<T, R, D, E> {
         &mut self,
         f: impl FnOnce(Result<R, E>, (D, Option<T>)) -> Option<T>,
         runtime: &tokio::runtime::Runtime,
-    ) {
+    ) ->  bool {
         if self.request.as_mut().is_some_and(|(x, _)| x.is_finished())
             && let Some((task, d)) = self.request.take()
         {
@@ -1187,23 +1205,24 @@ impl<T, R, D, E> Rq<T, R, D, E> {
                     log::error!(
                         "unexpected join error from request poll: {e}"
                     );
-                    return;
+                    return false;
                 }
             };
             self.result = f(x, (d, self.result.take()));
-        }
+            true
+        } else { false }
     }
 
     pub fn poll_r(
         &mut self,
         f: impl FnOnce(Result<R, E>, (D, Option<T>)) -> Option<T>,
         runtime: &tokio::runtime::Runtime,
-        w: Option<&Arc<Window>>,
-    ) {
+        _w: Option<&Arc<dyn Window>>,
+    ) ->  bool {
         self.poll(
             |x, y| {
                 f(x, y).inspect(|_| {
-                    w.map(|x| x.request_redraw());
+                    // w.map(|x| x.request_redraw());
                 })
             },
             runtime,
