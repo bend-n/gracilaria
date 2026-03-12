@@ -809,9 +809,14 @@ impl Editor {
                     &text.rope,
                 );
                 if let Some((lsp, path)) = lsp!(self + p) {
-                    self.requests.sig_help.request(lsp.runtime.spawn(
-                        lsp.request_sig_help(path, text.primary_cursor()),
-                    ));
+                    if self.requests.sig_help.result.is_some() {
+                        self.requests.sig_help.request(lsp.runtime.spawn(
+                            lsp.request_sig_help(
+                                path,
+                                text.primary_cursor(),
+                            ),
+                        ));
+                    }
                     self.requests.document_highlights.request(
                         lsp.runtime.spawn(
                             lsp.document_highlights(

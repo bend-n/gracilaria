@@ -1027,7 +1027,6 @@ pub fn run(
                                 }
                             }
                             // w.request_redraw();
-                            dbg!(t);
                             if t == Redraw { w.request_redraw() }
                         } else {
                             error!("request {x:?} was dropped.")
