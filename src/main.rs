@@ -146,7 +146,7 @@ pub(crate) fn entry(event_loop: EventLoop) {
         Some((.., c)) => c.take(),
         None => None,
     };
-    let (fw, fh) = dsb::dims(&fonts.bold, ls);
+    let (_fw, _fh) = dsb::dims(&fonts.bold, ls);
     let title = ed.title();
     let app = winit_app::WinitAppBuilder::with_init(
         move |elwt| {

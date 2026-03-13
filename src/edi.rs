@@ -425,14 +425,11 @@ impl Editor {
             }
         }
         let r = &l.runtime;
-        self.requests.inlay.poll(
-            |x, p| {
-                x.ok().or(p.1).inspect(|x| {
-                    self.text.set_inlay(x);
-                })
-            },
-            r,
-        );
+        self.requests.inlay.poll(|x, p| {
+            x.ok().or(p.1).inspect(|x| {
+                self.text.set_inlay(x);
+            })
+        });
         self.requests.document_highlights.poll_r(|x, _| x.ok(), r, w);
         self.requests.diag.poll_r(|x, _| x.ok().flatten(), r, w);
         if let CompletionState::Complete(rq) = &mut self.requests.complete
@@ -1122,12 +1119,7 @@ impl Editor {
                     }
                 }
             }
-            Some(Do::SymbolsSelect) => {
-                let State::Symbols(Rq { result: Some(x), .. }) =
-                    &self.state
-                else {
-                    unreachable!()
-                };
+            Some(Do::SymbolsSelect(x)) => {
                 if let Some(Ok(x)) = x.sel()
                     && let Err(e) = try bikeshed anyhow::Result<()> {
                         let r = match x.at {
@@ -1478,12 +1470,7 @@ impl Editor {
                         }
                         Some(CDo::Finish(x)) => {
                             let sel = x.sel(&filter(&self.text));
-                            let sel = lsp
-                                .runtime
-                                .block_on(
-                                    lsp.resolve(sel.clone()).unwrap(),
-                                )
-                                .unwrap();
+                            let sel = lsp.resolve(sel.clone()).unwrap();
                             let CompletionItem {
                                 text_edit:
                                     Some(CompletionTextEdit::Edit(ed)),
@@ -1499,13 +1486,12 @@ impl Editor {
                                     self.text.apply_snippet(&ed).unwrap();
                                 }
                                 _ => {
-                                    let (s, _) =
-                                        self.text.apply(&ed).unwrap();
-                                    self.text
-                                        .cursor
-                                        .first_mut()
-                                        .position =
-                                        s + ed.new_text.chars().count();
+                                    self.text.apply(&ed).unwrap();
+                                    // self.text
+                                    //     .cursor
+                                    //     .first_mut()
+                                    //     .position =
+                                    //     s + ed.new_text.chars().count();
                                 }
                             }
                             if let Some(mut additional_tedits) =

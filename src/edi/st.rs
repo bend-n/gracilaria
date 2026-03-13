@@ -104,7 +104,7 @@ Symbols(Rq { result: Some(_x), request: _rq }) => {
     K(Key::Named(Tab) if shift()) => _ [SymbolsSelectNext],
     K(Key::Named(ArrowDown)) => _ [SymbolsSelectNext],
     K(Key::Named(ArrowUp | Tab)) => _ [SymbolsSelectPrev],
-    K(Key::Named(Enter)) => _ [SymbolsSelect],
+    K(Key::Named(Enter)) => Default [SymbolsSelect(Symbols => _x)],
     K(Key::Named(Escape)) => Default,
 },
 Symbols(Rq::<Symbols, Option<SymbolsList>, (), AQErr> => _rq) => {
@@ -158,8 +158,8 @@ Procure((t, InputRequest::RenameSymbol)) => K(Key::Named(Enter)) => Default [Ren
 Procure((t, a)) => K(k) => Procure((handle(k, t), a)),
 Procure((t, a)) => C(_) => Procure((t, a)),
 RequestBoolean(t) => {
-    K(Key::Character("n")) => Default [Boolean((BoolRequest, bool) => (t, true))],
-    K(Key::Character("y")) => Default [Boolean((t, false))],
+    K(Key::Character("y")) => Default [Boolean((BoolRequest, bool) => (t, true))],
+    K(Key::Character("n")) => Default [Boolean((t, false))],
     K(Key::Named(Escape)) => Default [Boolean((t, false))],
     K(_) => RequestBoolean(t),
     C(_) => _,
