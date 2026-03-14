@@ -238,7 +238,7 @@ fn rooter(x: &Path) -> Option<PathBuf> {
 }
 
 impl Editor {
-    pub fn new() -> Self {
+    pub fn new() -> rootcause::Result<Self> {
         let mut me = Self::default();
 
         let o = std::env::args()
@@ -246,13 +246,14 @@ impl Editor {
             .and_then(|x| PathBuf::try_from(x).ok())
             .and_then(|x| x.canonicalize().ok());
 
-        std::env::args().nth(1).map(|x| {
-            me.text.insert(&std::fs::read_to_string(x).unwrap());
+        if let Some(x) = std::env::args().nth(1) {
+            me.text.insert(&std::fs::read_to_string(x)?);
             me.text.cursor = default();
-        });
+        };
         me.workspace = o
             .as_ref()
-            .and_then(|x| rooter(&x.parent().unwrap()))
+            .and_then(|x| x.parent())
+            .and_then(|x| rooter(&x))
             .and_then(|x| x.canonicalize().ok());
         let mut loaded_state = false;
         if let Some(ws) = me.workspace.as_deref()
@@ -260,8 +261,8 @@ impl Editor {
             && let at = cfgdir().join(format!("{h:x}")).join(STORE)
             && at.exists()
         {
-            let x = std::fs::read(at).unwrap();
-            let x = bendy::serde::from_bytes::<Editor>(&x).unwrap();
+            let x = std::fs::read(at)?;
+            let x = bendy::serde::from_bytes::<Editor>(&x)?;
             me = x;
             loaded_state = true;
             assert!(me.workspace.is_some());
@@ -334,26 +335,21 @@ impl Editor {
             let w = me.workspace.clone();
             let t = me.tree.clone();
             assert!(me.files.len() != 0);
-            me.open_or_restore(&o, l, None, w).unwrap();
+            me.open_or_restore(&o, l, None, w)?;
             me.tree = t;
         } else {
             me.lsp = l;
             me.hist.lc = me.text.cursor.clone();
             me.hist.last = me.text.changes.clone();
-            me.lsp.as_ref().zip(me.origin.as_deref()).map(
-                |((c, ..), origin)| {
-                    c.open(
-                        &origin,
-                        std::fs::read_to_string(&origin).unwrap(),
-                    )
-                    .unwrap();
-                    c.rq_semantic_tokens(
-                        &mut me.requests.semantic_tokens,
-                        origin,
-                    )
-                    .unwrap()
-                },
-            );
+            if let Some(((c, ..), origin)) =
+                me.lsp.as_ref().zip(me.origin.as_deref())
+            {
+                c.open(&origin, std::fs::read_to_string(&origin)?)?;
+                c.rq_semantic_tokens(
+                    &mut me.requests.semantic_tokens,
+                    origin,
+                )?;
+            }
 
             me.mtime = Self::modify(me.origin.as_deref());
 
@@ -370,7 +366,7 @@ impl Editor {
             // );
         }
 
-        me
+        Ok(me)
     }
 
     #[must_use = "please apply this"]

@@ -124,7 +124,14 @@ extern "C" fn sigint(_: i32) {
 
 #[implicit_fn::implicit_fn]
 pub(crate) fn entry(event_loop: EventLoop) {
-    unsafe { __ED.write(Editor::new()) };
+    
+    unsafe { __ED.write(match Editor::new() {
+        Err(e) => {
+            eprintln!("failure to launch: {e}");
+            return
+        }
+        Ok(x) => x,
+    }) };
     assert_eq!(unsafe { atexit(cleanup) }, 0);
     unsafe { signal(libc::SIGINT, sigint as *const () as usize) };
     let ed = unsafe { __ED.assume_init_mut() };
