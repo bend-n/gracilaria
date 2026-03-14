@@ -48,7 +48,7 @@ impl<X> From<oneshot::error::RecvError> for RequestError<X> {
         Self::Rx(PhantomData)
     }
 }
-impl<X: Request + Debug> std::error::Error for RequestError<X> {
+impl<X: Request> std::error::Error for RequestError<X> {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         None
     }

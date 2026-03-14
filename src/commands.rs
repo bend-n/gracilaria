@@ -5,10 +5,10 @@ use std::sync::Arc;
 
 use Default::default;
 use Into::into;
-use anyhow::{anyhow, bail};
 use dsb::Cell;
 use dsb::cell::Style;
 use lsp_types::*;
+use rootcause::{bail, report};
 use rust_analyzer::lsp::ext::*;
 
 use crate::FG;
@@ -81,6 +81,8 @@ commands!(
     @ RAOpenCargoToml: "open-cargo-toml",
     /// Runs the test at the cursor
     @ RARunTest: "run-test",
+    // /// View child modules
+    // @ ViewChildModules: "child-modules",
     /// GoTo line,
     | GoTo(u32): "g",
 );
@@ -194,7 +196,7 @@ impl Editor {
         &mut self,
         z: Cmd,
         w: Arc<dyn winit::window::Window>,
-    ) -> anyhow::Result<()> {
+    ) -> rootcause::Result<()> {
         match z {
             Cmd::GoTo(Some(x)) =>
                 if let Ok(x) = self.text.try_line_to_char(x as _) {
@@ -265,7 +267,7 @@ impl Editor {
                     })?;
                 self.text
                     .apply_tedits(&mut { teds })
-                    .map_err(|_| anyhow!("couldnt apply edits"))?;
+                    .map_err(|_| report!("couldnt apply edits"))?;
             }
             Cmd::RADocs => {
                 let u = l.request_immediate::<ExternalDocs>(

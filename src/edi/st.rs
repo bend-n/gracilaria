@@ -138,6 +138,7 @@ Selection => {
     K(Key::Named(Backspace)) => Default [Delete],
     K(Key::Character("x") if ctrl()) => Default [Cut],
     K(Key::Character("c") if ctrl()) => Default [Copy],
+    K(Key::Character("v") if ctrl()) => Default [PasteOver],
     K(Key::Character("/") if ctrl()) => Default [Comment(State::Selection)],
     M(_) => _,
 

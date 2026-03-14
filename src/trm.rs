@@ -78,33 +78,31 @@ pub fn runk(niri: &mut Socket, at: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-pub fn toggle(at: &Path) {
-    _ = try bikeshed anyhow::Result<()> {
-        let l = LAST.load(Relaxed);
-        let mut niri = niri::socket::Socket::connect()?;
-        if is_running(&mut niri)? {
-            _ =
-                niri.send(Request::Action(Action::FocusWindow { id: l }))?;
+pub fn toggle(at: &Path) -> rootcause::Result<()> {
+    let l = LAST.load(Relaxed);
+    let mut niri = niri::socket::Socket::connect()?;
+    if is_running(&mut niri)? {
+        _ = niri.send(Request::Action(Action::FocusWindow { id: l }))?;
 
-            // std::thread::sleep(Duration::from_millis(500));
-            // let Ok(Ok(Response::FocusedWindow(Some(x)))) = niri.send(Request::FocusedWindow) else { unreachable!() };
-            // dbg!(&x);
-            // if x.layout.window_size.1 < 200 {
-            _ = niri.send(Request::Action(Action::SetColumnDisplay {
-                display: niri::ColumnDisplay::Normal,
-            }))?;
-            _ = niri.send(Request::Action(Action::SetWindowHeight {
-                id: Some(l),
-                change: niri::SizeChange::SetFixed(400),
-            }))?;
-            // }
-            return;
-        }
-        // let Ok(Ok(Response::FocusedWindow(Some(focused)))) =
-        //     niri.send(Request::FocusedWindow)
-        // else {
-        //     unreachable!()
-        // };
-        runk(&mut niri, at)?;
-    };
+        // std::thread::sleep(Duration::from_millis(500));
+        // let Ok(Ok(Response::FocusedWindow(Some(x)))) = niri.send(Request::FocusedWindow) else { unreachable!() };
+        // dbg!(&x);
+        // if x.layout.window_size.1 < 200 {
+        _ = niri.send(Request::Action(Action::SetColumnDisplay {
+            display: niri::ColumnDisplay::Normal,
+        }))?;
+        _ = niri.send(Request::Action(Action::SetWindowHeight {
+            id: Some(l),
+            change: niri::SizeChange::SetFixed(400),
+        }))?;
+        // }
+        return Ok(());
+    }
+    // let Ok(Ok(Response::FocusedWindow(Some(focused)))) =
+    //     niri.send(Request::FocusedWindow)
+    // else {
+    //     unreachable!()
+    // };
+    runk(&mut niri, at)?;
+    Ok(())
 }

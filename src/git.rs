@@ -20,7 +20,7 @@ pub fn diff(
     p: &Path,
     ws: &Path,
     now: &Rope,
-) -> Result<imara_diff::Diff, anyhow::Error> {
+) -> rootcause::Result<imara_diff::Diff> {
     let f = String::from_utf8(load(p, ws)?)?;
     let now = now.to_string();
     let i = InternedInput::new(&*f, &now);

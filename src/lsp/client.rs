@@ -4,7 +4,6 @@ use std::sync::atomic::AtomicI32;
 use std::sync::atomic::Ordering::Relaxed;
 
 use Default::default;
-use anyhow::bail;
 use crossbeam::channel::{Receiver, SendError, Sender};
 use futures::FutureExt;
 use log::debug;
@@ -152,34 +151,50 @@ impl Client {
     pub fn _pull_all_diag(
         &self,
         _f: PathBuf,
-    ) -> impl Future<Output = anyhow::Result<()>> {
+    ) -> impl Future<
+        Output = Result<(), RequestError<WorkspaceDiagnosticRequest>>,
+    > {
         let r = self
             .request::<lsp_request!("workspace/diagnostic")>(&default())
             .unwrap()
             .0;
-        log::info!("pulling diagnostics");
+
+        // log::info!("pulling diagnostics");
         async move {
             let x = r.await?;
             log::info!("{x:?}");
             // match x {
-            //     DocumentDiagnosticReportResult::Report(DocumentDiagnosticReport::Full(RelatedFullDocumentDiagnosticReport {
-            //         related_documents,
-            //         full_document_diagnostic_report:FullDocumentDiagnosticReport {  items,.. },
-            //     })) => {
+            //     DocumentDiagnosticReportResult::Report(
+            //         DocumentDiagnosticReport::Full(
+            //             RelatedFullDocumentDiagnosticReport {
+            //                 related_documents,
+            //                 full_document_diagnostic_report:
+            //                     FullDocumentDiagnosticReport { items, .. },
+            //             },
+            //         ),
+            //     ) => {
             //         let l = self.diagnostics.guard();
             //         self.diagnostics.insert(f.tid().uri, items, &l);
-            //         for (uri, rel) in related_documents.into_iter().flatten() {
+            //         for (uri, rel) in
+            //             related_documents.into_iter().flatten()
+            //         {
             //             match rel {
-            //                 DocumentDiagnosticReportKind::Full(FullDocumentDiagnosticReport { items, .. }) => {
+            //                 DocumentDiagnosticReportKind::Full(
+            //                     FullDocumentDiagnosticReport {
+            //                         items, ..
+            //                     },
+            //                 ) => {
             //                     self.diagnostics.insert(uri, items, &l);
-            //                 },
-            //                 DocumentDiagnosticReportKind::Unchanged(_) => {},
+            //                 }
+            //                 DocumentDiagnosticReportKind::Unchanged(_) => {
+            //                 }
             //             }
             //         }
             //         log::info!("pulled diagnostics");
-            //     },
+            //     }
             //     _ => bail!("fuck that"),
             // };
+
             Ok(())
         }
     }
@@ -187,7 +202,12 @@ impl Client {
         &self,
         f: PathBuf,
         previous: Option<String>,
-    ) -> impl Future<Output = anyhow::Result<Option<String>>> {
+    ) -> impl Future<
+        Output = Result<
+            Option<String>,
+            RequestError<DocumentDiagnosticRequest>,
+        >,
+    > {
         let p = DocumentDiagnosticParams {
             text_document: f.tid(),
             identifier: try {
@@ -219,7 +239,7 @@ impl Client {
                     Err(RequestError::Cancelled(_, y)) if y.retrigger_request => {
                         self.request::<lsp_request!("textDocument/diagnostic")>(&p,).unwrap().0.await?
                     },
-                    Err(e) => return Err(e.into()),
+                    Err(e) => return Err(e),
                 };
             // dbg!(&x);
             match x.clone() {
@@ -255,7 +275,7 @@ impl Client {
                     log::info!("pulled diagnostics");
                     Ok(result_id)
                 }
-                _ => bail!("fuck that"),
+                _ => unimplemented!(),
             }
         }
     }
@@ -423,21 +443,20 @@ impl Client {
             RequestError<SemanticTokensFullRequest>,
         >,
         f: &Path,
-    ) -> anyhow::Result<()> {
+    ) -> Result<(), RequestError<SemanticTokensFullRequest>> {
         debug!("requested semantic tokens");
 
         let Some(b"rs") = f.extension().map(|x| x.as_encoded_bytes())
         else {
             return Ok(());
         };
-        let (rx, _) = self
-            .request_::<SemanticTokensFullRequest, { Redraw }>(
-                &SemanticTokensParams {
-                    work_done_progress_params: default(),
-                    partial_result_params: default(),
-                    text_document: f.tid(),
-                },
-            )?;
+        let (rx, _) = self.request::<SemanticTokensFullRequest>(
+            &SemanticTokensParams {
+                work_done_progress_params: default(),
+                partial_result_params: default(),
+                text_document: f.tid(),
+            },
+        )?;
         let x = self.runtime.spawn(async move {
             let t = rx.await;
             let y = t?.unwrap();
@@ -490,6 +509,26 @@ impl Client {
             position: c,
         })
         .map(|(x, _)| x)
+    }
+
+    pub fn _child_modules(
+        &'static self,
+        p: Position,
+        t: &Path,
+    ) -> Result<
+        impl Future<
+            Output = Result<
+                <ChildModules as Request>::Result,
+                RequestError<ChildModules>,
+            >,
+        >,
+        SendError<Message>,
+    > {
+        self.request::<ChildModules>(&TextDocumentPositionParams {
+            position: p,
+            text_document: t.tid(),
+        })
+        .map(|x| x.0)
     }
 }
 

@@ -8,7 +8,6 @@ use std::pin::pin;
 use std::sync::LazyLock;
 use std::vec::Vec;
 
-use anyhow::anyhow;
 use atools::prelude::*;
 use dsb::Cell;
 use dsb::cell::Style;
@@ -19,6 +18,8 @@ use lsp_types::{
     DocumentSymbol, Location, Position, SemanticTokensLegend,
     SnippetTextEdit, TextEdit,
 };
+use rootcause::prelude::{IteratorExt, ResultExt};
+use rootcause::report;
 use ropey::{Rope, RopeSlice};
 use serde::{Deserialize, Serialize};
 use tree_house::Language;
@@ -32,7 +33,6 @@ pub mod hist;
 pub mod theme_treesitter;
 use hist::Changes;
 
-use crate::lsp::Void;
 use crate::sni::{Snippet, StopP};
 use crate::text::hist::Action;
 
@@ -454,15 +454,23 @@ impl TextArea {
         self.set_ho();
     }
 
-    pub fn apply(&mut self, x: &TextEdit) -> Result<(usize, usize), ()> {
-        let begin = self.l_position(x.range.start).ok_or(())?;
-        let end = self.l_position(x.range.end).ok_or(())?;
-        self.remove(begin..end).void()?;
-        self.insert_at(begin, &x.new_text).void()?;
+    pub fn apply(
+        &mut self,
+        x: &TextEdit,
+    ) -> rootcause::Result<(usize, usize)> {
+        let begin =
+            self.l_position(x.range.start).ok_or(report!("no range"))?;
+        let end =
+            self.l_position(x.range.end).ok_or(report!("no range"))?;
+        self.remove(begin..end)?;
+        self.insert_at(begin, &x.new_text)?;
         Ok((begin, end))
     }
 
-    pub fn apply_adjusting(&mut self, x: &TextEdit) -> Result<(), ()> {
+    pub fn apply_adjusting(
+        &mut self,
+        x: &TextEdit,
+    ) -> rootcause::Result<()> {
         let (_b, e) = self.apply(&x)?;
 
         if e < self.cursor.first().position {
@@ -503,36 +511,37 @@ impl TextArea {
     pub fn apply_snippet_tedit(
         &mut self,
         SnippetTextEdit { range,new_text, insert_text_format, .. }: &SnippetTextEdit,
-    ) -> anyhow::Result<()> {
+    ) -> rootcause::Result<()> {
         match insert_text_format {
             Some(lsp_types::InsertTextFormat::SNIPPET) => self
                 .apply_snippet(&TextEdit {
                     range: range.clone(),
                     new_text: new_text.clone(),
-                })
-                .unwrap(),
+                })?,
             _ => {
                 self.apply_adjusting(&TextEdit {
                     range: range.clone(),
                     new_text: new_text.clone(),
-                })
-                .unwrap();
+                })?;
             }
         }
         Ok(())
     }
 
-    pub fn apply_snippet(&mut self, x: &TextEdit) -> anyhow::Result<()> {
+    pub fn apply_snippet(
+        &mut self,
+        x: &TextEdit,
+    ) -> rootcause::Result<()> {
         let begin = self
             .l_position(x.range.start)
-            .ok_or(anyhow!("couldnt get start"))?;
+            .ok_or(report!("couldnt get start"))?;
         let end = self
             .l_position(x.range.end)
-            .ok_or(anyhow!("couldnt get end"))?;
+            .ok_or(report!("couldnt get end"))?;
         self.remove(begin..end)?;
         let (mut sni, tex) =
             crate::sni::Snippet::parse(&x.new_text, begin)
-                .ok_or(anyhow!("failed to parse snippet"))?;
+                .ok_or(report!("failed to parse snippet"))?;
         self.insert_at(begin, &tex)?;
         self.cursor.one(match sni.next() {
             Some(x) => {
@@ -1115,7 +1124,7 @@ impl TextArea {
     pub(crate) fn apply_tedits_adjusting(
         &mut self,
         teds: &mut [TextEdit],
-    ) -> Result<(), ()> {
+    ) -> rootcause::Result<()> {
         teds.sort_tedits();
         for ted in teds {
             self.apply_adjusting(ted)?;
@@ -1126,11 +1135,12 @@ impl TextArea {
     pub(crate) fn apply_tedits(
         &mut self,
         teds: &mut [TextEdit],
-    ) -> Result<(), ()> {
+    ) -> rootcause::Result<(), &'static str> {
         teds.sort_tedits();
-        for ted in teds {
-            self.apply(ted)?;
-        }
+        teds.iter()
+            .map(|x| self.apply(x).map(drop))
+            .collect_reports::<(), _>()
+            .context("couldnt apply one or more tedits")?;
         Ok(())
     }
 }

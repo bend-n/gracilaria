@@ -8,12 +8,13 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 use Default::default;
-use anyhow::anyhow;
 use implicit_fn::implicit_fn;
 use lsp_server::{Connection, Request as LRq, ResponseError};
 use lsp_types::request::*;
 use lsp_types::*;
 use regex::Regex;
+use rootcause::handlers::Debug;
+use rootcause::report;
 use ropey::Rope;
 use rust_analyzer::lsp::ext::OnTypeFormatting;
 use rust_fsm::StateMachine;
@@ -80,7 +81,8 @@ pub fn deserialize_tokens<'de, D: serde::Deserializer<'de>>(
 
 #[derive(Default, Debug, Serialize, Deserialize)]
 pub struct Requests {
-    pub hovering: Rq<Hovr, Option<Hovr>, (usize, usize), anyhow::Error>,
+    pub hovering:
+        Rq<Hovr, Option<Hovr>, (usize, usize), RequestError<HoverRequest>>,
     pub document_highlights: Rq<
         Vec<DocumentHighlight>,
         Vec<DocumentHighlight>,
@@ -103,7 +105,12 @@ pub struct Requests {
         (),
         RequestError<SemanticTokensFullRequest>,
     >,
-    pub diag: Rq<String, Option<String>, (), anyhow::Error>,
+    pub diag: Rq<
+        String,
+        Option<String>,
+        (),
+        RequestError<DocumentDiagnosticRequest>,
+    >,
     #[serde(skip)]
     pub inlay: Rq<
         Vec<InlayHint>,
@@ -391,10 +398,10 @@ impl Editor {
         lsp!(self + p).map(|(l, o)| {
             let v = l.runtime.block_on(l.format(o)).unwrap();
             if let Some(v) = v {
-                if let Err(()) =
+                if let Err(x) =
                     self.text.apply_tedits_adjusting(&mut { v })
                 {
-                    eprintln!("unhappy fmt")
+                    eprintln!("unhappy fmt {x}")
                 }
             }
             // self.text.cursor =
@@ -695,7 +702,7 @@ impl Editor {
                     .unwrap();
                 // println!("rq hov of {hover:?} (cur {})", requests.hovering.request.is_some());
                 let handle: tokio::task::JoinHandle<
-                    Result<Option<Hovr>, anyhow::Error>,
+                    Result<Option<Hovr>, _>,
                 > = cl.runtime.spawn(async move {
                     let Some(x) = rx.await? else {
                         return Ok(None::<Hovr>);
@@ -756,7 +763,7 @@ impl Editor {
                             ]
                         })
                     });
-                    anyhow::Ok(Some(
+                    Ok(Some(
                         hov::Hovr {
                             span,
                             item: text::CellBuffer {
@@ -941,11 +948,13 @@ impl Editor {
                 change!(self, window.clone());
             }
             Some(Do::SpawnTerminal) => {
-                trm::toggle(
+                if let Err(e) = trm::toggle(
                     self.workspace
                         .as_deref()
                         .unwrap_or(Path::new("/home/os/")),
-                );
+                ) {
+                    log::error!("opening terminal failed {e}");
+                }
             }
             Some(Do::MatchingBrace) => {
                 if let Some((l, f)) = lsp!(self + p) {
@@ -1121,14 +1130,17 @@ impl Editor {
             }
             Some(Do::SymbolsSelect(x)) => {
                 if let Some(Ok(x)) = x.sel()
-                    && let Err(e) = try bikeshed anyhow::Result<()> {
+                    && let Err(e) = try bikeshed rootcause::Result<()> {
                         let r = match x.at {
                             sym::GoTo::Loc(x) => {
                                 let x = x.clone();
                                 let f = x
                                     .uri
                                     .to_file_path()
-                                    .map_err(|()| anyhow!("dammit"))?
+                                    .map_err(|()| {
+                                        report!("provided uri not path")
+                                            .context(x.uri)
+                                    })?
                                     .canonicalize()?;
                                 self.state = State::Default;
                                 self.requests.complete =
@@ -1140,10 +1152,10 @@ impl Editor {
                             }
                             sym::GoTo::R(range) => range,
                         };
-                        let p = self
-                            .text
-                            .l_position(r.start)
-                            .ok_or(anyhow!("rah"))?;
+                        let p = self.text.l_position(r.start).ok_or(
+                            report!("provided range out of bound")
+                                .context_custom::<Debug, _>(r),
+                        )?;
                         if p != 0 {
                             self.text.cursor.just(p, &self.text.rope);
                         }
@@ -1649,43 +1661,17 @@ impl Editor {
                 self.hist.push_if_changed(&mut self.text);
                 change!(self, window.clone());
             }
-            Some(Do::Paste) => {
+            Some(Do::PasteOver) => {
                 self.hist.push_if_changed(&mut self.text);
-                let r = clipp::paste();
-                if unsafe { META.hash == hash(&r) } {
-                    let bounds = unsafe { &*META.splits };
-                    let pieces = bounds.windows(2).map(|w| unsafe {
-                        std::str::from_utf8_unchecked(
-                            &r.as_bytes()[w[0]..w[1]],
-                        )
-                    });
-                    if unsafe { META.count }
-                        == self.text.cursor.iter().len()
-                    {
-                        for (piece, cursor) in
-                            pieces.zip(0..self.text.cursor.iter().count())
-                        {
-                            let c = self
-                                .text
-                                .cursor
-                                .iter()
-                                .nth(cursor)
-                                .unwrap();
-                            self.text.insert_at(*c, piece).unwrap();
-                        }
-                    } else {
-                        let new =
-                            pieces.intersperse("\n").collect::<String>();
-                        // vscode behaviour: insane?
-                        self.text.insert(&new);
-                        eprintln!("hrmst");
-                    }
-                } else {
-                    self.text.insert(&clipp::paste());
-                }
-                self.hist.push_if_changed(&mut self.text);
-                change!(self, window.clone());
+                ceach!(self.text.cursor, |cursor| {
+                    let Some(r) = cursor.sel else { return };
+                    _ = self.text.remove(r.into());
+                });
+                self.text.cursor.clear_selections();
+                self.paste();
+                // self.hist.push_if_changed(&mut self.text);
             }
+            Some(Do::Paste) => self.paste(),
             Some(Do::OpenFile(x)) => {
                 _ = self.open(Path::new(&x), window.clone());
             }
@@ -1823,11 +1809,39 @@ impl Editor {
         self.hist.record(&self.text);
     }
 
+    pub fn paste(&mut self) {
+        self.hist.push_if_changed(&mut self.text);
+        let r = clipp::paste();
+        if unsafe { META.hash == hash(&r) } {
+            let bounds = unsafe { &*META.splits };
+            let pieces = bounds.windows(2).map(|w| unsafe {
+                std::str::from_utf8_unchecked(&r.as_bytes()[w[0]..w[1]])
+            });
+            if unsafe { META.count } == self.text.cursor.iter().len() {
+                for (piece, cursor) in
+                    pieces.zip(0..self.text.cursor.iter().count())
+                {
+                    let c = self.text.cursor.iter().nth(cursor).unwrap();
+                    self.text.insert_at(*c, piece).unwrap();
+                }
+            } else {
+                let new = pieces.intersperse("\n").collect::<String>();
+                // vscode behaviour: insane?
+                self.text.insert(&new);
+                eprintln!("hrmst");
+            }
+        } else {
+            self.text.insert(&clipp::paste());
+        }
+        self.hist.push_if_changed(&mut self.text);
+        change!(self, window.clone());
+    }
+
     pub fn open(
         &mut self,
         x: &Path,
         w: Arc<dyn Window>,
-    ) -> anyhow::Result<()> {
+    ) -> rootcause::Result<()> {
         let x = x.canonicalize()?.to_path_buf();
         if Some(&*x) == self.origin.as_deref() {
             self.bar.last_action = "didnt open".into();
@@ -1863,7 +1877,7 @@ impl Editor {
         )>,
         w: Option<Arc<dyn Window>>,
         ws: Option<PathBuf>,
-    ) -> anyhow::Result<()> {
+    ) -> rootcause::Result<()> {
         if let Some(x) = self.files.remove(x) {
             let f = take(&mut self.files);
             *self = x;
@@ -1874,7 +1888,9 @@ impl Editor {
                 self.hist.push_if_changed(&mut self.text);
                 self.text.rope = Rope::from_str(
                     &std::fs::read_to_string(
-                        self.origin.as_ref().unwrap(),
+                        self.origin
+                            .as_ref()
+                            .ok_or(report!("origin missing"))?,
                     )
                     .unwrap(),
                 );
@@ -1892,9 +1908,9 @@ impl Editor {
             }
             self.lsp = lsp;
 
-            lsp!(self + p).map(|(x, origin)| {
-                x.open(&origin, self.text.rope.to_string()).unwrap();
-            });
+            if let Some((x, origin)) = lsp!(self + p) {
+                x.open(&origin, self.text.rope.to_string())?;
+            }
         } else {
             self.workspace = ws;
             self.origin = Some(x.to_path_buf());
@@ -1908,16 +1924,14 @@ impl Editor {
             self.mtime = Self::modify(self.origin.as_deref());
             self.lsp = lsp;
 
-            lsp!(self + p).map(|(x, origin)| {
+            if let Some((x, origin)) = lsp!(self + p) {
                 take(&mut self.requests);
-                x.open(&origin, new).unwrap();
-
+                x.open(&origin, new)?;
                 x.rq_semantic_tokens(
                     &mut self.requests.semantic_tokens,
                     origin,
-                )
-                .unwrap();
-            });
+                )?;
+            }
         }
         self.set_title(w);
         Ok(())
@@ -1937,7 +1951,7 @@ impl Editor {
             .map(|[wo, or]| format!("gracilaria - {wo} - {or}"))
     }
 
-    pub fn store(&mut self) -> anyhow::Result<()> {
+    pub fn store(&mut self) -> rootcause::Result<()> {
         let ws = self.workspace.clone();
         let tree = self.tree.clone();
         let mtime = self.mtime.clone();
@@ -2014,6 +2028,8 @@ pub fn handle2<'a>(
             text.cursor.just(text.rope.len_chars(), &text.rope);
             text.vo = text.l().saturating_sub(text.r);
         }
+        Character("e") if alt() => text.end(),
+        Character("q") if alt() => text.home(),
         Named(Home) => text.home(),
         Named(End) => text.end(),
         Named(Tab) => text.tab(),

@@ -43,7 +43,6 @@ crossbeam = { version = "0.8.4", features = ["nightly", "crossbeam-channel"] }
 test-log = "0.2.18"
 env_logger = "0.11.8"
 url = "2.5.7"
-anyhow = "1.0.100"
 tokio = { version = "1.47.1", features = ["rt-multi-thread", "sync", "time"] }
 regex-cursor = "0.1.5"
 papaya = "0.2.3"
@@ -70,6 +69,7 @@ itern = "0.1.1"
 kitty-rc = { version = "0.4.2", git = "https://github.com/bend-n/kitty-rc-rs" }
 smol_str = "0.3.6"
 futures = "0.3.32"
+rootcause = "0.12.1"
 [profile.dev.package]
 rust-analyzer.opt-level = 3
 fimg.opt-level = 3
