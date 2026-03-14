@@ -222,7 +222,7 @@ pub(crate) fn entry(event_loop: EventLoop) {
                 window.request_redraw();
             }
             // let before = ed.state.name();
-            ed.poll(Some(window));
+            ed.poll();
             // println!("{before} -> poll -> {}", ed.state.name());
             // let before = ed.state.name();
             // let ev = format!("{event:?}");

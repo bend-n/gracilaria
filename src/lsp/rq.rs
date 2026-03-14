@@ -1,7 +1,6 @@
 use std::backtrace::Backtrace;
 use std::fmt::Debug;
 use std::marker::PhantomData;
-use std::sync::Arc;
 
 use crossbeam::channel::SendError;
 use lsp_server::{Message, Response as Re};
@@ -11,7 +10,6 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
 use tokio::task;
 use tokio_util::task::AbortOnDropHandle;
-use winit::window::Window;
 
 #[derive(Serialize, Deserialize)]
 pub enum RequestError<X> {
@@ -154,18 +152,5 @@ impl<T, R, D, E> Rq<T, R, D, E> {
         } else {
             false
         }
-    }
-
-    pub fn poll_r(
-        &mut self,
-        f: impl FnOnce(Result<R, E>, (D, Option<T>)) -> Option<T>,
-        _runtime: &tokio::runtime::Runtime,
-        _w: Option<&Arc<dyn Window>>,
-    ) -> bool {
-        self.poll(|x, y| {
-            f(x, y).inspect(|_| {
-                // w.map(|x| x.request_redraw());
-            })
-        })
     }
 }

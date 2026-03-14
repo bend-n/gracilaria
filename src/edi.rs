@@ -416,7 +416,7 @@ impl Editor {
         std::fs::write(self.origin.as_ref().unwrap(), &t).unwrap();
         self.mtime = Self::modify(self.origin.as_deref());
     }
-    pub fn poll(&mut self, w: Option<&Arc<dyn Window>>) {
+    pub fn poll(&mut self) {
         let Some((l, ..)) = self.lsp else { return };
         for rq in l.req_rx.try_iter() {
             match rq {
@@ -427,130 +427,98 @@ impl Editor {
                 rq => log::debug!("discarding request {rq:?}"),
             }
         }
-        let r = &l.runtime;
         self.requests.inlay.poll(|x, p| {
             x.ok().or(p.1).inspect(|x| {
                 self.text.set_inlay(x);
             })
         });
-        self.requests.document_highlights.poll_r(|x, _| x.ok(), r, w);
-        self.requests.diag.poll_r(|x, _| x.ok().flatten(), r, w);
+        self.requests.document_highlights.poll(|x, _| x.ok());
+        self.requests.diag.poll(|x, _| x.ok().flatten());
         if let CompletionState::Complete(rq) = &mut self.requests.complete
         {
-            rq.poll_r(
-                |f, (c, _)| {
-                    f.ok().flatten().map(|x| Complete {
-                        r: x,
-                        start: c,
-                        selection: 0,
-                        vo: 0,
-                    })
-                },
-                r,
-                w,
-            );
+            rq.poll(|f, (c, _)| {
+                f.ok().flatten().map(|x| Complete {
+                    r: x,
+                    start: c,
+                    selection: 0,
+                    vo: 0,
+                })
+            });
         };
         match &mut self.state {
             State::Symbols(x) => {
-                x.poll_r(
-                    |x, (_, p)| {
-                        let Some(p) = p else { unreachable!() };
-                        x.ok().flatten().map(|r| sym::Symbols {
-                            data: (r, p.data.1, p.data.2),
-                            selection: 0,
-                            vo: 0,
-                            ..p
-                        })
-                    },
-                    r,
-                    w,
-                );
+                x.poll(|x, (_, p)| {
+                    let Some(p) = p else { unreachable!() };
+                    x.ok().flatten().map(|r| sym::Symbols {
+                        data: (r, p.data.1, p.data.2),
+                        selection: 0,
+                        vo: 0,
+                        ..p
+                    })
+                });
             }
             State::CodeAction(x) => {
-                if x.poll_r(
-                    |x, _| {
-                        let lems: Vec<CodeAction> = x
-                            .ok()??
-                            .into_iter()
-                            .map(|x| match x {
-                                CodeActionOrCommand::CodeAction(x) => x,
-                                _ => panic!("alas we dont like these"),
-                            })
-                            .collect();
-                        if lems.is_empty() {
-                            self.bar.last_action =
-                                "no code actions available".into();
-                            None
-                        } else {
-                            self.bar.last_action =
-                                format!("{} code actions", lems.len());
-                            Some(act::CodeActions::new(lems))
-                        }
-                    },
-                    r,
-                    w,
-                ) && x.result.is_none()
+                if x.poll(|x, _| {
+                    let lems: Vec<CodeAction> = x
+                        .ok()??
+                        .into_iter()
+                        .map(|x| match x {
+                            CodeActionOrCommand::CodeAction(x) => x,
+                            _ => panic!("alas we dont like these"),
+                        })
+                        .collect();
+                    if lems.is_empty() {
+                        self.bar.last_action =
+                            "no code actions available".into();
+                        None
+                    } else {
+                        self.bar.last_action =
+                            format!("{} code actions", lems.len());
+                        Some(act::CodeActions::new(lems))
+                    }
+                }) && x.result.is_none()
                 {
                     self.state = State::Default;
                 }
             }
             State::Runnables(x) => {
-                x.poll_r(
-                    |x, ((), old)| {
-                        Some(Runnables {
-                            data: x.ok()?,
-                            ..old.unwrap_or_default()
-                        })
-                    },
-                    r,
-                    w,
-                );
+                x.poll(|x, ((), old)| {
+                    Some(Runnables {
+                        data: x.ok()?,
+                        ..old.unwrap_or_default()
+                    })
+                });
             }
             _ => {}
         }
-        self.requests.def.poll_r(
-            |x, _| {
-                x.ok().flatten().and_then(|x| match &x {
-                    GotoDefinitionResponse::Link([x, ..]) =>
-                        Some(x.clone()),
-                    _ => None,
-                })
-            },
-            r,
-            w,
-        );
-        self.requests.semantic_tokens.poll_r(
-            |x, _| x.ok().inspect(|x| self.text.set_toks(&x)),
-            &l.runtime,
-            w,
-        );
-        self.requests.sig_help.poll_r(
-            |x, ((), y)| {
-                x.ok().flatten().map(|x| {
-                    if let Some((old_sig, vo, max)) = y
-                        && &sig::active(&old_sig) == &sig::active(&x)
-                    {
-                        (x, vo, max)
-                    } else {
-                        (x, 0, None)
-                    }
-                })
-            },
-            r,
-            w,
-        );
-        self.requests.hovering.poll_r(|x, _| x.ok().flatten(), r, w);
-        self.requests.git_diff.poll_r(|x, _| x.ok(), r, w);
-        self.requests.document_symbols.poll_r(
-            |x, _| {
-                x.ok().flatten().map(|x| match x {
-                    DocumentSymbolResponse::Flat(_) => None,
-                    DocumentSymbolResponse::Nested(x) => Some(x),
-                })
-            },
-            r,
-            w,
-        );
+        self.requests.def.poll(|x, _| {
+            x.ok().flatten().and_then(|x| match &x {
+                GotoDefinitionResponse::Link([x, ..]) => Some(x.clone()),
+                _ => None,
+            })
+        });
+        self.requests
+            .semantic_tokens
+            .poll(|x, _| x.ok().inspect(|x| self.text.set_toks(&x)));
+        self.requests.sig_help.poll(|x, ((), y)| {
+            x.ok().flatten().map(|x| {
+                if let Some((old_sig, vo, max)) = y
+                    && &sig::active(&old_sig) == &sig::active(&x)
+                {
+                    (x, vo, max)
+                } else {
+                    (x, 0, None)
+                }
+            })
+        });
+        self.requests.hovering.poll(|x, _| x.ok().flatten());
+        self.requests.git_diff.poll(|x, _| x.ok());
+        self.requests.document_symbols.poll(|x, _| {
+            x.ok().flatten().map(|x| match x {
+                DocumentSymbolResponse::Flat(_) => None,
+                DocumentSymbolResponse::Nested(x) => Some(x),
+            })
+        });
     }
     #[implicit_fn]
     pub fn cursor_moved(
