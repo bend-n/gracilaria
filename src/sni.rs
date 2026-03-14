@@ -1,6 +1,7 @@
 use std::ops::Range;
 
 use helix_core::snippets::parser::SnippetElement;
+use rootcause::option_ext::OptionExt;
 
 #[derive(
     Debug, Clone, serde_derive::Serialize, serde_derive::Deserialize,
@@ -42,8 +43,10 @@ impl StopP {
 }
 
 impl Snippet {
-    pub fn parse(x: &str, at: usize) -> Option<(Self, String)> {
-        let value = helix_core::snippets::parser::parse(x).ok()?;
+    pub fn parse(x: &str, at: usize) -> rootcause::Result<(Self, String)> {
+        let value = helix_core::snippets::parser::parse(x)
+            .ok()
+            .context("couldnt parse snippet")?;
 
         let mut stops = vec![];
         let mut cursor = 0;
@@ -55,7 +58,7 @@ impl Snippet {
         stops.sort_by_key(|x| x.0);
         stops.iter_mut().for_each(|x| x.1.manipulate(|x| x + at));
         let last = stops.try_remove(0);
-        Some((Snippet { last: last.map(|x| x.1), stops, index: 0 }, o))
+        Ok((Snippet { last: last.map(|x| x.1), stops, index: 0 }, o))
     }
     pub fn manipulate(&mut self, f: impl FnMut(usize) -> usize + Clone) {
         self.stops.iter_mut().for_each(|x| x.1.manipulate(f.clone()));

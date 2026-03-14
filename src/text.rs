@@ -18,6 +18,7 @@ use lsp_types::{
     DocumentSymbol, Location, Position, SemanticTokensLegend,
     SnippetTextEdit, TextEdit,
 };
+use rootcause::option_ext::OptionExt;
 use rootcause::prelude::{IteratorExt, ResultExt};
 use rootcause::report;
 use ropey::{Rope, RopeSlice};
@@ -489,24 +490,24 @@ impl TextArea {
     pub fn apply_snippet_tedit_raw(
         SnippetTextEdit { range,new_text, insert_text_format, .. }: &SnippetTextEdit,
         text: &'_ mut Rope,
-    ) -> Option<()> {
+    ) -> rootcause::Result<()> {
         match insert_text_format {
             Some(lsp_types::InsertTextFormat::SNIPPET) => {
-                let begin = text.l_position(range.start)?;
-                let end = text.l_position(range.end)?;
-                text.try_remove(begin..end).ok()?;
+                let begin = text.l_position(range.start).ok_or_report()?;
+                let end = text.l_position(range.end).ok_or_report()?;
+                text.try_remove(begin..end)?;
                 let (_, tex) =
                     crate::sni::Snippet::parse(&new_text, begin)?;
-                text.try_insert(begin, &tex).ok()?;
+                text.try_insert(begin, &tex)?;
             }
             _ => {
-                let begin = text.l_position(range.start)?;
-                let end = text.l_position(range.end)?;
-                text.try_remove(begin..end).ok()?;
-                text.try_insert(begin, &new_text).ok()?;
+                let begin = text.l_position(range.start).ok_or_report()?;
+                let end = text.l_position(range.end).ok_or_report()?;
+                text.try_remove(begin..end)?;
+                text.try_insert(begin, &new_text)?;
             }
         }
-        Some(())
+        Ok(())
     }
     pub fn apply_snippet_tedit(
         &mut self,
@@ -540,8 +541,7 @@ impl TextArea {
             .ok_or(report!("couldnt get end"))?;
         self.remove(begin..end)?;
         let (mut sni, tex) =
-            crate::sni::Snippet::parse(&x.new_text, begin)
-                .ok_or(report!("failed to parse snippet"))?;
+            crate::sni::Snippet::parse(&x.new_text, begin)?;
         self.insert_at(begin, &tex)?;
         self.cursor.one(match sni.next() {
             Some(x) => {

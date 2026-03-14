@@ -1,4 +1,5 @@
 #![feature(
+    yeet_expr,
     adt_const_params,
     inherent_associated_types,
     never_type,
@@ -52,6 +53,7 @@ mod meta;
 mod rnd;
 mod runnables;
 mod sym;
+mod error;
 mod trm;
 
 use std::fmt::{Debug, Display};

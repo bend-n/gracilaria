@@ -129,7 +129,18 @@ impl Diff {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug)]
+impl Debug for Hist {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Hist")
+            .field("history", &self.history.len())
+            .field("redo_history", &self.redo_history.len())
+            .field("last", &self.last)
+            .field("last_edit", &self.last_edit)
+            .finish()
+    }
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
 pub struct Hist {
     pub history: Vec<Diff>,
     pub redo_history: Vec<Diff>,

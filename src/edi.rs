@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::fs::OpenOptions;
+use std::fmt::Debug;
 use std::mem::take;
 use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
@@ -13,7 +13,7 @@ use lsp_server::{Connection, Request as LRq, ResponseError};
 use lsp_types::request::*;
 use lsp_types::*;
 use regex::Regex;
-use rootcause::handlers::Debug;
+use rootcause::prelude::ResultExt;
 use rootcause::report;
 use ropey::Rope;
 use rust_analyzer::lsp::ext::OnTypeFormatting;
@@ -27,12 +27,14 @@ use winit::keyboard::{Key, NamedKey};
 use winit::window::Window;
 
 pub mod st;
+mod wsedit;
 
 use st::*;
 
 use crate::bar::Bar;
 use crate::commands::Cmds;
 use crate::complete::Complete;
+use crate::error::WDebug;
 use crate::hov::{self, Hovr};
 use crate::lsp::{
     self, Anonymize, Client, Map_, PathURI, RequestError, Rq,
@@ -134,9 +136,22 @@ pub struct Requests {
     #[serde(skip)]
     pub git_diff: Rq<imara_diff::Diff, imara_diff::Diff, (), ()>,
 }
-#[derive(
-    Default, Debug, serde_derive::Serialize, serde_derive::Deserialize,
-)]
+impl Debug for Editor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Editor")
+            .field("files", &self.files)
+            .field("text", &self.text.len_chars())
+            .field("origin", &self.origin)
+            .field("state", &self.state.name())
+            .field("bar", &self.bar)
+            .field("workspace", &self.workspace)
+            .field("hist", &self.hist)
+            .field("mtime", &self.mtime)
+            .finish()
+    }
+}
+
+#[derive(Default, serde_derive::Serialize, serde_derive::Deserialize)]
 pub struct Editor {
     pub files: HashMap<PathBuf, Editor>,
     pub text: TextArea,
@@ -174,7 +189,7 @@ macro_rules! lsp {
 pub(crate) use lsp as lsp_m;
 macro_rules! inlay {
     ($self:ident) => {
-        lsp!($self + p).map(|(lsp, path)| {
+        $crate::edi::lsp_m!($self + p).map(|(lsp, path)| {
             $self
                 .requests
                 .inlay
@@ -182,6 +197,7 @@ macro_rules! inlay {
         })
     };
 }
+pub(crate) use inlay;
 macro_rules! change {
     ($self:ident) => {
         change!(@$self, None)
@@ -190,12 +206,12 @@ macro_rules! change {
         change!(@$self, Some($w))
     };
     (just $self:ident) => {
-        lsp!($self + p).map(|(x, origin)| {
+        lsp_m!($self + p).map(|(x, origin)| {
             x.edit(&origin, $self.text.rope.to_string()).unwrap();
         })
     };
     (@$self:ident, $w:expr) => {
-        lsp!($self + p).map(|(x, origin)| {
+        lsp_m!($self + p).map(|(x, origin)| {
             x.edit(&origin, $self.text.rope.to_string()).unwrap();
             x.rq_semantic_tokens(
                 &mut $self.requests.semantic_tokens,
@@ -227,6 +243,7 @@ macro_rules! change {
         });
     };
 }
+pub(crate) use change;
 
 fn rooter(x: &Path) -> Option<PathBuf> {
     for f in std::fs::read_dir(&x).unwrap().filter_map(Result::ok) {
@@ -1118,7 +1135,7 @@ impl Editor {
                         };
                         let p = self.text.l_position(r.start).ok_or(
                             report!("provided range out of bound")
-                                .context_custom::<Debug, _>(r),
+                                .context_custom::<WDebug, _>(r),
                         )?;
                         if p != 0 {
                             self.text.cursor.just(p, &self.text.rope);
@@ -1153,7 +1170,15 @@ impl Editor {
                         );
 
                     match x {
-                        Ok(Some(x)) => self.apply_wsedit(x, &f.to_owned()),
+                        Ok(Some(x)) =>
+                            if let Err(e) =
+                                self.apply_wsedit(x, &f.to_owned())
+                            {
+                                println!(
+                                    "couldnt apply one or more wsedits: \
+                                     {e}"
+                                );
+                            },
                         Err(RequestError::Failure(
                             lsp_server::Response {
                                 result: None,
@@ -1229,7 +1254,11 @@ impl Editor {
                     .request_immediate::<CodeActionResolveRequest>(&act)
                     .unwrap();
                 let f = f.to_owned();
-                act.edit.map(|x| self.apply_wsedit(x, &f));
+                if let Some(x) = act.edit
+                    && let Err(e) = self.apply_wsedit(x, &f)
+                {
+                    log::error!("{e}");
+                }
             }
             Some(Do::CASelectNext) => {
                 let State::CodeAction(Rq { result: Some(c), .. }) =
@@ -1718,61 +1747,6 @@ impl Editor {
         }
         ControlFlow::Continue(())
     }
-    pub fn apply_wsedit(&mut self, x: WorkspaceEdit, f: &Path) {
-        let mut f2 =
-            |TextDocumentEdit { mut edits, text_document, .. }| {
-                edits.sort_tedits();
-                if text_document.uri != f.tid().uri {
-                    let f = OpenOptions::new()
-                        .read(true)
-                        .create(true)
-                        .write(true)
-                        .open(text_document.uri.path())
-                        .unwrap();
-                    let mut r = Rope::from_reader(f).unwrap();
-                    for edit in &edits {
-                        TextArea::apply_snippet_tedit_raw(edit, &mut r);
-                    }
-                    r.write_to(
-                        OpenOptions::new()
-                            .write(true)
-                            .truncate(true)
-                            .open(text_document.uri.path())
-                            .unwrap(),
-                    )
-                    .unwrap();
-                } else {
-                    for edit in &edits {
-                        self.text.apply_snippet_tedit(edit).unwrap();
-                    }
-                }
-            };
-        match x {
-            WorkspaceEdit {
-                document_changes: Some(DocumentChanges::Edits(x)),
-                ..
-            } =>
-                for t in x {
-                    f2(t)
-                },
-            WorkspaceEdit {
-                document_changes: Some(DocumentChanges::Operations(x)),
-                ..
-            } =>
-                for op in x {
-                    match op {
-                        DocumentChangeOperation::Edit(t) => {
-                            f2(t);
-                        }
-                        x => log::error!("didnt apply {x:?}"),
-                    };
-                },
-            _ => {}
-        }
-        change!(self);
-        self.hist.record(&self.text);
-    }
-
     pub fn paste(&mut self) {
         self.hist.push_if_changed(&mut self.text);
         let r = clipp::paste();
