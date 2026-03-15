@@ -322,95 +322,102 @@ pub fn render(
             }
         }
 
-        let mut place_around = |(_x, _y): (usize, usize),
-                                i: Image<&mut [u8], 3>,
-                                c: &[Cell],
-                                columns: usize,
-                                ppem_: f32,
-                                ls_: f32,
-                                ox: f32,
-                                oy: f32,
-                                toy: f32| {
-            let met = super::FONT.metrics(&[]);
-            let fac = ppem / met.units_per_em as f32;
-            let position = (
-                (((_x) as f32 * fw).round() + ox) as usize,
-                (((_y) as f32 * (fh + ls * fac)).round() + oy) as usize,
-            );
+        let mut place_around =
+            |(_x, _y): (usize, usize),
+             i: Image<&mut [u8], 3>,
+             c: &[Cell],
+             columns: usize,
+             ppem_: f32,
+             ls_: f32,
+             ox: f32,
+             oy: f32,
+             toy: f32,
+             add1_below: bool| {
+                let met = super::FONT.metrics(&[]);
+                let fac = ppem / met.units_per_em as f32;
+                let position = (
+                    (((_x) as f32 * fw).round() + ox) as usize,
+                    (((_y) as f32 * (fh + ls * fac)).round() + oy)
+                        as usize,
+                );
 
-            let ppem = ppem_;
-            let ls = ls_;
-            let mut r = c.len() / columns;
-            assert_eq!(c.len() % columns, 0);
-            let (w, h) = dsb::size(&fonts.regular, ppem, ls, (columns, r));
-            // std::fs::write("cells", Cell::store(c));
+                let ppem = ppem_;
+                let ls = ls_;
+                let mut r = c.len() / columns;
+                assert_eq!(c.len() % columns, 0);
+                let (w, h) =
+                    dsb::size(&fonts.regular, ppem, ls, (columns, r));
+                // std::fs::write("cells", Cell::store(c));
 
-            if w >= size.width as usize
-                || (position
-                    .1
-                    .checked_add(h)
-                    .is_none_or(|x| x >= size.height as usize)
-                    && !position.1.checked_sub(h).is_some())
-                || position.1 >= size.height as usize
-                || position.0 >= size.width as usize
-            {
+                if w >= size.width as usize
+                    || (position
+                        .1
+                        .checked_add(h)
+                        .is_none_or(|x| x >= size.height as usize)
+                        && !position.1.checked_sub(h).is_some())
+                    || position.1 >= size.height as usize
+                    || position.0 >= size.width as usize
+                {
+                    unsafe {
+                        dsb::render_owned(
+                            c,
+                            (columns, c.len() / columns),
+                            ppem,
+                            fonts,
+                            ls,
+                            true,
+                        )
+                        .save("fail.png")
+                    };
+                    return Err(());
+                }
+                assert!(
+                    w < window.surface_size().width as _
+                        && h < window.surface_size().height as _
+                );
+                let is_above = position.1.checked_sub(h).is_some();
+                let top = position.1.checked_sub(h).unwrap_or(
+                    ((((_y + add1_below as usize) as f32)
+                        * (fh + ls * fac))
+                        .round()
+                        + toy) as usize,
+                );
+                let (_, y) = dsb::fit(
+                    &fonts.regular,
+                    ppem,
+                    ls,
+                    (
+                        window.surface_size().width as _, /* - left */
+                        ((window.surface_size().height as usize)
+                            .saturating_sub(top)),
+                    ),
+                ); /* suspicious saturation */
+                r = r.min(y);
+
+                let left = if position.0 + w as usize
+                    > window.surface_size().width as usize
+                {
+                    window.surface_size().width as usize - w as usize
+                } else {
+                    position.0
+                };
+
+                let (w, h) =
+                    dsb::size(&fonts.regular, ppem, ls, (columns, r));
                 unsafe {
-                    dsb::render_owned(
-                        c,
-                        (columns, c.len() / columns),
+                    dsb::render(
+                        &c,
+                        (columns, 0),
                         ppem,
                         fonts,
                         ls,
                         true,
+                        i,
+                        (left as _, top as _),
                     )
-                    .save("fail.png")
                 };
-                return Err(());
-            }
-            assert!(
-                w < window.surface_size().width as _
-                    && h < window.surface_size().height as _
-            );
-            let is_above = position.1.checked_sub(h).is_some();
-            let top = position.1.checked_sub(h).unwrap_or(
-                ((((_y/*+ 1*/) as f32) * (fh + ls * fac)).round() + toy)
-                    as usize,
-            );
-            let (_, y) = dsb::fit(
-                &fonts.regular,
-                ppem,
-                ls,
-                (
-                    window.surface_size().width as _, /* - left */
-                    ((window.surface_size().height as usize)
-                        .saturating_sub(top)),
-                ),
-            ); /* suspicious saturation */
-            r = r.min(y);
-
-            let left = if position.0 + w as usize
-                > window.surface_size().width as usize
-            {
-                window.surface_size().width as usize - w as usize
-            } else {
-                position.0
+                Ok((is_above, left, top, w, h))
             };
-
-            let (w, h) = dsb::size(&fonts.regular, ppem, ls, (columns, r));
-            unsafe {
-                dsb::render(
-                    &c,
-                    (columns, 0),
-                    ppem,
-                    fonts,
-                    ls,
-                    true,
-                    i,
-                    (left as _, top as _),
-                )
-            };
-            Ok((is_above, left, top, w, h))
-        };
         // dbg!(&ed.requests.document_symbols);
 
         if let Some(Some(x)) = &ed.requests.document_symbols.result
@@ -493,6 +500,7 @@ pub fn render(
                 0.,
                 0.,
                 0.,
+                false,
             ) {
                 i.filled_box(
                     (w as u32, 0),
@@ -587,6 +595,7 @@ pub fn render(
                             0.,
                             0.,
                             0.,
+                            true,
                         ) else {
                             continue;
                         };
@@ -638,6 +647,7 @@ pub fn render(
                     0.,
                     0.,
                     0.,
+                    true,
                 ) else {
                     return;
                 };
@@ -667,6 +677,7 @@ pub fn render(
                 0.,
                 0.,
                 0.,
+                true,
             ) else {
                 println!("ra?");
                 return;
@@ -698,6 +709,7 @@ pub fn render(
                     0.,
                     0.,
                     0.,
+                    true,
                 ) else {
                     println!("ra?");
                     break 'out;
@@ -766,6 +778,7 @@ pub fn render(
                     0.,
                     0.,
                     0.,
+                    true,
                 ) else {
                     break 'out;
                 };
@@ -789,6 +802,7 @@ pub fn render(
                         0.,
                         -(h as f32),
                         if is_above { 0.0 } else { h as f32 },
+                        true,
                     ) else {
                         return None;
                     };
@@ -835,6 +849,7 @@ pub fn render(
                             } else {
                                 h as f32
                             },
+                            true,
                         ) else {
                             return;
                         };
@@ -864,6 +879,7 @@ pub fn render(
                     0.,
                     0.,
                     0.,
+                    true,
                 ) else {
                     break 'out;
                 };
