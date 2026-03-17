@@ -15,6 +15,7 @@ use lsp_types::request::*;
 use lsp_types::*;
 use rust_analyzer::lsp::ext::*;
 use tokio::sync::oneshot;
+use ttools::*;
 
 use crate::lsp::BehaviourAfter::{self, *};
 use crate::lsp::{RequestError, Rq};
@@ -474,26 +475,30 @@ impl Client {
         Ok(())
     }
 
-    pub fn enter<'a>(&self, f: &Path, t: &'a mut TextArea) {
-        ceach!(t.cursor, |c| {
+    pub fn enter<'a>(
+        &self,
+        f: &Path,
+        t: &'a mut TextArea,
+    ) -> rootcause::Result<()> {
+        ceach!(t.cursor, |c| try bikeshed rootcause::Result<()> {
             let r = self
                 .request_immediate::<OnEnter>(
                     &TextDocumentPositionParams {
                         text_document: f.tid(),
                         position: t.to_l_position(*c).unwrap(),
                     },
-                )
-                .unwrap();
+                )?;
             match r {
                 None => t.enter(),
                 Some(mut r) => {
                     r.sort_tedits();
                     for f in r {
-                        t.apply_snippet_tedit(&f).unwrap();
+                        t.apply_snippet_tedit(&f)?;
                     }
                 }
             }
-        });
+        } => ?);
+        Ok(())
     }
     pub fn runnables(
         &'static self,
@@ -508,7 +513,7 @@ impl Client {
             text_document: t.tid(),
             position: c,
         })
-        .map(|(x, _)| x)
+        .map(fst)
     }
 
     pub fn _child_modules(
@@ -528,7 +533,26 @@ impl Client {
             position: p,
             text_document: t.tid(),
         })
-        .map(|x| x.0)
+        .map(fst)
+    }
+    pub fn go_to_implementations(
+        &self,
+        tdpp: TextDocumentPositionParams,
+    ) -> Result<
+        impl Future<
+            Output = Result<
+                <GotoImplementation as Request>::Result,
+                RequestError<GotoImplementation>,
+            >,
+        >,
+        SendError<Message>,
+    > {
+        self.request::<GotoImplementation>(&GotoImplementationParams {
+            text_document_position_params: tdpp,
+            work_done_progress_params: default(),
+            partial_result_params: default(),
+        })
+        .map(fst)
     }
 }
 
@@ -540,5 +564,11 @@ impl PathURI for Path {
         TextDocumentIdentifier {
             uri: Url::from_file_path(self).expect("ok"),
         }
+    }
+}
+pub macro tdpp($e:expr) {
+    TextDocumentPositionParams {
+        text_document: $e.origin.as_ref().unwrap().tid(),
+        position: $e.text.to_l_position(*$e.text.cursor.first()).unwrap(),
     }
 }

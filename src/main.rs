@@ -1,4 +1,6 @@
 #![feature(
+    trim_prefix_suffix,
+    const_closures,
     yeet_expr,
     adt_const_params,
     inherent_associated_types,
@@ -48,12 +50,13 @@
 #![allow(incomplete_features, irrefutable_let_patterns, static_mut_refs)]
 mod act;
 mod edi;
+mod error;
 mod git;
+mod gotolist;
 mod meta;
 mod rnd;
 mod runnables;
 mod sym;
-mod error;
 mod trm;
 
 use std::fmt::{Debug, Display};
@@ -126,14 +129,15 @@ extern "C" fn sigint(_: i32) {
 
 #[implicit_fn::implicit_fn]
 pub(crate) fn entry(event_loop: EventLoop) {
-    
-    unsafe { __ED.write(match Editor::new() {
-        Err(e) => {
-            eprintln!("failure to launch: {e}");
-            return
-        }
-        Ok(x) => x,
-    }) };
+    unsafe {
+        __ED.write(match Editor::new() {
+            Err(e) => {
+                eprintln!("failure to launch: {e}");
+                return;
+            }
+            Ok(x) => x,
+        })
+    };
     assert_eq!(unsafe { atexit(cleanup) }, 0);
     unsafe { signal(libc::SIGINT, sigint as *const () as usize) };
     let ed = unsafe { __ED.assume_init_mut() };

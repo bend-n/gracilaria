@@ -37,7 +37,7 @@ use crate::complete::Complete;
 use crate::error::WDebug;
 use crate::hov::{self, Hovr};
 use crate::lsp::{
-    self, Anonymize, Client, Map_, PathURI, RequestError, Rq,
+    self, Anonymize, Client, Map_, PathURI, RequestError, Rq, tdpp,
 };
 use crate::menu::generic::MenuData;
 use crate::meta::META;
@@ -506,6 +506,54 @@ impl Editor {
                     })
                 });
             }
+            State::GoToL(z) => match &mut z.data.1 {
+                Some(crate::gotolist::O::Impl(y)) => {
+                    y.poll(|x, _| {
+                        x.ok().map(|x| {
+                            x.and_then(|x| try {
+                                z.data.0 = match x {
+                                    GotoDefinitionResponse::Scalar(
+                                        location,
+                                    ) => vec![(
+                                        location
+                                            .uri
+                                            .to_file_path()
+                                            .ok()?,
+                                        location.range,
+                                    )],
+                                    GotoDefinitionResponse::Array(
+                                        locations,
+                                    ) => locations
+                                        .into_iter()
+                                        .filter_map(|x| try {
+                                            (
+                                                x.uri
+                                                    .to_file_path()
+                                                    .ok()?,
+                                                x.range,
+                                            )
+                                        })
+                                        .collect(),
+                                    GotoDefinitionResponse::Link(
+                                        location_links,
+                                    ) => location_links
+                                        .into_iter()
+                                        .filter_map(|x| try {
+                                            (
+                                                x.target_uri
+                                                    .to_file_path()
+                                                    .ok()?,
+                                                x.target_range,
+                                            )
+                                        })
+                                        .collect(),
+                                };
+                            });
+                        })
+                    });
+                }
+                _ => {}
+            },
             _ => {}
         }
         self.requests.def.poll(|x, _| {
@@ -1743,6 +1791,39 @@ impl Editor {
                         .block_on(crate::runnables::run(x, ws))
                         .unwrap();
                 },
+            Some(Do::GoToImplementations) => {
+                let State::GoToL(x) = &mut self.state else {
+                    unreachable!()
+                };
+                if let Some(l) = lsp!(self) {
+                    x.data.1 = Some(crate::gotolist::O::Impl(Rq::new(
+                        l.runtime.spawn(
+                            l.go_to_implementations(tdpp!(self)).unwrap(),
+                        ),
+                    )));
+                }
+            }
+            Some(Do::GTLSelect(x)) => {
+                if let Some(Ok((p, r))) = x.sel()
+                    && Some(p) == self.origin.as_deref()
+                {
+                    let x = self.text.l_range(r).unwrap();
+                    self.text.vo = self.text.char_to_line(x.start);
+                    self.text.cursor.just(x.start, &self.text.rope);
+                }
+            }
+            Some(Do::GT) => {
+                let State::GoToL(x) = &mut self.state else {
+                    unreachable!()
+                };
+                if let Some(Ok((p, r))) = x.sel()
+                    && Some(p) == self.origin.as_deref()
+                {
+                    // let x = self.text.l_range(r).unwrap();
+                    self.text.scroll_to_ln_centering(r.start.line as _);
+                    // self.text.vo = self.text.char_to_line(x.start);
+                }
+            }
             None => {}
         }
         ControlFlow::Continue(())
@@ -1989,7 +2070,7 @@ pub fn handle2<'a>(
         Named(ArrowDown) => text.down(),
         Named(PageDown) => text.page_down(),
         Named(PageUp) => text.page_up(),
-        Named(Enter) if let Some((l, p)) = l => l.enter(p, text),
+        Named(Enter) if let Some((l, p)) = l => l.enter(p, text).unwrap(),
         Named(Enter) => text.enter(),
         Character(x) => {
             text.insert(&x);

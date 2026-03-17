@@ -1040,6 +1040,7 @@ impl TextArea {
         bg: [u8; 3],
         (into, (w, _)): (&mut [Cell], (usize, usize)),
         (ox, oy): (usize, usize),
+        mut m: impl FnMut(Cell, usize) -> Cell,
     ) {
         for y in 0..r {
             if (self.vo + y) < self.l() {
@@ -1048,10 +1049,13 @@ impl TextArea {
                     .chars()
                     .zip(into[(y + oy) * w..].iter_mut().skip(ox))
                     .for_each(|(a, b)| {
-                        *b = Cell {
-                            style: Style::new(color, bg),
-                            letter: Some(a),
-                        }
+                        *b = m(
+                            Cell {
+                                style: Style::new(color, bg),
+                                letter: Some(a),
+                            },
+                            self.vo + y,
+                        )
                     });
             }
         }

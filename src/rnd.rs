@@ -19,6 +19,7 @@ use winit::window::{ImeRequestData, Window};
 use crate::edi::st::State;
 use crate::edi::{Editor, lsp_m};
 use crate::lsp::Rq;
+use crate::sym::{GoTo, UsedSI};
 use crate::text::{CoerceOption, RopeExt, col, color_};
 use crate::{
     BG, BORDER, CompletionAction, CompletionState, FG, FONT, complete,
@@ -79,7 +80,7 @@ pub fn render(
             style: Style { fg: BG, secondary_color: BG, bg: BG, flags: 0 },
             letter: None,
         });
-        let x = match &ed.state {
+        let z = match &ed.state {
             State::Selection => Some(
                 text.cursor
                     .iter()
@@ -95,6 +96,26 @@ pub fn render(
             BG,
             (cells, (c, r)),
             (1, 0),
+            |mut f, y| {
+                if let State::GoToL(menu) = &ed.state
+                    && let Some(Ok((p, r))) = menu.sel()
+                    && Some(p) == ed.origin.as_deref()
+                {
+                    if (r.start.line..=r.end.line).contains(&(y as _)) {
+                        f.style.fg = col!("#FFCC66");
+                    }
+                }
+                if let State::Symbols(Rq { result: Some(menu), .. }) =
+                    &ed.state
+                    && let Some(Ok(UsedSI { at: GoTo::R(x), .. })) =
+                        menu.sel()
+                {
+                    if (x.start.line..=x.end.line).contains(&(y as _)) {
+                        f.style.fg = col!("#FFCC66");
+                    }
+                }
+                f
+            },
         );
         let t_ox = text.line_number_offset() + 1;
         text.c = c - t_ox;
@@ -116,7 +137,7 @@ pub fn render(
 
         text.write_to((cells, (c, r)),
                         (t_ox, 0),
-                        x,
+                        z,
                         |(_c, _r), text,  mut x| {
                             if let Some(hl) = &ed.requests.document_highlights.result {
                                 for DocumentHighlight { range: r, .. } in hl {
@@ -127,6 +148,7 @@ pub fn render(
                                     // };
                                     let (x1, y1) = text.map_to_visual((r.start.character as _, r.start.line as _));
                                     let (x2, y2) = text.map_to_visual((r.end.character as _, r.end.line as _));
+                                    
                                     x.get_simple((x1, y1), (x2, y2)).coerce().for_each(|x| {
                                         x.style.bg = col!("#3a4358");
                                     }); 
@@ -737,6 +759,11 @@ pub fn render(
             State::Runnables(Rq { result: Some(x), .. }) => {
                 let ws = ed.workspace.as_deref().unwrap();
                 let c = x.cells(50, ws);
+                drawb(&c, 50);
+            }
+            State::GoToL(y) => {
+                let ws = ed.workspace.as_deref().unwrap();
+                let c = y.cells(50, ws);
                 drawb(&c, 50);
             }
             _ => {}

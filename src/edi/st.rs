@@ -9,6 +9,7 @@ use winit::keyboard::{Key, NamedKey, SmolStr};
 
 use crate::commands::Commands;
 use crate::edi::handle2;
+use crate::gotolist::GoToList;
 use crate::lsp::{AQErr, Rq, RqS};
 use crate::menu::generic::{GenericMenu, MenuData};
 use crate::sym::{Symbols, SymbolsList};
@@ -51,9 +52,10 @@ Default => {
     K(Key::Character("0") if ctrl()) => _ [MatchingBrace],
     K(Key::Character("`") if ctrl()) => _ [SpawnTerminal],
     K(Key::Character("/") if ctrl()) => Default [Comment(State => State::Default)],
-    K(Key::Character("p") if ctrl()) => Command(Commands => Commands::default()),
+    K(Key::Character("p") if ctrl()) => Command(Commands => default()),
     K(Key::Named(Backspace) if alt()) => _ [DeleteBracketPair],
     K(Key::Named(F1)) => Procure((default(), InputRequest::RenameSymbol)),
+    K(Key::Named(F10)) => GoToL(GoToList => default()) [GoToImplementations],
     K(Key::Named(k @ (ArrowUp | ArrowDown)) if alt()) => _ [InsertCursor(Direction => {
         if k == ArrowUp {Direction::Above} else { Direction::Below }
     })],
@@ -97,6 +99,17 @@ Runnables(RqS::<crate::runnables::Runnables, rust_analyzer::lsp::ext::Runnables>
 }; Rq { result: Some(x), request } }),
 },
 Runnables(_x) => {
+    C(_) => _,
+    M(_) => _,
+},
+
+GoToL(x) => {
+    K(Key::Named(Tab) if shift()) => GoToL({ let mut x = x; x.next(); x }) [GT],
+    K(Key::Named(ArrowDown)) => GoToL({ let mut x = x; x.next(); x }) [GT],
+    K(Key::Named(ArrowUp | Tab)) => GoToL({ let mut x = x; x.back(); x }) [GT],
+    K(Key::Named(Enter)) => Default [GTLSelect(GoToList => x)],
+    K(Key::Named(Escape)) => Default,
+    // K(_) => _ [GTLHandleKey],
     C(_) => _,
     M(_) => _,
 },

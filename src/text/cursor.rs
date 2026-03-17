@@ -91,10 +91,10 @@ impl Default for Cursors {
 pub fn caster<T, U>(x: impl FnMut(T) -> U) -> impl FnMut(T) -> U {
     x
 }
-pub macro ceach($cursor: expr, $f:expr) {
+pub macro ceach($cursor: expr, $f:expr $( => $q:tt)?) {
     for i in (0..$cursor.inner.len()) {
         let c = *$cursor.inner.get(i).expect("aw dangit");
-        caster::<Cursor, _>($f)(c);
+        caster::<Cursor, _>($f)(c) $($q)?;
     }
     $cursor.coalesce();
 }
