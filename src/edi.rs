@@ -13,7 +13,6 @@ use lsp_server::{Connection, Request as LRq, ResponseError};
 use lsp_types::request::*;
 use lsp_types::*;
 use regex::Regex;
-use rootcause::prelude::ResultExt;
 use rootcause::report;
 use ropey::Rope;
 use rust_analyzer::lsp::ext::OnTypeFormatting;
@@ -467,7 +466,7 @@ impl Editor {
                 x.poll(|x, (_, p)| {
                     let Some(p) = p else { unreachable!() };
                     x.ok().flatten().map(|r| sym::Symbols {
-                        data: (r, p.data.1, p.data.2),
+                        data: (r, p.data.1, p.data.2, p.data.3),
                         selection: 0,
                         vo: 0,
                         ..p
@@ -1031,8 +1030,10 @@ impl Editor {
                                 }),
                         ),
                     );
-                    q.result =
-                        Some(Symbols::new(self.tree.as_deref().unwrap()));
+                    q.result = Some(Symbols::new(
+                        self.tree.as_deref().unwrap(),
+                        self.text.bookmarks.clone(),
+                    ));
                     self.state = State::Symbols(q);
                 },
             Some(Do::SwitchType) =>
@@ -1042,7 +1043,7 @@ impl Editor {
                     else {
                         unreachable!()
                     };
-                    x.data.2 = sym::SymbolsType::Document;
+                    x.data.3 = sym::SymbolsType::Document;
                     let p = p.to_owned();
                     take(&mut x.data.0);
                     *request = Some((
@@ -1056,7 +1057,7 @@ impl Editor {
                     ));
                 },
             Some(Do::ProcessCommand(mut x, z)) =>
-                match Cmds::complete_or_accept(z) {
+                match Cmds::complete_or_accept(&z) {
                     crate::menu::generic::CorA::Complete => {
                         x.tedit.rope =
                             Rope::from_str(&format!("{} ", z.name()));
@@ -1097,7 +1098,7 @@ impl Editor {
                     .is_some()
                         || ptedit != x.tedit.rope
                     {
-                        if x.data.2 == SymbolsType::Workspace {
+                        if x.data.3 == SymbolsType::Workspace {
                             *request = Some((
                                 DropH::new(
                                     lsp.runtime.spawn(
@@ -1136,6 +1137,8 @@ impl Editor {
                             let x = self.text.l_range(x).unwrap();
                             self.text.vo = self.text.char_to_line(x.start);
                         }
+                        sym::GoTo::P(None, x) =>
+                            self.text.vo = self.text.char_to_line(x),
                         _ => {}
                     }
                 }
@@ -1153,45 +1156,58 @@ impl Editor {
                             let x = self.text.l_range(x).unwrap();
                             self.text.vo = self.text.char_to_line(x.start);
                         }
+                        sym::GoTo::P(None, x) =>
+                            self.text.vo = self.text.char_to_line(x),
                         _ => {}
                     }
                 }
             }
-            Some(Do::SymbolsSelect(x)) => {
-                if let Some(Ok(x)) = x.sel()
-                    && let Err(e) = try bikeshed rootcause::Result<()> {
-                        let r = match x.at {
-                            sym::GoTo::Loc(x) => {
-                                let x = x.clone();
-                                let f = x
-                                    .uri
-                                    .to_file_path()
-                                    .map_err(|()| {
-                                        report!("provided uri not path")
-                                            .context(x.uri)
-                                    })?
-                                    .canonicalize()?;
-                                self.state = State::Default;
-                                self.requests.complete =
-                                    CompletionState::None;
-                                if Some(&f) != self.origin.as_ref() {
-                                    self.open(&f, window.clone())?;
-                                }
-                                x.range
-                            }
-                            sym::GoTo::R(range) => range,
-                        };
-                        let p = self.text.l_position(r.start).ok_or(
-                            report!("provided range out of bound")
-                                .context_custom::<WDebug, _>(r),
-                        )?;
-                        if p != 0 {
-                            self.text.cursor.just(p, &self.text.rope);
-                        }
-                        self.text.scroll_to_cursor_centering();
-                    }
+            Some(Do::SymbolsSelect(x)) => 'out: {
                 {
-                    log::error!("alas! {e}");
+                    if let Some(Ok(x)) = x.sel()
+                        && let Err(e) = try bikeshed rootcause::Result<()> {
+                            let r = match x.at {
+                                sym::GoTo::Loc(x) => {
+                                    let x = x.clone();
+                                    let f = x
+                                        .uri
+                                        .to_file_path()
+                                        .map_err(|()| {
+                                            report!(
+                                                "provided uri not path"
+                                            )
+                                            .context(x.uri)
+                                        })?
+                                        .canonicalize()?;
+                                    self.state = State::Default;
+                                    self.requests.complete =
+                                        CompletionState::None;
+                                    if Some(&f) != self.origin.as_ref() {
+                                        self.open(&f, window.clone())?;
+                                    }
+                                    x.range
+                                }
+                                sym::GoTo::P(_u, x) => {
+                                    self.text
+                                        .cursor
+                                        .just(x, &self.text.rope);
+                                    self.text.scroll_to_cursor_centering();
+                                    break 'out;
+                                }
+                                sym::GoTo::R(range) => range,
+                            };
+                            let p = self.text.l_position(r.start).ok_or(
+                                report!("provided range out of bound")
+                                    .context_custom::<WDebug, _>(r),
+                            )?;
+                            if p != 0 {
+                                self.text.cursor.just(p, &self.text.rope);
+                            }
+                            self.text.scroll_to_cursor_centering();
+                        }
+                    {
+                        log::error!("alas! {e}");
+                    }
                 }
             }
             Some(Do::RenameSymbol(to)) => {
@@ -2056,8 +2072,8 @@ pub fn handle2<'a>(
             text.right();
             text.backspace()
         }
-        Character("d") if alt() && ctrl() => text.word_left(),
-        Character("a") if alt() && ctrl() => text.word_right(),
+        Character("a") if alt() && ctrl() => text.word_left(),
+        Character("d") if alt() && ctrl() => text.word_right(),
         Character("a") if alt() => text.left(),
         Character("w") if alt() => text.up(),
         Character("s") if alt() => text.down(),

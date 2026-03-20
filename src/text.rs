@@ -33,10 +33,11 @@ use semantic_tokens::TokenD;
 pub mod hist;
 pub mod theme_treesitter;
 use hist::Changes;
+mod bookmark;
+pub use bookmark::*;
 
 use crate::sni::{Snippet, StopP};
 use crate::text::hist::Action;
-
 pub const fn color_(x: &str) -> [u8; 3] {
     let Some(x): Option<[u8; 7]> = x.as_bytes().try_into().ok() else {
         panic!()
@@ -107,8 +108,11 @@ pub struct TextArea {
     pub tabstops: Option<Snippet>,
     pub inlays: BTreeSet<Inlay>,
     pub tokens: Vec<TokenD>,
+    #[serde(default)]
+    pub bookmarks: Bookmarks,
     pub changes: Changes,
 }
+
 #[derive(Serialize, Deserialize)]
 pub struct CellBuffer {
     pub c: usize,
@@ -395,6 +399,7 @@ impl TextArea {
         };
         self.tabstops.as_mut().map(|x| x.manipulate(manip));
         self.cursor.manipulate(manip);
+        self.bookmarks.manipulate(manip);
         for pos in self
             .inlays
             .range(Marking::idx(r.end as _)..)
@@ -428,6 +433,7 @@ impl TextArea {
         };
         self.tabstops.as_mut().map(|x| x.manipulate(manip));
         self.cursor.manipulate(manip);
+        self.bookmarks.manipulate(manip);
         for m in self
             .inlays
             .range(Marking::idx(c as _)..)
@@ -1040,7 +1046,7 @@ impl TextArea {
         bg: [u8; 3],
         (into, (w, _)): (&mut [Cell], (usize, usize)),
         (ox, oy): (usize, usize),
-        mut m: impl FnMut(Cell, usize) -> Cell,
+        mut m: impl FnMut(&Self, Cell, usize) -> Cell,
     ) {
         for y in 0..r {
             if (self.vo + y) < self.l() {
@@ -1050,6 +1056,7 @@ impl TextArea {
                     .zip(into[(y + oy) * w..].iter_mut().skip(ox))
                     .for_each(|(a, b)| {
                         *b = m(
+                            self,
                             Cell {
                                 style: Style::new(color, bg),
                                 letter: Some(a),

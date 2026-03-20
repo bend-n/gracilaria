@@ -56,7 +56,7 @@ pub trait MenuData: Sized {
     type Element<'a>: Key<'a>;
     type E = !;
 
-    fn complete_or_accept<'a>(_x: Self::Element<'a>) -> CorA {
+    fn complete_or_accept<'a>(_x: &Self::Element<'a>) -> CorA {
         CorA::Accept
     }
     fn map<'a>(

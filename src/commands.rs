@@ -16,7 +16,9 @@ use crate::edi::{Editor, lsp_m};
 use crate::lsp::{PathURI, Rq};
 use crate::menu::charc;
 use crate::menu::generic::{CorA, GenericMenu, MenuData};
-use crate::text::{RopeExt, SortTedits, col, color_};
+use crate::text::{
+    Bookmark, RopeExt, SortTedits, TextArea, col, color_,
+};
 
 macro_rules! repl {
     ($x:ty, $($with:tt)+) => {
@@ -25,7 +27,7 @@ macro_rules! repl {
 }
 macro_rules! commands {
     ($(#[doc = $d: literal] $t:tt $identifier: ident$(($($thing:ty),+))?: $c:literal),+ $(,)?) => {
-        #[derive(Copy, Clone, PartialEq, Eq, Debug)]
+        #[derive(Clone, PartialEq, Eq, Debug)]
         pub enum Cmd {
             $(#[doc = $d] $identifier $( ( $(Option<$thing>,)+ ) )?
 
@@ -35,7 +37,7 @@ macro_rules! commands {
             pub const ALL: [Cmd; { [$($c),+].len() }] = [$(Self::$identifier
                 $( ( $(None::<$thing>,)+) )?
             ,)+];
-            pub fn name(self) -> &'static str {
+            pub fn name(&self) -> &'static str {
             match self {
                 $(Self::$identifier $( ( $(repl!($thing, _),)+ ) )? => $c,)+
             }
@@ -45,14 +47,40 @@ macro_rules! commands {
                 // $(Self::$identifier => &[$($(wants::$thing as u8,)+)?],)+
             // }
             // }
-            pub fn desc(self) -> &'static str {
+            pub fn desc(&self) -> &'static str {
             match self {
                 $(Self::$identifier $( ( $(repl!($thing, _),)+ ) )? => $d,)+
             }
             }
-            pub fn needs_lsp(self) -> bool {
+            pub fn needs_lsp(&self) -> bool {
                 match self {
                     $(Self::$identifier $( ( $(repl!($thing, _),)+ ) )? => stringify!($t) == "@",)+
+                }
+            }
+            fn map(self, t: &TextArea) -> Result<Self, &'static str> {
+                match self {
+                    $($(
+                        Self::$identifier($( repl!($thing, None),)+) => {
+                            if !t.rope.to_string().starts_with(Self::$identifier(None).name()) { return Ok(self) }
+            if let Some((_, x)) = t.to_string().split_once(" ")
+                // && x.chars().all(|x| x.is_numeric())s
+                && let Ok(n) = x.parse()
+            {
+                Ok(Self::$identifier(Some(n)))
+            } else {
+                Err(concat! ("supply ", $(stringify!($thing))+))
+            }
+                        })?)+
+                    _ => Ok(self),
+                }
+            }
+            fn cora(&self) -> CorA {
+               match self {
+                    $($(
+                        Self::$identifier($( repl!($thing, None),)+) => {
+                             CorA::Complete
+                        })?)+
+                    _ => CorA::Accept,
                 }
             }
         }
@@ -71,13 +99,13 @@ commands!(
     @ RAJoinLines: "join-lines",
     /// gets list of runnables
     @ RARunnables: "runnables",
-    /// Open docs for type at cursor
+    /// 󱛉 Open docs for type at cursor
     @ RADocs: "open-docs",
     /// Rebuilds rust-analyzer proc macros
     @ RARebuildProcMacros: "rebuild-proc-macros",
     /// Cancels current running rust-analyzer check process
     @ RACancelFlycheck: "cancel-flycheck",
-    /// Opens Cargo.toml file for this workspace
+    ///  Opens Cargo.toml file for this workspace
     @ RAOpenCargoToml: "open-cargo-toml",
     /// Runs the test at the cursor
     @ RARunTest: "run-test",
@@ -85,6 +113,10 @@ commands!(
     // @ ViewChildModules: "child-modules",
     /// GoTo line,
     | GoTo(u32): "g",
+    /// 󰃅 Define bookmark
+    | DefineBookmark(String): "bookmark",
+    /// 󰃆 Remove bookmark
+    | RemoveBookmark: "remove-bookmark",
 );
 
 pub enum Cmds {}
@@ -104,24 +136,10 @@ impl MenuData for Cmds {
         m: &GenericMenu<Self>,
         x: Self::Element<'a>,
     ) -> Result<Self::Element<'a>, Self::E> {
-        if let Cmd::GoTo(_) = x {
-            if !m.tedit.to_string().starts_with(Cmd::GoTo(None).name()) {
-                return Ok(Cmd::GoTo(None));
-            }
-            if let Some((_, x)) = m.tedit.to_string().split_once(" ")
-                // && x.chars().all(|x| x.is_numeric())
-                && let Ok(n) = x.parse()
-            {
-                Ok(Cmd::GoTo(Some(n)))
-            } else {
-                Err("supply number")
-            }
-        } else {
-            Ok(x)
-        }
+        x.map(&m.tedit)
     }
-    fn complete_or_accept<'a>(x: Self::Element<'a>) -> CorA {
-        if let Cmd::GoTo(None) = x { CorA::Complete } else { CorA::Accept }
+    fn complete_or_accept<'a>(x: &Self::Element<'a>) -> CorA {
+        x.cora()
     }
     fn f(m: &GenericMenu<Self>) -> String {
         m.tedit
@@ -203,16 +221,39 @@ impl Editor {
                     self.text.cursor.just(x, &self.text.rope);
                     self.text.scroll_to_cursor_centering();
                 },
-            x if x.needs_lsp() => {}
+            Cmd::DefineBookmark(Some(x)) =>
+                self.text.bookmarks.push(Bookmark {
+                    position: *self.text.cursor.first(),
+                    text: x.clone(),
+                }),
+            Cmd::RemoveBookmark => {
+                let y = self.text.y(*self.text.cursor.first()).unwrap();
+                let r = self.text.line_to_char(y)
+                    ..self.text.line_to_char(y + 1);
+                self.text
+                    .bookmarks
+                    .clone()
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, x)| r.contains(&x.position))
+                    .map(ttools::fst)
+                    .rev()
+                    .for_each(|x| drop(self.text.bookmarks.remove(x)));
+            }
+            z if z.needs_lsp() => return self.handle_lsp_command(z, w),
             x => unimplemented!("{x:?}"),
         }
-        if !z.needs_lsp() {
-            return Ok(());
-        }
+
+        Ok(())
+    }
+    pub fn handle_lsp_command(
+        &mut self,
+        z: Cmd,
+        w: Arc<dyn winit::window::Window>,
+    ) -> rootcause::Result<()> {
         let Some((l, o)) = lsp_m!(self + p) else {
             bail!("no lsp");
         };
-
         match z {
             Cmd::RAMoveIU | Cmd::RAMoveID => {
                 let r = self
@@ -333,7 +374,6 @@ impl Editor {
             }
             _ => unimplemented!(),
         }
-
         Ok(())
     }
 }

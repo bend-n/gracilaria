@@ -80,6 +80,10 @@ pub fn render(
             style: Style { fg: BG, secondary_color: BG, bg: BG, flags: 0 },
             letter: None,
         });
+        let bmks = text.bookmarks .iter().filter_map(|x| {
+                text.try_char_to_line(x.position).ok()
+                }).collect::<Vec<_>>();
+                
         let z = match &ed.state {
             State::Selection => Some(
                 text.cursor
@@ -90,13 +94,14 @@ pub fn render(
             ),
             _ => None,
         };
+         
         text.line_numbers(
             (c, r - 1),
             [67, 76, 87],
             BG,
             (cells, (c, r)),
             (1, 0),
-            |mut f, y| {
+            |_text, mut f, y| {
                 if let State::GoToL(menu) = &ed.state
                     && let Some(Ok((p, r))) = menu.sel()
                     && Some(p) == ed.origin.as_deref()
@@ -113,6 +118,10 @@ pub fn render(
                     if (x.start.line..=x.end.line).contains(&(y as _)) {
                         f.style.fg = col!("#FFCC66");
                     }
+                }
+                if bmks.contains(&y) {
+                    f.style.bg = col!("#4060aa");
+                    f.style.fg = col!("#a7bcd6");
                 }
                 f
             },

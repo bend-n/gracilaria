@@ -1,4 +1,5 @@
 #![feature(
+    field_projections,
     trim_prefix_suffix,
     const_closures,
     yeet_expr,

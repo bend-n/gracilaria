@@ -11,28 +11,44 @@ use lsp_types::*;
 use crate::FG;
 use crate::menu::generic::{GenericMenu, MenuData};
 use crate::menu::{Key, charc};
-use crate::text::{col, color_, set_a};
+use crate::text::{Bookmarks, col, color_, set_a};
 pub enum Symb {}
 impl MenuData for Symb {
-    type Data = (SymbolsList, Vec<SymbolInformation>, SymbolsType);
+    type Data =
+        (SymbolsList, Vec<SymbolInformation>, Bookmarks, SymbolsType);
 
     type Element<'a> = UsedSI<'a>;
 
     fn gn(
-        (r, tree, _): &Self::Data,
+        (r, tree, bmks, _): &Self::Data,
     ) -> impl Iterator<Item = Self::Element<'_>> {
         match r {
             SymbolsList::Document(DocumentSymbolResponse::Flat(x)) =>
                 Iter3::A(x.iter().map(UsedSI::from)),
             SymbolsList::Document(DocumentSymbolResponse::Nested(x)) =>
-                Iter3::B(x.iter().flat_map(|x| gen move {
-                    let mut q = VecDeque::with_capacity(12);
-                    q.push_back(x);
-                    while let Some(x) = q.pop_front() {
-                        q.extend(x.children.iter().flatten());
-                        yield x.into();
+                Iter3::B(
+                    gen {
+                        for bmk in &**bmks {
+                            yield UsedSI {
+                                name: &bmk.text,
+                                kind: SymbolKind::BOOKMARK,
+                                tags: None,
+                                at: GoTo::P(None, bmk.position),
+                                right: None,
+                            }
+                        }
                     }
-                })),
+                    .chain(x.iter().flat_map(
+                        move |x| gen move {
+                            let mut q = VecDeque::with_capacity(12);
+                            q.push_back(x);
+                            while let Some(x) = q.pop_front() {
+                                q.extend(x.children.iter().flatten());
+                                yield x.into();
+                            }
+                        },
+                    )),
+                ),
             SymbolsList::Workspace(WorkspaceSymbolResponse::Flat(x)) =>
                 Iter3::C(chain(tree, x.iter()).map(UsedSI::from)),
             _ => unreachable!("please no"),
@@ -57,6 +73,7 @@ pub type Symbols = GenericMenu<Symb>;
 pub enum GoTo<'a> {
     Loc(&'a Location),
     R(Range),
+    P(Option<&'a Url>, usize),
 }
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
 pub struct UsedSI<'a> {
@@ -126,7 +143,7 @@ impl Default for SymbolsList {
 }
 
 impl GenericMenu<Symb> {
-    pub fn new(tree: &[PathBuf]) -> Self {
+    pub fn new(tree: &[PathBuf], bmk: Bookmarks) -> Self {
         let tree = tree
             .iter()
             .map(|x| SymbolInformation {
@@ -145,7 +162,7 @@ impl GenericMenu<Symb> {
                 tags: None,
             })
             .collect();
-        Self { data: (default(), tree, default()), ..default() }
+        Self { data: (default(), tree, bmk, default()), ..default() }
     }
 }
 
@@ -169,7 +186,7 @@ fn r<'a>(
     let ds: Style = Style::new(FG, bg);
     let d: Cell = Cell { letter: None, style: ds };
     let mut b = vec![d; c];
-    const MAP: [([u8; 3], [u8; 3], &str); 70] = {
+    const MAP: [([u8; 3], [u8; 3], &str); 85] = {
         car::map!(
             amap::amap! {
             const { SymbolKind::FILE.0 as usize } => ("#9a9b9a", "󰈙 "),
@@ -193,6 +210,7 @@ fn r<'a>(
 
             const { SymbolKind::MACRO.0 as usize } => ("#f28f74", "! "),
             const { SymbolKind::PROC_MACRO.0 as usize } => ("#f28f74", "r!"),
+            const { SymbolKind::BOOKMARK.0 as usize } => ("#73D0FF", "󰃀 "),
             _ => ("#9a9b9a", " ")
                     },
             |(x, y)| (set_a(color_(x), 0.5), color_(x), y)
@@ -213,8 +231,9 @@ fn r<'a>(
         - (charc(&x.name) as i32 + qualifier.clone().count() as i32)
         - 3;
     let loc = match x.at {
-        GoTo::Loc(x) => Some(x.uri.to_file_path().unwrap()),
-        GoTo::R(_) => None,
+        GoTo::Loc(Location { uri, .. }) | GoTo::P(Some(uri), _) =>
+            Some(uri.to_file_path().unwrap()),
+        _ => None,
     };
     let locs = if sty == SymbolsType::Workspace {
         loc.as_ref()
