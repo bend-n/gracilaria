@@ -9,18 +9,25 @@ use itern::Iter3;
 use lsp_types::*;
 
 use crate::FG;
+use crate::gotolist::At;
+pub use crate::gotolist::GoTo;
 use crate::menu::generic::{GenericMenu, MenuData};
 use crate::menu::{Key, charc};
 use crate::text::{Bookmarks, col, color_, set_a};
 pub enum Symb {}
 impl MenuData for Symb {
-    type Data =
-        (SymbolsList, Vec<SymbolInformation>, Bookmarks, SymbolsType);
+    type Data = (
+        SymbolsList,
+        Vec<SymbolInformation>,
+        Bookmarks,
+        SymbolsType,
+        PathBuf, // origin
+    );
 
     type Element<'a> = UsedSI<'a>;
 
     fn gn(
-        (r, tree, bmks, _): &Self::Data,
+        (r, tree, bmks, _, origin): &Self::Data,
     ) -> impl Iterator<Item = Self::Element<'_>> {
         match r {
             SymbolsList::Document(DocumentSymbolResponse::Flat(x)) =>
@@ -33,7 +40,10 @@ impl MenuData for Symb {
                                 name: &bmk.text,
                                 kind: SymbolKind::BOOKMARK,
                                 tags: None,
-                                at: GoTo::P(None, bmk.position),
+                                at: GoTo {
+                                    path: origin.into(),
+                                    at: At::P(bmk.position),
+                                },
                                 right: None,
                             }
                         }
@@ -44,7 +54,7 @@ impl MenuData for Symb {
                             q.push_back(x);
                             while let Some(x) = q.pop_front() {
                                 q.extend(x.children.iter().flatten());
-                                yield x.into();
+                                yield (x, origin).into();
                             }
                         },
                     )),
@@ -56,7 +66,7 @@ impl MenuData for Symb {
     }
 
     fn r(
-        &(.., sty): &Self::Data,
+        &(.., sty, _): &Self::Data,
         x: Self::Element<'_>,
         workspace: &Path,
         c: usize,
@@ -69,13 +79,7 @@ impl MenuData for Symb {
 }
 pub type Symbols = GenericMenu<Symb>;
 
-#[derive(Debug, Eq, PartialEq, Clone, Copy)]
-pub enum GoTo<'a> {
-    Loc(&'a Location),
-    R(Range),
-    P(Option<&'a Url>, usize),
-}
-#[derive(Debug, Eq, PartialEq, Clone, Copy)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub struct UsedSI<'a> {
     pub name: &'a str,
     pub kind: SymbolKind,
@@ -98,28 +102,31 @@ impl<'a> From<&'a SymbolInformation> for UsedSI<'a> {
             name: &name,
             kind: *kind,
             tags: tags.as_deref(),
-            at: GoTo::Loc(location),
+            at: GoTo::from(location),
             right: container_name.as_deref(),
         }
     }
 }
-impl<'a> From<&'a DocumentSymbol> for UsedSI<'a> {
+impl<'a> From<(&'a DocumentSymbol, &'a PathBuf)> for UsedSI<'a> {
     fn from(
-        DocumentSymbol {
-            name,
-            detail,
-            kind,
-            tags,
-            range,
-            selection_range: _,
-            ..
-        }: &'a DocumentSymbol,
+        (
+            DocumentSymbol {
+                name,
+                detail,
+                kind,
+                tags,
+                range,
+                selection_range: _,
+                ..
+            },
+            path,
+        ): (&'a DocumentSymbol, &'a PathBuf),
     ) -> Self {
         UsedSI {
             name: &name,
             kind: *kind,
             tags: tags.as_deref(),
-            at: GoTo::R(*range),
+            at: GoTo { path: path.into(), at: At::R(*range) },
             right: detail.as_deref(),
         }
     }
@@ -143,7 +150,7 @@ impl Default for SymbolsList {
 }
 
 impl GenericMenu<Symb> {
-    pub fn new(tree: &[PathBuf], bmk: Bookmarks) -> Self {
+    pub fn new(tree: &[PathBuf], bmk: Bookmarks, orig: PathBuf) -> Self {
         let tree = tree
             .iter()
             .map(|x| SymbolInformation {
@@ -162,7 +169,7 @@ impl GenericMenu<Symb> {
                 tags: None,
             })
             .collect();
-        Self { data: (default(), tree, bmk, default()), ..default() }
+        Self { data: (default(), tree, bmk, default(), orig), ..default() }
     }
 }
 
@@ -230,14 +237,12 @@ fn r<'a>(
     let left = i.len() as i32
         - (charc(&x.name) as i32 + qualifier.clone().count() as i32)
         - 3;
-    let loc = match x.at {
-        GoTo::Loc(Location { uri, .. }) | GoTo::P(Some(uri), _) =>
-            Some(uri.to_file_path().unwrap()),
-        _ => None,
-    };
+    let loc = x.at.path;
     let locs = if sty == SymbolsType::Workspace {
         loc.as_ref()
-            .and_then(|x| x.strip_prefix(workspace).unwrap_or(&x).to_str())
+            .strip_prefix(workspace)
+            .unwrap_or(&*loc)
+            .to_str()
             .unwrap_or("")
     } else {
         ""

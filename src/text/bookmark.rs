@@ -30,4 +30,5 @@ impl Bookmarks {
             lem.position = f(lem.position);
         }
     }
+    // pub fn to_gtl_d(&self) -> Vec<(PathBuf, Range)> {}
 }

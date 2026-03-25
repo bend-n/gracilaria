@@ -1,9 +1,10 @@
-use std::path::{Path, PathBuf};
+use std::borrow::Cow;
+use std::path::Path;
 
 use dsb::Cell;
 use dsb::cell::Style;
-use lsp_types::Range;
 use lsp_types::request::GotoImplementation;
+use lsp_types::{Location, Range};
 
 use crate::FG;
 use crate::lsp::RqS;
@@ -15,23 +16,25 @@ pub enum GTL {}
 #[derive(Debug)]
 pub enum O {
     Impl(RqS<(), GotoImplementation>),
+    Bmk,
 }
-impl<'a> Key<'a> for (&'a Path, Range) {
+impl<'a> Key<'a> for GoTo<'a> {
     fn key(&self) -> impl Into<std::borrow::Cow<'a, str>> {
-        self.0.display().to_string()
+        self.path.display().to_string()
+        // self.display().to_string()
     }
 }
 impl MenuData for GTL {
-    type Data = (Vec<(PathBuf, Range)>, Option<O>);
+    type Data = (Vec<GoTo<'static>>, Option<O>);
 
-    type Element<'a> = (&'a Path, Range);
+    type Element<'a> = GoTo<'a>;
 
     type E = !;
 
     fn gn<'a>(
         x: &'a Self::Data,
     ) -> impl Iterator<Item = Self::Element<'a>> {
-        x.0.iter().map(|(x, y)| (&**x, *y))
+        x.0.iter().map(GoTo::asref)
     }
 
     fn r(
@@ -53,24 +56,81 @@ impl MenuData for GTL {
         into.iter_mut()
             // .skip(1)
             .zip(
-                elem.0
+                elem.path
                     .strip_prefix(workspace)
-                    .unwrap_or(&elem.0)
+                    .unwrap_or(&elem.path)
                     .display()
                     .to_string()
                     .chars()
                     .chain(
-                        format!(
-                            " 󱊀 {}:{} - {}:{}",
-                            elem.1.start.line,
-                            elem.1.start.character,
-                            elem.1.end.line,
-                            elem.1.end.character
-                        )
+                        match elem.at {
+                            At::R(r) => format!(
+                                " 󱊀 {}:{} - {}:{}",
+                                r.start.line,
+                                r.start.character,
+                                r.end.line,
+                                r.end.character
+                            ),
+                            At::P(at) => {
+                                format!(" 󱊀 {at}")
+                            }
+                        }
                         .chars(),
                     ),
             )
             .for_each(|(a, b)| a.letter = Some(b));
         to.extend(into);
+    }
+}
+
+#[derive(Debug, Eq, PartialEq, Clone)]
+pub struct GoTo<'a> {
+    pub path: Cow<'a, Path>,
+    pub at: At,
+}
+
+impl From<Location> for GoTo<'static> {
+    fn from(Location { uri, range }: Location) -> Self {
+        Self {
+            path: Cow::Owned(uri.to_file_path().unwrap()),
+            at: At::R(range),
+        }
+    }
+}
+impl From<&Location> for GoTo<'static> {
+    fn from(Location { uri, range }: &Location) -> Self {
+        Self {
+            path: Cow::Owned(uri.to_file_path().unwrap()),
+            at: At::R(*range),
+        }
+    }
+}
+
+#[derive(Debug, Eq, PartialEq, Clone, Copy)]
+pub enum At {
+    R(Range),
+    P(usize),
+}
+
+impl From<usize> for At {
+    fn from(v: usize) -> Self {
+        Self::P(v)
+    }
+}
+
+impl From<Range> for At {
+    fn from(v: Range) -> Self {
+        Self::R(v)
+    }
+}
+impl GoTo<'static> {
+    fn asref<'n>(&'n self) -> GoTo<'n> {
+        GoTo {
+            at: self.at,
+            path: match &self.path {
+                Cow::Borrowed(x) => Cow::Borrowed(x),
+                Cow::Owned(x) => Cow::Borrowed(&**x),
+            },
+        }
     }
 }

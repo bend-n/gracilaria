@@ -70,6 +70,8 @@ kitty-rc = { version = "0.4.2", git = "https://github.com/bend-n/kitty-rc-rs" }
 smol_str = "0.3.6"
 futures = "0.3.32"
 rootcause = "0.12.1"
+ttools = "0.1.0"
+bind = { version = "0.1.0", path = "../bind" }
 [profile.dev.package]
 rust-analyzer.opt-level = 3
 fimg.opt-level = 3

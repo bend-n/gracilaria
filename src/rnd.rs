@@ -18,8 +18,9 @@ use winit::window::{ImeRequestData, Window};
 
 use crate::edi::st::State;
 use crate::edi::{Editor, lsp_m};
+use crate::gotolist::{At, GoTo};
 use crate::lsp::Rq;
-use crate::sym::{GoTo, UsedSI};
+use crate::sym::{UsedSI};
 use crate::text::{CoerceOption, RopeExt, col, color_};
 use crate::{
     BG, BORDER, CompletionAction, CompletionState, FG, FONT, complete,
@@ -103,16 +104,16 @@ pub fn render(
             (1, 0),
             |_text, mut f, y| {
                 if let State::GoToL(menu) = &ed.state
-                    && let Some(Ok((p, r))) = menu.sel()
-                    && Some(p) == ed.origin.as_deref()
-                {
+                    && let Some(Ok( GoTo{ at: At::R(r),path})) = menu.sel()
+                    && Some(&*path) == ed.origin.as_deref()
+                {    
                     if (r.start.line..=r.end.line).contains(&(y as _)) {
                         f.style.fg = col!("#FFCC66");
                     }
                 }
                 if let State::Symbols(Rq { result: Some(menu), .. }) =
                     &ed.state
-                    && let Some(Ok(UsedSI { at: GoTo::R(x), .. })) =
+                    && let Some(Ok(UsedSI { at: GoTo{ at: At::R(x),..}, .. })) =
                         menu.sel()
                 {
                     if (x.start.line..=x.end.line).contains(&(y as _)) {

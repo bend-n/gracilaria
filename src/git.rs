@@ -5,7 +5,7 @@ use imara_diff::InternedInput;
 use ropey::Rope;
 
 pub fn load(p: &Path, ws: &Path) -> Result<Vec<u8>, git2::Error> {
-    let r = Repository::open(ws).unwrap();
+    let r = Repository::open(ws)?;
     let o =
         r.head()?.peel_to_commit()?.tree()?.get_path(p)?.to_object(&r)?;
     let blob = o

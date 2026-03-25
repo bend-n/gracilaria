@@ -13,12 +13,12 @@ use rust_analyzer::lsp::ext::*;
 
 use crate::FG;
 use crate::edi::{Editor, lsp_m};
+use crate::gotolist::{At, GoToList};
 use crate::lsp::{PathURI, Rq};
 use crate::menu::charc;
 use crate::menu::generic::{CorA, GenericMenu, MenuData};
-use crate::text::{
-    Bookmark, RopeExt, SortTedits, TextArea, col, color_,
-};
+use crate::sym::GoTo;
+use crate::text::{Bookmark, RopeExt, SortTedits, TextArea, col, color_};
 
 macro_rules! repl {
     ($x:ty, $($with:tt)+) => {
@@ -117,6 +117,8 @@ commands!(
     | DefineBookmark(String): "bookmark",
     /// 󰃆 Remove bookmark
     | RemoveBookmark: "remove-bookmark",
+    /// Global bookmark menu
+    | Bookmarks: "goto-bookmarks",
 );
 
 pub enum Cmds {}
@@ -239,6 +241,24 @@ impl Editor {
                     .map(ttools::fst)
                     .rev()
                     .for_each(|x| drop(self.text.bookmarks.remove(x)));
+            }
+            Cmd::Bookmarks => {
+                let src = self
+                    .files
+                    .iter()
+                    .chain(self.origin.as_ref().zip(Some(&*self)))
+                    .flat_map(|(f, x)| {
+                        x.text.bookmarks.iter().zip(repeat(f))
+                    })
+                    .map(|(b, path)| GoTo {
+                        path: path.clone().into(),
+                        at: At::P(b.position),
+                    })
+                    .collect::<Vec<_>>();
+                self.state = crate::edi::st::State::GoToL(GoToList {
+                    data: (src, Some(crate::gotolist::O::Bmk)),
+                    ..default()
+                });
             }
             z if z.needs_lsp() => return self.handle_lsp_command(z, w),
             x => unimplemented!("{x:?}"),

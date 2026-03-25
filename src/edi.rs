@@ -8,6 +8,7 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 use Default::default;
+use bind::Bind;
 use implicit_fn::implicit_fn;
 use lsp_server::{Connection, Request as LRq, ResponseError};
 use lsp_types::request::*;
@@ -34,6 +35,7 @@ use crate::bar::Bar;
 use crate::commands::Cmds;
 use crate::complete::Complete;
 use crate::error::WDebug;
+use crate::gotolist::{At, GoTo};
 use crate::hov::{self, Hovr};
 use crate::lsp::{
     self, Anonymize, Client, Map_, PathURI, RequestError, Rq, tdpp,
@@ -244,13 +246,13 @@ macro_rules! change {
 }
 pub(crate) use change;
 
-fn rooter(x: &Path) -> Option<PathBuf> {
-    for f in std::fs::read_dir(&x).unwrap().filter_map(Result::ok) {
-        if f.file_name() == "Cargo.toml" {
+fn rooter(x: &Path, search: &str) -> Option<PathBuf> {
+    for f in std::fs::read_dir(&x).ok()?.filter_map(Result::ok) {
+        if f.file_name() == search {
             return Some(f.path().with_file_name("").to_path_buf());
         }
     }
-    x.parent().and_then(rooter)
+    x.parent().and_then(rooter.rbind(search))
 }
 
 impl Editor {
@@ -269,7 +271,7 @@ impl Editor {
         me.workspace = o
             .as_ref()
             .and_then(|x| x.parent())
-            .and_then(|x| rooter(&x))
+            .and_then(|x| rooter(&x, "Cargo.toml"))
             .and_then(|x| x.canonicalize().ok());
         let mut loaded_state = false;
         if let Some(ws) = me.workspace.as_deref()
@@ -466,7 +468,7 @@ impl Editor {
                 x.poll(|x, (_, p)| {
                     let Some(p) = p else { unreachable!() };
                     x.ok().flatten().map(|r| sym::Symbols {
-                        data: (r, p.data.1, p.data.2, p.data.3),
+                        data: (r, p.data.1, p.data.2, p.data.3, p.data.4),
                         selection: 0,
                         vo: 0,
                         ..p
@@ -513,36 +515,25 @@ impl Editor {
                                 z.data.0 = match x {
                                     GotoDefinitionResponse::Scalar(
                                         location,
-                                    ) => vec![(
-                                        location
-                                            .uri
-                                            .to_file_path()
-                                            .ok()?,
-                                        location.range,
+                                    ) => vec![GoTo::from(
+                                        location,
                                     )],
                                     GotoDefinitionResponse::Array(
                                         locations,
                                     ) => locations
                                         .into_iter()
-                                        .filter_map(|x| try {
-                                            (
-                                                x.uri
-                                                    .to_file_path()
-                                                    .ok()?,
-                                                x.range,
-                                            )
-                                        })
+                                        .map(GoTo::from)
                                         .collect(),
                                     GotoDefinitionResponse::Link(
                                         location_links,
                                     ) => location_links
                                         .into_iter()
-                                        .filter_map(|x| try {
-                                            (
-                                                x.target_uri
-                                                    .to_file_path()
-                                                    .ok()?,
-                                                x.target_range,
+                                        .map(|LocationLink {target_uri, target_range, .. }| {
+                                            GoTo::from(
+                                                Location {
+                                                    uri: target_uri,
+                                                    range: target_range,
+                                                }
                                             )
                                         })
                                         .collect(),
@@ -1018,7 +1009,7 @@ impl Editor {
                 }
             }
             Some(Do::Symbols) =>
-                if let Some(lsp) = lsp!(self) {
+                if let Some((lsp, o)) = lsp!(self + p) {
                     let mut q = Rq::new(
                         lsp.runtime.spawn(
                             lsp.workspace_symbols("".into())
@@ -1033,6 +1024,7 @@ impl Editor {
                     q.result = Some(Symbols::new(
                         self.tree.as_deref().unwrap(),
                         self.text.bookmarks.clone(),
+                        o.into(),
                     ));
                     self.state = State::Symbols(q);
                 },
@@ -1131,15 +1123,16 @@ impl Editor {
                     unreachable!()
                 };
                 x.next();
-                if let Some(Ok(x)) = x.sel() {
+                if let Some(Ok(x)) = x.sel()
+                    && Some(&*x.at.path) == self.origin.as_deref()
+                {
                     match x.at {
-                        sym::GoTo::R(x) => {
+                        sym::GoTo { path: _, at: At::R(x) } => {
                             let x = self.text.l_range(x).unwrap();
                             self.text.vo = self.text.char_to_line(x.start);
                         }
-                        sym::GoTo::P(None, x) =>
+                        sym::GoTo { path: _, at: At::P(x) } =>
                             self.text.vo = self.text.char_to_line(x),
-                        _ => {}
                     }
                 }
             }
@@ -1150,15 +1143,16 @@ impl Editor {
                     unreachable!()
                 };
                 x.back();
-                if let Some(Ok(x)) = x.sel() {
-                    match x.at {
-                        sym::GoTo::R(x) => {
+                if let Some(Ok(x)) = x.sel()
+                    && Some(&*x.at.path) == self.origin.as_deref()
+                {
+                    match x.at.at {
+                        At::R(x) => {
                             let x = self.text.l_range(x).unwrap();
                             self.text.vo = self.text.char_to_line(x.start);
                         }
-                        sym::GoTo::P(None, x) =>
+                        At::P(x) =>
                             self.text.vo = self.text.char_to_line(x),
-                        _ => {}
                     }
                 }
             }
@@ -1166,44 +1160,34 @@ impl Editor {
                 {
                     if let Some(Ok(x)) = x.sel()
                         && let Err(e) = try bikeshed rootcause::Result<()> {
-                            let r = match x.at {
-                                sym::GoTo::Loc(x) => {
-                                    let x = x.clone();
-                                    let f = x
-                                        .uri
-                                        .to_file_path()
-                                        .map_err(|()| {
-                                            report!(
-                                                "provided uri not path"
-                                            )
-                                            .context(x.uri)
-                                        })?
-                                        .canonicalize()?;
+                            match x.at.at {
+                                At::R(r) => {
+                                    let f = x.at.path.canonicalize()?;
                                     self.state = State::Default;
                                     self.requests.complete =
                                         CompletionState::None;
                                     if Some(&f) != self.origin.as_ref() {
                                         self.open(&f, window.clone())?;
                                     }
-                                    x.range
+                                    let p = self.text.l_position(r.start).ok_or(
+                                report!("provided range out of bound")
+                                    .context_custom::<WDebug, _>(r),
+                            )?;
+                                    if p != 0 {
+                                        self.text
+                                            .cursor
+                                            .just(p, &self.text.rope);
+                                    }
+                                    self.text.scroll_to_cursor_centering();
                                 }
-                                sym::GoTo::P(_u, x) => {
+                                At::P(x) => {
                                     self.text
                                         .cursor
                                         .just(x, &self.text.rope);
                                     self.text.scroll_to_cursor_centering();
                                     break 'out;
                                 }
-                                sym::GoTo::R(range) => range,
                             };
-                            let p = self.text.l_position(r.start).ok_or(
-                                report!("provided range out of bound")
-                                    .context_custom::<WDebug, _>(r),
-                            )?;
-                            if p != 0 {
-                                self.text.cursor.just(p, &self.text.rope);
-                            }
-                            self.text.scroll_to_cursor_centering();
                         }
                     {
                         log::error!("alas! {e}");
@@ -1820,8 +1804,8 @@ impl Editor {
                 }
             }
             Some(Do::GTLSelect(x)) => {
-                if let Some(Ok((p, r))) = x.sel()
-                    && Some(p) == self.origin.as_deref()
+                if let Some(Ok(GoTo { path: p, at: At::R(r) })) = x.sel()
+                    && Some(&*p) == self.origin.as_deref()
                 {
                     let x = self.text.l_range(r).unwrap();
                     self.text.vo = self.text.char_to_line(x.start);
@@ -1832,8 +1816,8 @@ impl Editor {
                 let State::GoToL(x) = &mut self.state else {
                     unreachable!()
                 };
-                if let Some(Ok((p, r))) = x.sel()
-                    && Some(p) == self.origin.as_deref()
+                if let Some(Ok(GoTo { path: p, at: At::R(r) })) = x.sel()
+                    && Some(&*p) == self.origin.as_deref()
                 {
                     // let x = self.text.l_range(r).unwrap();
                     self.text.scroll_to_ln_centering(r.start.line as _);
