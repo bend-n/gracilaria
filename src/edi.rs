@@ -162,6 +162,7 @@ pub struct Editor {
     #[serde(skip)]
     pub bar: Bar,
     pub workspace: Option<PathBuf>,
+    pub git_dir: Option<PathBuf>,
     #[serde(skip)]
     pub lsp: Option<(
         &'static Client,
@@ -221,7 +222,7 @@ macro_rules! change {
             .unwrap();
             inlay!($self);
             let o_ = $self.origin.clone();
-            let w = $self.workspace.clone();
+            let w = $self.git_dir.clone();
             let r = $self.text.rope.clone();
             let t =
                 x.runtime.spawn_blocking(move || {
@@ -272,6 +273,11 @@ impl Editor {
             .as_ref()
             .and_then(|x| x.parent())
             .and_then(|x| rooter(&x, "Cargo.toml"))
+            .and_then(|x| x.canonicalize().ok());
+        me.git_dir = me
+            .workspace
+            .as_deref()
+            .and_then(|x| rooter(&x, ".git"))
             .and_then(|x| x.canonicalize().ok());
         let mut loaded_state = false;
         if let Some(ws) = me.workspace.as_deref()
@@ -1868,6 +1874,7 @@ impl Editor {
         }
         let r = self.text.r;
         let ws = self.workspace.clone();
+        let git_dir = self.workspace.clone();
         let tree = self.tree.clone();
         let lsp = self.lsp.take();
 
@@ -1883,6 +1890,7 @@ impl Editor {
         self.open_or_restore(&x, lsp, Some(w), ws)?;
         self.text.r = r;
         self.tree = tree;
+        self.git_dir = git_dir; // maybe it should change? you know. sometimes?
 
         Ok(())
     }
