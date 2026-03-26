@@ -554,6 +554,27 @@ impl Client {
         })
         .map(fst)
     }
+
+    pub fn go_to_references(
+        &self,
+        tdpp: TextDocumentPositionParams,
+    ) -> Result<
+        impl Future<
+            Output = Result<
+                Option<Vec<Location>>,
+                RequestError<References>,
+            >,
+        >,
+        SendError<Message>,
+    > {
+        self.request::<References>(&ReferenceParams {
+            text_document_position: tdpp,
+            work_done_progress_params: default(),
+            partial_result_params: default(),
+            context: ReferenceContext { include_declaration: false },
+        })
+        .map(fst)
+    }
 }
 
 pub trait PathURI {

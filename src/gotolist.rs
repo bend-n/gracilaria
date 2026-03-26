@@ -4,7 +4,7 @@ use std::path::Path;
 use dsb::Cell;
 use dsb::cell::Style;
 use lsp_types::request::GotoImplementation;
-use lsp_types::{Location, Range};
+use lsp_types::{Location, LocationLink, Range};
 
 use crate::FG;
 use crate::lsp::RqS;
@@ -16,6 +16,7 @@ pub enum GTL {}
 #[derive(Debug)]
 pub enum O {
     Impl(RqS<(), GotoImplementation>),
+    References(RqS<(), lsp_types::request::References>),
     Bmk,
 }
 impl<'a> Key<'a> for GoTo<'a> {
@@ -102,6 +103,17 @@ impl From<&Location> for GoTo<'static> {
         Self {
             path: Cow::Owned(uri.to_file_path().unwrap()),
             at: At::R(*range),
+        }
+    }
+}
+
+impl From<&LocationLink> for GoTo<'static> {
+    fn from(
+        LocationLink { target_uri, target_range, .. }: &LocationLink,
+    ) -> Self {
+        Self {
+            path: Cow::Owned(target_uri.to_file_path().unwrap()),
+            at: At::R(*target_range),
         }
     }
 }

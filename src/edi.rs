@@ -514,6 +514,13 @@ impl Editor {
                 });
             }
             State::GoToL(z) => match &mut z.data.1 {
+                Some(crate::gotolist::O::References(y)) => {
+                    y.poll(|x, _| {
+                        x.ok().flatten().map(|x| {
+                            z.data.0 = x.iter().map(GoTo::from).collect()
+                        })
+                    });
+                }
                 Some(crate::gotolist::O::Impl(y)) => {
                     y.poll(|x, _| {
                         x.ok().map(|x| {
@@ -877,8 +884,10 @@ impl Editor {
                 self.hist.lc = text.cursor.clone();
             }
             Some(Do::GoToDefinition) => {
-                if let Some(x) = self.requests.def.result.clone() {
-                    self.open_loclink(&x, w.clone());
+                if let Some(x) = self.requests.def.result.clone()
+                    && let Err(e) = self.go(&x, w.clone())
+                {
+                    log::error!("gtd: {e}");
                 }
             }
             Some(Do::InsertCursorAtMouse) => {
@@ -1162,44 +1171,12 @@ impl Editor {
                     }
                 }
             }
-            Some(Do::SymbolsSelect(x)) => 'out: {
+            Some(Do::SymbolsSelect(x)) =>
+                if let Some(Ok(x)) = x.sel()
+                    && let Err(e) = self.go(x.at, window.clone())
                 {
-                    if let Some(Ok(x)) = x.sel()
-                        && let Err(e) = try bikeshed rootcause::Result<()> {
-                            match x.at.at {
-                                At::R(r) => {
-                                    let f = x.at.path.canonicalize()?;
-                                    self.state = State::Default;
-                                    self.requests.complete =
-                                        CompletionState::None;
-                                    if Some(&f) != self.origin.as_ref() {
-                                        self.open(&f, window.clone())?;
-                                    }
-                                    let p = self.text.l_position(r.start).ok_or(
-                                report!("provided range out of bound")
-                                    .context_custom::<WDebug, _>(r),
-                            )?;
-                                    if p != 0 {
-                                        self.text
-                                            .cursor
-                                            .just(p, &self.text.rope);
-                                    }
-                                    self.text.scroll_to_cursor_centering();
-                                }
-                                At::P(x) => {
-                                    self.text
-                                        .cursor
-                                        .just(x, &self.text.rope);
-                                    self.text.scroll_to_cursor_centering();
-                                    break 'out;
-                                }
-                            };
-                        }
-                    {
-                        log::error!("alas! {e}");
-                    }
-                }
-            }
+                    log::error!("alas! {e}");
+                },
             Some(Do::RenameSymbol(to)) => {
                 if let Some((lsp, f)) = lsp!(self + p) {
                     let x = lsp
@@ -1276,10 +1253,9 @@ impl Editor {
                         },
                     )
                     .unwrap();
-                    let mut r2 = Rq::default();
 
-                    r2.request(lsp.runtime.spawn(async { r.0.await }));
-                    self.state = State::CodeAction(r2);
+                    self.state =
+                        State::CodeAction(Rq::new(lsp.runtime.spawn(r.0)));
                 }
             }
             Some(Do::CASelectLeft) => {
@@ -1809,15 +1785,12 @@ impl Editor {
                     )));
                 }
             }
-            Some(Do::GTLSelect(x)) => {
-                if let Some(Ok(GoTo { path: p, at: At::R(r) })) = x.sel()
-                    && Some(&*p) == self.origin.as_deref()
+            Some(Do::GTLSelect(x)) =>
+                if let Some(Ok(g)) = x.sel()
+                    && let Err(e) = self.go(g, window.clone())
                 {
-                    let x = self.text.l_range(r).unwrap();
-                    self.text.vo = self.text.char_to_line(x.start);
-                    self.text.cursor.just(x.start, &self.text.rope);
-                }
-            }
+                    eprintln!("go-to-list select fail: {e}");
+                },
             Some(Do::GT) => {
                 let State::GoToL(x) = &mut self.state else {
                     unreachable!()
@@ -2006,32 +1979,33 @@ impl Editor {
         }
         Ok(())
     }
-    /// this is so dumb
-    pub fn open_loc(
-        &mut self,
-        Location { uri, range }: &Location,
-        w: Arc<dyn Window>,
-    ) {
-        self.open(&uri.to_file_path().unwrap(), w.clone()).unwrap();
 
-        self.text.cursor.just(
-            self.text.l_position(range.start).unwrap(),
-            &self.text.rope,
-        );
-        self.text.scroll_to_cursor();
-    }
-    pub fn open_loclink(
+    pub fn go(
         &mut self,
-        LocationLink { target_uri, target_range, .. }: &LocationLink,
+        g: impl Into<GoTo<'_>>,
         w: Arc<dyn Window>,
-    ) {
-        self.open(&target_uri.to_file_path().unwrap(), w.clone()).unwrap();
+    ) -> rootcause::Result<()> {
+        let g = g.into();
+        let f = g.path.canonicalize()?;
+        self.open(&f, w.clone())?;
 
-        self.text.cursor.just(
-            self.text.l_position(target_range.start).unwrap(),
-            &self.text.rope,
-        );
-        self.text.scroll_to_cursor();
+        match g.at {
+            At::R(r) => {
+                let p = self.text.l_position(r.start).ok_or(
+                    report!("provided range out of bound")
+                        .context_custom::<WDebug, _>(r),
+                )?;
+                if p != 0 {
+                    self.text.cursor.just(p, &self.text.rope);
+                }
+                self.text.scroll_to_cursor_centering();
+            }
+            At::P(x) => {
+                self.text.cursor.just(x, &self.text.rope);
+                self.text.scroll_to_cursor_centering();
+            }
+        };
+        Ok(())
     }
 }
 use NamedKey::*;

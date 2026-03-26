@@ -14,7 +14,7 @@ use rust_analyzer::lsp::ext::*;
 use crate::FG;
 use crate::edi::{Editor, lsp_m};
 use crate::gotolist::{At, GoToList};
-use crate::lsp::{PathURI, Rq};
+use crate::lsp::{PathURI, Rq, tdpp};
 use crate::menu::charc;
 use crate::menu::generic::{CorA, GenericMenu, MenuData};
 use crate::sym::GoTo;
@@ -109,6 +109,8 @@ commands!(
     @ RAOpenCargoToml: "open-cargo-toml",
     /// Runs the test at the cursor
     @ RARunTest: "run-test",
+    ///  Go to the references to this symbol
+    @ References: "references",
     // /// View child modules
     // @ ViewChildModules: "child-modules",
     /// GoTo line,
@@ -309,7 +311,7 @@ impl Editor {
                     self.bar.last_action = "no such parent".into();
                     return Ok(());
                 };
-                self.open_loclink(x, w);
+                self.go(x, w)?;
             }
             Cmd::RAJoinLines => {
                 let teds =
@@ -384,7 +386,7 @@ impl Editor {
                 else {
                     bail!("wtf?");
                 };
-                self.open_loc(x, w);
+                self.go(x, w)?;
             }
             Cmd::RARunnables => {
                 let p = self.text.to_l_position(*self.text.cursor.first());
@@ -392,6 +394,17 @@ impl Editor {
                 let x = l.runtime.spawn(l.runnables(&o, p)?);
                 self.state = crate::edi::st::State::Runnables(Rq::new(x));
             }
+            Cmd::References =>
+                self.state = crate::edi::st::State::GoToL(GoToList {
+                    data: (
+                        vec![],
+                        Some(crate::gotolist::O::References(Rq::new(
+                            l.runtime
+                                .spawn(l.go_to_references(tdpp!(self))?),
+                        ))),
+                    ),
+                    ..default()
+                }),
             _ => unimplemented!(),
         }
         Ok(())
