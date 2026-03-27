@@ -357,9 +357,11 @@ impl Editor {
             && loaded_state
         {
             let w = me.workspace.clone();
+            let g = me.git_dir.clone();
             let t = me.tree.clone();
             assert!(me.files.len() != 0);
             me.open_or_restore(&o, l, None, w)?;
+            me.git_dir = g;
             me.tree = t;
         } else {
             me.lsp = l;
