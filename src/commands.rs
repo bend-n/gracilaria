@@ -12,7 +12,7 @@ use rootcause::{bail, report};
 use rust_analyzer::lsp::ext::*;
 
 use crate::FG;
-use crate::edi::{Editor, lsp_m};
+use crate::edi::{Editor, lsp};
 use crate::gotolist::{At, GoToList};
 use crate::lsp::{PathURI, Rq, tdpp};
 use crate::menu::charc;
@@ -273,7 +273,7 @@ impl Editor {
         z: Cmd,
         w: Arc<dyn winit::window::Window>,
     ) -> rootcause::Result<()> {
-        let Some((l, o)) = lsp_m!(self + p) else {
+        let Some((l, o)) = lsp!(self + p) else {
             bail!("no lsp");
         };
         match z {

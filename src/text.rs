@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::cmp::{Reverse, min};
 use std::collections::BTreeSet;
 use std::fmt::Debug;
@@ -315,7 +316,10 @@ impl TextArea {
                     {
                         for (i, (c, _)) in x.data.iter().enumerate() {
                             yield Mapping::Fake(
-                                x, i as u32, x.position, *c,
+                                Cow::Borrowed(x),
+                                i as u32,
+                                x.position,
+                                *c,
                             );
                         }
                     }
@@ -1622,7 +1626,7 @@ pub(crate) use col;
 #[derive(Debug, PartialEq, Clone)]
 pub enum Mapping<'a> {
     Fake(
-        &'a Marking<Box<[(char, Option<Location>)]>>,
+        Cow<'a, Marking<Box<[(char, Option<Location>)]>>>,
         /// Label relative
         u32,
         /// True position
@@ -1632,6 +1636,17 @@ pub enum Mapping<'a> {
     Char(char, usize /* line rel */, usize /* true position */),
 }
 impl Mapping<'_> {
+    pub fn own(self) -> Mapping<'static> {
+        match self {
+            Self::Fake(mark, a, b, c) => Mapping::Fake(
+                Cow::Owned(mark.clone().into_owned()),
+                a,
+                b,
+                c,
+            ),
+            Self::Char(x, y, z) => Mapping::Char(x, y, z),
+        }
+    }
     fn c(&self) -> char {
         let (Mapping::Char(x, ..) | Mapping::Fake(.., x)) = self;
         *x

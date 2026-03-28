@@ -17,7 +17,7 @@ use winit::dpi::{PhysicalPosition, PhysicalSize};
 use winit::window::{ImeRequestData, Window};
 
 use crate::edi::st::State;
-use crate::edi::{Editor, lsp_m};
+use crate::edi::{Editor, lsp};
 use crate::gotolist::{At, GoTo};
 use crate::lsp::Rq;
 use crate::sym::{UsedSI};
@@ -183,7 +183,7 @@ pub fn render(
                                                 });
                                 // x.range;
                             }
-                            if let Some((lsp, p)) = lsp_m!(ed + p) && let uri = Url::from_file_path(p).unwrap() && let Some(diag) = lsp.diagnostics.get(&uri, &lsp.diagnostics.guard()) {
+                            if let Some((lsp, p)) = lsp!(ed + p) && let uri = Url::from_file_path(p).unwrap() && let Some(diag) = lsp.diagnostics.get(&uri, &lsp.diagnostics.guard()) {
                                 #[derive(Copy, Clone, Debug)]
                                 enum EType {
                                     Hint, Info, Error,Warning,Related(DiagnosticSeverity),
@@ -266,7 +266,7 @@ pub fn render(
                             }
                         },
                         ed.origin.as_deref(),
-                        match lsp_m!(ed) {
+                        match lsp!(ed) {
                                 Some(lsp::Client { initialized: Some(lsp_types::InitializeResult {
                                     capabilities: ServerCapabilities {
                                         semantic_tokens_provider:
@@ -298,7 +298,7 @@ pub fn render(
                 .unwrap_or("new buffer"),
             &ed.state,
             &text,
-            lsp_m!(ed),
+            lsp!(ed),
         );
         unsafe {
             dsb::render(
@@ -491,7 +491,7 @@ pub fn render(
                 // chain([Cell::default()], x.to_string().chars().map(Cell::basic)).chain([Cell::default()]).collect();
 
                 for (x, rel, mut cell) in text
-                    .colored_lines(r, lsp_m!(ed).and_then(|x| x.legend()))
+                    .colored_lines(r, lsp!(ed).and_then(|x| x.legend()))
                 {
                     if rel == 0 {
                         let rem = cells.len() % c;
@@ -544,7 +544,7 @@ pub fn render(
             // dbg    !(x);
         }
         let mut pass = true;
-        if let Some((lsp, p)) = lsp_m!(ed + p)
+        if let Some((lsp, p)) = lsp!(ed + p)
             && let Some(diag) = lsp.diagnostics.get(
                 &Url::from_file_path(p).unwrap(),
                 &lsp.diagnostics.guard(),
