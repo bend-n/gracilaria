@@ -274,11 +274,7 @@ impl Editor {
             .and_then(|x| x.parent())
             .and_then(|x| rooter(&x, "Cargo.toml"))
             .and_then(|x| x.canonicalize().ok());
-        me.git_dir = me
-            .workspace
-            .as_deref()
-            .and_then(|x| rooter(&x, ".git"))
-            .and_then(|x| x.canonicalize().ok());
+
         let mut loaded_state = false;
         if let Some(ws) = me.workspace.as_deref()
             && let h = hash(&ws)
@@ -291,6 +287,11 @@ impl Editor {
             loaded_state = true;
             assert!(me.workspace.is_some());
         }
+        me.git_dir = me
+            .workspace
+            .as_deref()
+            .and_then(|x| rooter(&x, ".git"))
+            .and_then(|x| x.canonicalize().ok());
         me.origin = o;
         me.tree = me.workspace.as_ref().map(|x| {
             walkdir::WalkDir::new(x)
@@ -352,12 +353,12 @@ impl Editor {
             );
             (&*Box::leak(Box::new(c)), (t2), Some(changed))
         });
-
+        let g = me.git_dir.clone();
         if let Some(o) = me.origin.clone()
             && loaded_state
         {
             let w = me.workspace.clone();
-            let g = me.git_dir.clone();
+
             let t = me.tree.clone();
             assert!(me.files.len() != 0);
             me.open_or_restore(&o, l, None, w)?;
@@ -376,7 +377,7 @@ impl Editor {
                     origin,
                 )?;
             }
-
+            me.git_dir = g;
             me.mtime = Self::modify(me.origin.as_deref());
 
             // me.hist.last = me.text.clone();
@@ -391,7 +392,6 @@ impl Editor {
             //     },
             // );
         }
-
         Ok(me)
     }
 
@@ -1926,10 +1926,10 @@ impl Editor {
             self.mtime = Self::modify(self.origin.as_deref());
             self.lsp = lsp;
 
-            if let Some((x, origin)) = lsp!(self + p) {
+            if let Some((ls, origin)) = lsp!(self + p) {
                 take(&mut self.requests);
-                x.open(&origin, new)?;
-                x.rq_semantic_tokens(
+                ls.open(&origin, new)?;
+                ls.rq_semantic_tokens(
                     &mut self.requests.semantic_tokens,
                     origin,
                 )?;
