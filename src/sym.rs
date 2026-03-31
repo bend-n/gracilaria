@@ -13,6 +13,7 @@ use crate::gotolist::At;
 pub use crate::gotolist::GoTo;
 use crate::menu::generic::{GenericMenu, MenuData};
 use crate::menu::{Key, charc};
+use crate::rnd::simplify_path;
 use crate::text::{Bookmarks, col, color_, set_a};
 pub enum Symb {}
 impl MenuData for Symb {
@@ -239,13 +240,15 @@ fn r<'a>(
         - 3;
     let loc = x.at.path;
     let locs = if sty == SymbolsType::Workspace {
-        loc.as_ref()
-            .strip_prefix(workspace)
-            .unwrap_or(&*loc)
-            .to_str()
-            .unwrap_or("")
+        simplify_path(
+            loc.as_ref()
+                .strip_prefix(workspace)
+                .unwrap_or(&*loc)
+                .to_str()
+                .unwrap_or(""),
+        )
     } else {
-        ""
+        "".into()
     };
     let loc = locs.chars().rev().collect::<Vec<_>>().into_iter();
     let q = if left < charc(&locs) as i32 {

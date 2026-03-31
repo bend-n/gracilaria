@@ -252,9 +252,14 @@ impl Editor {
                     .flat_map(|(f, x)| {
                         x.text.bookmarks.iter().zip(repeat(f))
                     })
-                    .map(|(b, path)| GoTo {
-                        path: path.clone().into(),
-                        at: At::P(b.position),
+                    .map(|(b, path)| {
+                        (
+                            GoTo {
+                                path: path.clone().into(),
+                                at: At::P(b.position),
+                            },
+                            Some(b.text.clone()),
+                        )
                     })
                     .collect::<Vec<_>>();
                 self.state = crate::edi::st::State::GoToL(GoToList {

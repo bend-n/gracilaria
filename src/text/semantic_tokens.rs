@@ -8,6 +8,7 @@ pub(crate) use theme::theme;
 use theme::{COLORS, MCOLORS, MODIFIED, MSTYLE, NAMES, STYLES};
 
 use crate::text::TextArea;
+use crate::text::manipulations::Manip;
 
 #[derive(
     Copy, Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize,
@@ -18,9 +19,9 @@ pub struct TokenD {
     pub modifiers: u32,
 }
 impl TokenD {
-    pub fn manip(&mut self, mut f: impl FnMut(usize) -> usize) {
-        self.range.0 = f(self.range.0 as _) as _;
-        self.range.1 = f(self.range.1 as _) as _;
+    pub fn manip(&mut self, mut f: impl FnMut(usize) -> Manip) {
+        self.range.0 = f(self.range.0 as _).unwrap() as _;
+        self.range.1 = f(self.range.1 as _).unwrap() as _;
     }
     pub fn style(self, leg: &SemanticTokensLegend) -> Style {
         let mut sty = Style::new(crate::FG, crate::BG);

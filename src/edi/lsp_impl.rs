@@ -1,3 +1,5 @@
+use std::iter::repeat;
+
 use lsp_server::Request as LRq;
 use lsp_types::request::*;
 use lsp_types::*;
@@ -146,7 +148,11 @@ impl crate::edi::Editor {
                 Some(crate::gotolist::O::References(y)) => {
                     y.poll(|x, _| {
                         x.ok().flatten().map(|x| {
-                            z.data.0 = x.iter().map(GoTo::from).collect()
+                            z.data.0 = x
+                                .iter()
+                                .map(GoTo::from)
+                                .zip(repeat(None))
+                                .collect()
                         })
                     });
                 }
@@ -157,14 +163,14 @@ impl crate::edi::Editor {
                                 z.data.0 = match x {
                                     GotoDefinitionResponse::Scalar(
                                         location,
-                                    ) => vec![GoTo::from(
+                                    ) => vec![(GoTo::from(
                                         location,
-                                    )],
+                                    ),None)],
                                     GotoDefinitionResponse::Array(
                                         locations,
                                     ) => locations
                                         .into_iter()
-                                        .map(GoTo::from)
+                                        .map(GoTo::from).zip(repeat(None))
                                         .collect(),
                                     GotoDefinitionResponse::Link(
                                         location_links,
@@ -177,7 +183,7 @@ impl crate::edi::Editor {
                                                     range: target_range,
                                                 }
                                             )
-                                        })
+                                        }).zip(repeat(None))
                                         .collect(),
                                 };
                             });

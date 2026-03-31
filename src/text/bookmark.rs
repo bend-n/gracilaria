@@ -9,7 +9,7 @@ pub struct Bookmark {
 }
 
 #[derive(Clone, Serialize, Deserialize, Default, Debug)]
-pub struct Bookmarks(Vec<Bookmark>);
+pub struct Bookmarks(pub Vec<Bookmark>);
 
 impl DerefMut for Bookmarks {
     fn deref_mut(&mut self) -> &mut Self::Target {
@@ -23,12 +23,4 @@ impl Deref for Bookmarks {
     fn deref(&self) -> &Self::Target {
         &self.0
     }
-}
-impl Bookmarks {
-    pub fn manipulate(&mut self, mut f: impl FnMut(usize) -> usize) {
-        for lem in &mut self.0 {
-            lem.position = f(lem.position);
-        }
-    }
-    // pub fn to_gtl_d(&self) -> Vec<(PathBuf, Range)> {}
 }

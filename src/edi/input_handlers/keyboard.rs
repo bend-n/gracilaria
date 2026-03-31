@@ -864,7 +864,7 @@ impl Editor {
                 }
             }
             Some(Do::GTLSelect(x)) =>
-                if let Some(Ok(g)) = x.sel()
+                if let Some(Ok((g, _))) = x.sel()
                     && let Err(e) = self.go(g, window.clone())
                 {
                     eprintln!("go-to-list select fail: {e}");
@@ -873,7 +873,8 @@ impl Editor {
                 let State::GoToL(x) = &mut self.state else {
                     unreachable!()
                 };
-                if let Some(Ok(GoTo { path: p, at: At::R(r) })) = x.sel()
+                if let Some(Ok((GoTo { path: p, at: At::R(r) }, _))) =
+                    x.sel()
                     && Some(&*p) == self.origin.as_deref()
                 {
                     // let x = self.text.l_range(r).unwrap();

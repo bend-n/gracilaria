@@ -24,20 +24,12 @@ pub enum StopP {
     Just(usize),
     Range(Range<usize>),
 }
+
 impl StopP {
     pub fn r(&self) -> Range<usize> {
         match self {
             Self::Just(x) => *x..*x,
             Self::Range(range) => range.clone(),
-        }
-    }
-    pub fn manipulate(&mut self, mut f: impl FnMut(usize) -> usize) {
-        match self {
-            Self::Just(x) => *x = f(*x),
-            Self::Range(range) => {
-                range.start = f(range.start);
-                range.end = f(range.end);
-            }
         }
     }
 }
@@ -55,15 +47,18 @@ impl Snippet {
         for value in value.into_iter() {
             Self::apply(value, &mut stops, &mut cursor, &mut o);
         }
+        use ttools::*;
         stops.sort_by_key(|x| x.0);
-        stops.iter_mut().for_each(|x| x.1.manipulate(|x| x + at));
+        stops.iter_mut().for_all::<1>(|x| {
+            *x = x
+                .clone()
+                .manipulate(|x| crate::text::Manip::Moved(x + at))
+                .unwrap()
+        });
         let last = stops.try_remove(0);
         Ok((Snippet { last: last.map(|x| x.1), stops, index: 0 }, o))
     }
-    pub fn manipulate(&mut self, f: impl FnMut(usize) -> usize + Clone) {
-        self.stops.iter_mut().for_each(|x| x.1.manipulate(f.clone()));
-        self.last.as_mut().map(|x| x.manipulate(f));
-    }
+
     pub fn next(&mut self) -> Option<StopP> {
         self.stops.get(self.index).map(|x| {
             self.index += 1;

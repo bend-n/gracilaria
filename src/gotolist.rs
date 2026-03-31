@@ -10,6 +10,7 @@ use crate::FG;
 use crate::lsp::RqS;
 use crate::menu::Key;
 use crate::menu::generic::{GenericMenu, MenuData};
+use crate::rnd::simplify_path;
 use crate::text::col;
 pub type GoToList = GenericMenu<GTL>;
 pub enum GTL {}
@@ -19,28 +20,34 @@ pub enum O {
     References(RqS<(), lsp_types::request::References>),
     Bmk,
 }
-impl<'a> Key<'a> for GoTo<'a> {
+impl<'a> Key<'a> for (GoTo<'a>, Option<&'a str>) {
     fn key(&self) -> impl Into<std::borrow::Cow<'a, str>> {
-        self.path.display().to_string()
+        self.0.path.display().to_string()
         // self.display().to_string()
     }
 }
 impl MenuData for GTL {
-    type Data = (Vec<GoTo<'static>>, Option<O>);
+    type Data = (Vec<(GoTo<'static>, Option<String>)>, Option<O>);
 
-    type Element<'a> = GoTo<'a>;
+    type Element<'a> = (GoTo<'a>, Option<&'a str>);
 
     type E = !;
 
     fn gn<'a>(
         x: &'a Self::Data,
     ) -> impl Iterator<Item = Self::Element<'a>> {
-        x.0.iter().map(GoTo::asref)
+        use ttools::*;
+        x.0.iter()
+            // .map(|x| {
+            // x
+            // })
+            .map_at::<0>(GoTo::asref)
+            .map_at::<1>(Option::as_deref)
     }
 
     fn r(
         _data: &'_ Self::Data,
-        elem: Self::Element<'_>,
+        (elem, desc): Self::Element<'_>,
         workspace: &std::path::Path,
         columns: usize,
         selected: bool,
@@ -57,12 +64,20 @@ impl MenuData for GTL {
         into.iter_mut()
             // .skip(1)
             .zip(
-                elem.path
-                    .strip_prefix(workspace)
-                    .unwrap_or(&elem.path)
-                    .display()
-                    .to_string()
-                    .chars()
+                desc.map(str::chars)
+                    .into_iter()
+                    .flatten()
+                    .chain(
+                        simplify_path(
+                            &elem
+                                .path
+                                .strip_prefix(workspace)
+                                .unwrap_or(&elem.path)
+                                .display()
+                                .to_string(),
+                        )
+                        .chars(),
+                    )
                     .chain(
                         match elem.at {
                             At::R(r) => format!(

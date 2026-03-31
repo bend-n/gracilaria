@@ -19,6 +19,7 @@ use lsp_types::{
     DocumentSymbol, Location, Position, SemanticTokensLegend,
     SnippetTextEdit, TextEdit,
 };
+pub use manipulations::Manip;
 use rootcause::option_ext::OptionExt;
 use rootcause::prelude::{IteratorExt, ResultExt};
 use rootcause::report;
@@ -36,9 +37,11 @@ pub mod theme_treesitter;
 use hist::Changes;
 mod bookmark;
 pub use bookmark::*;
+mod manipulations;
 
 use crate::sni::{Snippet, StopP};
 use crate::text::hist::Action;
+
 pub const fn color_(x: &str) -> [u8; 3] {
     let Some(x): Option<[u8; 7]> = x.as_bytes().try_into().ok() else {
         panic!()
@@ -393,17 +396,25 @@ impl TextArea {
         });
         self.rope.try_remove(r.clone())?;
         let manip = |x| {
-            // if your region gets removed, what happens to your tabstop? big question.
             if r.contains(&x) {
-                // for now, simply move it.
-                r.start
+                Manip::Removed(r.start)
             } else {
-                if x >= r.end { x - r.len() } else { x }
+                if x >= r.end {
+                    Manip::Moved(x - r.len())
+                } else {
+                    Manip::Unmoved(x)
+                }
             }
         };
         self.tabstops.as_mut().map(|x| x.manipulate(manip));
         self.cursor.manipulate(manip);
         self.bookmarks.manipulate(manip);
+        self.inlays
+            .extract_if(
+                Marking::idx(r.start as _)..Marking::idx(r.end as _),
+                |_| true,
+            )
+            .for_each(drop);
         for pos in self
             .inlays
             .range(Marking::idx(r.end as _)..)
@@ -433,7 +444,11 @@ impl TextArea {
             .inner
             .push(Action::Inserted { at: c, insert: with.to_string() });
         let manip = |x| {
-            if x < c { x } else { x + with.chars().count() }
+            if x < c {
+                Manip::Unmoved(x)
+            } else {
+                Manip::Moved(x + with.chars().count())
+            }
         };
         self.tabstops.as_mut().map(|x| x.manipulate(manip));
         self.cursor.manipulate(manip);

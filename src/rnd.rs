@@ -104,7 +104,7 @@ pub fn render(
             (1, 0),
             |_text, mut f, y| {
                 if let State::GoToL(menu) = &ed.state
-                    && let Some(Ok( GoTo{ at: At::R(r),path})) = menu.sel()
+                    && let Some(Ok(( GoTo{ at: At::R(r),path}, _))) = menu.sel()
                     && Some(&*path) == ed.origin.as_deref()
                 {    
                     if (r.start.line..=r.end.line).contains(&(y as _)) {

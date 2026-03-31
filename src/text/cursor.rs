@@ -440,15 +440,6 @@ impl Cursors {
     pub fn each_ref(&self, f: impl FnMut(Cursor)) {
         self.inner.iter().copied().rev().for_each(f);
     }
-    pub fn manipulate(&mut self, mut f: impl FnMut(usize) -> usize) {
-        self.each(|lem| {
-            lem.position = f(lem.position);
-            if let Some(sel) = &mut lem.sel {
-                sel.start = f(sel.start);
-                sel.end = f(sel.end);
-            }
-        });
-    }
     pub fn left(&mut self, r: &Rope) {
         self.each(|cursor| cursor.left(r));
         self.coalesce();
