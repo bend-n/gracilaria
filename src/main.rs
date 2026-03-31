@@ -235,9 +235,7 @@ pub(crate) fn entry(event_loop: EventLoop) {
             // let ev = format!("{event:?}");
             // use WindowEvent as Event;
             match event {
-                // Event::AboutToWait => {}
-                
-                
+                // Event::AboutToWait => {}                
                 WindowEvent::SurfaceResized(size) if window_id == window.id() => {
                     let Some(surface) = surface else {
                         eprintln!(

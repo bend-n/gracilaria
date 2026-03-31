@@ -305,7 +305,7 @@ fn t() {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Hovr {
     pub(crate) span: Option<[(VisualX, usize); 2]>,
-    pub(crate) item: crate::text::CellBuffer,
+    pub(crate) item: crate::rnd::CellBuffer,
     #[serde(skip)]
     pub(crate) range: Option<lsp_types::Range>,
 }

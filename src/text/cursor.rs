@@ -113,7 +113,19 @@ pub macro ceach($cursor: expr, $f:expr $( => $q:tt)?) {
 // use unhygienic2::unhygienic;
 impl Cursor {
     pub fn new(c: usize, r: &Rope) -> Self {
-        Self { column: r.x(c).unwrap(), position: c, sel: None }
+        Self {
+            column: r.x(c).unwrap_or_else(|| {
+                log::error!("couldnt position column");
+                0
+            }),
+            position: if c > r.len_chars() {
+                log::error!("couldnt add cursor at {c}");
+                r.len_chars() - 5
+            } else {
+                c
+            },
+            sel: None,
+        }
     }
     fn cl(self, r: &Rope) -> RopeSlice<'_> {
         r.line(r.char_to_line(*self))
@@ -245,6 +257,7 @@ impl Cursor {
         self.set_ho();
     }
 
+    #[lower::apply(saturating)]
     fn left(&mut self, r: &Rope) {
         self.position -= 1;
         self.setc(r);

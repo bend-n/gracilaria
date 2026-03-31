@@ -8,7 +8,8 @@ use lsp_types::{
 };
 
 use crate::FG;
-use crate::text::{CellBuffer, color_};
+use crate::rnd::CellBuffer;
+use crate::text::color_;
 pub fn active(
     sig: &SignatureHelp,
 ) -> (&SignatureInformation, Option<&ParameterInformation>) {

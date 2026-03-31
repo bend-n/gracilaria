@@ -26,6 +26,9 @@ use crate::{
     BG, BORDER, CompletionAction, CompletionState, FG, FONT, complete,
     filter, lsp, sig,
 };
+pub use cell_buffer::CellBuffer;
+mod cell_buffer;
+
 
 #[implicit_fn::implicit_fn]
 pub fn render(

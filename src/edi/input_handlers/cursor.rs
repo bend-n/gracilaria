@@ -11,6 +11,7 @@ use tokio_util::task::AbortOnDropHandle as DropH;
 use winit::window::Window;
 
 use crate::edi::*;
+use crate::rnd::CellBuffer;
 impl Editor {
     #[implicit_fn]
     pub fn cursor_moved(
@@ -223,7 +224,7 @@ impl Editor {
                 Ok(Some(
                     hov::Hovr {
                         span,
-                        item: text::CellBuffer {
+                        item: CellBuffer {
                             c: w,
                             vo: 0,
                             cells: cells.into(),
