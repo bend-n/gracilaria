@@ -8,6 +8,7 @@ use itertools::Itertools;
 use markdown::mdast::{self, Node};
 use ropey::Rope;
 use serde_derive::{Deserialize, Serialize};
+use ttools::{IteratorOfTuples, IteratorOfTuplesWithF};
 const D: Cell = Cell { letter: None, style: Style::new(FG, BG) };
 use crate::{FG, text};
 
@@ -221,7 +222,7 @@ pub fn l(node: &Node) -> Vec<usize> {
         .into_iter()
         .chunk_by(|&x| x != usize::MAX)
         .into_iter()
-        .filter_map(|x| x.0.then(|| x.1.sum::<usize>()))
+        .filter_map(|(b, g)| b.then(|| g.sum::<usize>()))
         .collect::<Vec<_>>()
 }
 #[implicit_fn::implicit_fn]

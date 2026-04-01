@@ -280,10 +280,8 @@ impl Editor {
 
                     match x {
                         Ok(Some(x)) =>
-                            if let Err(e) =
-                                self.apply_wsedit(x, &f.to_owned())
-                            {
-                                println!(
+                            if let Err(e) = self.apply_wsedit(x) {
+                                log::error!(
                                     "couldnt apply one or more wsedits: \
                                      {e}"
                                 );
@@ -345,9 +343,7 @@ impl Editor {
                 c.left();
             }
             Some(Do::CASelectRight) => 'out: {
-                let Some((lsp, f)) = lsp!(self + p) else {
-                    unreachable!()
-                };
+                let Some(lsp) = lsp!(self) else { unreachable!() };
                 let State::CodeAction(Rq { result: Some(c), .. }) =
                     &mut self.state
                 else {
@@ -361,9 +357,8 @@ impl Editor {
                 let act = lsp
                     .request_immediate::<CodeActionResolveRequest>(&act)
                     .unwrap();
-                let f = f.to_owned();
                 if let Some(x) = act.edit
-                    && let Err(e) = self.apply_wsedit(x, &f)
+                    && let Err(e) = self.apply_wsedit(x)
                 {
                     log::error!("{e}");
                 }
@@ -553,11 +548,12 @@ impl Editor {
                             else {
                                 panic!()
                             };
+                            use ttools::OptionOfMutRefToTuple;
                             *x = Some((
                                 h,
                                 c.as_ref()
                                     .map(|x| x.start)
-                                    .or(x.as_ref().map(|x| x.1))
+                                    .or(x.on::<1>().copied())
                                     .unwrap_or(*self.text.cursor.first()),
                             ));
                         }

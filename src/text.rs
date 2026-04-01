@@ -462,6 +462,17 @@ impl TextArea {
         self.insert_at(begin, &x.new_text)?;
         Ok((begin, end))
     }
+    pub fn apply_raw<'a, 'b>(
+        x: &'a TextEdit,
+        r: &'b mut Rope,
+    ) -> rootcause::Result<()> {
+        let begin =
+            r.l_position(x.range.start).ok_or(report!("no range"))?;
+        let end = r.l_position(x.range.end).ok_or(report!("no range"))?;
+        r.try_remove(begin..end)?;
+        r.try_insert(begin, &x.new_text)?;
+        Ok(())
+    }
 
     pub fn apply_adjusting(
         &mut self,
@@ -482,9 +493,9 @@ impl TextArea {
         }
         Ok(())
     }
-    pub fn apply_snippet_tedit_raw(
-        SnippetTextEdit { range,new_text, insert_text_format, .. }: &SnippetTextEdit,
-        text: &'_ mut Rope,
+    pub fn apply_snippet_tedit_raw<'a, 'b>(
+        SnippetTextEdit { range,new_text, insert_text_format, .. }: &'a SnippetTextEdit,
+        text: &'b mut Rope,
     ) -> rootcause::Result<()> {
         match insert_text_format {
             Some(lsp_types::InsertTextFormat::SNIPPET) => {
@@ -504,9 +515,9 @@ impl TextArea {
         }
         Ok(())
     }
-    pub fn apply_snippet_tedit(
-        &mut self,
-        SnippetTextEdit { range,new_text, insert_text_format, .. }: &SnippetTextEdit,
+    pub fn apply_snippet_tedit<'a, 'b>(
+        &'a mut self,
+        SnippetTextEdit { range,new_text, insert_text_format, .. }: &'b SnippetTextEdit,
     ) -> rootcause::Result<()> {
         match insert_text_format {
             Some(lsp_types::InsertTextFormat::SNIPPET) => self

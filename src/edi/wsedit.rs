@@ -8,54 +8,65 @@ use ropey::Rope;
 
 use super::*;
 use crate::error::WDebug;
-use crate::lsp::PathURI;
+use crate::lsp::Void;
 use crate::text::{SortTedits, TextArea};
 
 impl Editor {
-    fn apply_tde(
+    fn apply_tds<T>(
         &mut self,
-        TextDocumentEdit {
-                          mut edits,
-                          text_document,
-                          ..
-                      }: TextDocumentEdit,
-        f: &Path,
-    ) -> rootcause::Result<()> {
+        to: &Path,
+        mut edits: Vec<T>,
+        mut apply: impl FnMut(&mut TextArea, &T) -> rootcause::Result<()>,
+        mut apply2: impl FnMut(&T, &mut Rope) -> rootcause::Result<()>,
+    ) -> rootcause::Result<()>
+    where
+        [T]: SortTedits,
+    {
         edits.sort_tedits();
-        if text_document.uri != f.tid().uri {
+        if Some(to) != self.origin.as_deref() {
             let f = OpenOptions::new()
                 .read(true)
                 .create(true)
                 .write(true)
-                .open(text_document.uri.path())?;
+                .open(to)?;
             let mut r = Rope::from_reader(f)?;
             let () = edits
                 .iter()
-                .map(|x| TextArea::apply_snippet_tedit_raw(x, &mut r))
+                .map(|x| apply2(x, &mut r))
                 .collect_reports()
                 .context("applying one or more snippet tedits failed")?;
             r.write_to(
-                OpenOptions::new()
-                    .write(true)
-                    .truncate(true)
-                    .open(text_document.uri.path())?,
+                OpenOptions::new().write(true).truncate(true).open(to)?,
             )?;
         } else {
             let () = edits
                 .iter()
-                .map(|x| self.text.apply_snippet_tedit(x))
+                .map(|x| apply(&mut self.text, x))
                 .collect_reports()
                 .context("applying one or more sneddits failed")?;
         }
         Ok(())
     }
+    fn apply_tde(
+        &mut self,
+        TextDocumentEdit { edits, text_document, .. }: TextDocumentEdit,
+    ) -> rootcause::Result<()> {
+        self.apply_tds(
+            &text_document
+                .uri
+                .to_file_path()
+                .map_err(|_| report!("sad"))?,
+            edits,
+            TextArea::apply_snippet_tedit,
+            TextArea::apply_snippet_tedit_raw,
+        )
+    }
     fn apply_dco(
         &mut self,
         op: DocumentChangeOperation,
-        f: &Path,
     ) -> rootcause::Result<()> {
         match op.clone() {
-            DocumentChangeOperation::Edit(t) => self.apply_tde(t, f)?,
+            DocumentChangeOperation::Edit(t) => self.apply_tde(t)?,
             DocumentChangeOperation::Op(ResourceOp::Create(
                 CreateFile { uri, options, .. },
             )) => {
@@ -198,7 +209,6 @@ impl Editor {
     pub fn apply_wsedit(
         &mut self,
         x: WorkspaceEdit,
-        f: &Path,
     ) -> rootcause::Result<()> {
         match x {
             WorkspaceEdit {
@@ -206,7 +216,7 @@ impl Editor {
                 ..
             } => x
                 .into_iter()
-                .map(|x| self.apply_tde(x, f))
+                .map(|x| self.apply_tde(x))
                 .collect_reports()
                 .context("couldnt apply one or more wsedits")?,
             WorkspaceEdit {
@@ -216,15 +226,28 @@ impl Editor {
                 .clone()
                 .into_iter()
                 .map(|op: DocumentChangeOperation| {
-                    self.apply_dco(op.clone(), f)
+                    self.apply_dco(op.clone())
                         .context_custom::<WDebug, _>(op)
                 })
                 .collect_reports()
                 .context("couldnt apply one or more fs operations")
                 .context_custom::<WDebug, _>(x)?,
-            WorkspaceEdit { changes: Some(x), .. } =>
-                do yeet report!("we dont handle these kinds of changes")
-                    .context_custom::<WDebug, _>(x),
+            WorkspaceEdit { changes: Some(x), .. } => x
+                .into_iter()
+                .map(|(p, e)| {
+                    self.apply_tds(
+                        &p.to_file_path().map_err(|_| {
+                            report!("evil path")
+                                .context_custom::<WDebug, _>(e.clone())
+                        })?,
+                        e.clone(),
+                        |x, y| x.apply(y).map(drop),
+                        TextArea::apply_raw,
+                    )
+                    .context_custom::<WDebug, _>(e)
+                })
+                .collect_reports()
+                .context("couldnt apply one or more fs operations")?,
             x =>
                 do yeet report!("strange workspace edit")
                     .context_custom::<WDebug, _>(x),
