@@ -6,6 +6,7 @@ use std::sync::atomic::Ordering::Relaxed;
 use Default::default;
 use crossbeam::channel::{Receiver, SendError, Sender};
 use futures::FutureExt;
+use json_value_merge::Merge;
 use log::debug;
 use lsp_server::{
     Message, Notification as N, Request as LRq, Response as Re,
@@ -18,6 +19,7 @@ use tokio::sync::oneshot;
 use ttools::*;
 
 use crate::lsp::BehaviourAfter::{self, *};
+use crate::lsp::init_opts::ra_config;
 use crate::lsp::{RequestError, Rq};
 use crate::text::cursor::ceach;
 use crate::text::{RopeExt, SortTedits, TextArea};
@@ -574,6 +576,15 @@ impl Client {
             context: ReferenceContext { include_declaration: false },
         })
         .map(fst)
+    }
+
+    pub fn _update_config(&self, with: serde_json::Value) {
+        let mut x = ra_config();
+        x.merge(&with);
+        self.notify::<DidChangeConfiguration>(
+            &DidChangeConfigurationParams { settings: x },
+        )
+        .unwrap();
     }
 }
 

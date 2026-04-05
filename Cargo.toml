@@ -73,6 +73,7 @@ rootcause = "0.12.1"
 ttools = { git = "https://git.bendn.org/ttools" }
 # ttools = { path = "../ttools/" }
 bind = { package = "ftools", git = "https://git.bendn.org/bind" }
+json_value_merge = "2.0.1"
 [profile.dev.package]
 rust-analyzer.opt-level = 3
 fimg.opt-level = 3

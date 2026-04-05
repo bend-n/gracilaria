@@ -6,6 +6,7 @@ use std::thread::spawn;
 use std::time::Instant;
 
 use crossbeam::channel::{Receiver, Sender, unbounded};
+use json_value_merge::Merge;
 use lsp_server::Message;
 use lsp_types::notification::*;
 use lsp_types::request::*;
@@ -18,10 +19,12 @@ pub use client::*;
 mod init_opts;
 mod rq;
 pub use rq::*;
+pub mod vsc_settings;
 
 pub fn run(
     (tx, rx): (Sender<Message>, Receiver<Message>),
     workspace: WorkspaceFolder,
+    vscode_conf: Option<serde_json::Value>,
 ) -> (Client, std::thread::JoinHandle<()>, oneshot::Sender<Arc<dyn Window>>)
 {
     let now = Instant::now();
@@ -46,7 +49,12 @@ pub fn run(
         req_rx: _req_rx,
         not_rx,
     };
-    _ = c.request::<Initialize>(&init_opts::get(workspace)).unwrap();
+    let mut opts = init_opts::get(workspace);
+    if let Some(v) = vscode_conf {
+        opts.initialization_options.as_mut().unwrap().merge(&v);
+    };
+    dbg!(opts.initialization_options.as_ref());
+    _ = c.request::<Initialize>(&opts).unwrap();
     let x = serde_json::from_value::<InitializeResult>(
         rx.recv().unwrap().response().unwrap().result.unwrap(),
     )

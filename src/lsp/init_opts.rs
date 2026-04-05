@@ -302,61 +302,65 @@ pub fn get(workspace: WorkspaceFolder) -> InitializeParams {
             name: "gracilaria".into(),
             version: Some(env!("CARGO_PKG_VERSION").into()),
         }),
-        initialization_options: Some(json! {{
-            "cargo": {
-                "buildScripts": { "enable": true }
-            },
-            "procMacro": {
-                "enable": true,
-                "attributes": { "enable": true }
-            },
-            "hover": {
-                "documentation": {
-                    "keywords": { "enable": false },
-                },
-            },
-            "inlayHints": {
-                "closureReturnTypeHints": { "enable": "with_block" },
-                "closingBraceHints": { "minLines": 5 },
-                "closureStyle": "rust_analyzer",
-                "genericParameterHints": { "type": { "enable": true } },
-                "rangeExclusiveHints": { "enable": true },
-                "closureCaptureHints": { "enable": true },
-            },
-            "typing": { "triggerChars": ".=<>{(+" },
-            "assist": { "preferSelf": true },
-            "checkOnSave": true,
-            "diagnostics": { "enable": true },
-            "semanticHighlighting": {
-                "punctuation": {
-                    "separate": {
-                        "macroBang": true
-                    },
-                    "specialization": { "enable": true },
-                    "enable": true
-                }
-            },
-            "workspace": {
-                "symbol": {
-                    "search": { "limit": 1024 }
-                }
-            },
-            "showUnlinkedFileNotification": false,
-            "completion": {
-                "fullFunctionSignatures": { "enable": true, },
-                "autoIter": { "enable": false, },
-                "autoImport": { "enable": true, },
-                "termSearch": { "enable": true, },
-                "autoself": { "enable": true, },
-                "privateEditable": { "enable": true },
-            },
-            "imports": {
-                "granularity": "group",
-            },
-        }}),
+        initialization_options: Some(ra_config()),
         trace: None,
         workspace_folders: Some(vec![workspace]),
 
         ..default()
+    }
+}
+pub fn ra_config() -> serde_json::Value {
+    json! {{
+                "cargo": {
+                    "buildScripts": { "enable": true }
+                },
+                "procMacro": {
+                    "enable": true,
+                    "attributes": { "enable": true }
+                },
+                "hover": {
+                    "documentation": {
+                        "keywords": { "enable": false },
+                    },
+                },
+                "inlayHints": {
+                    "closureReturnTypeHints": { "enable": "with_block" },
+                    "closingBraceHints": { "minLines": 5 },
+                    "closureStyle": "rust_analyzer",
+                    "genericParameterHints": { "type": { "enable": true } },
+                    "rangeExclusiveHints": { "enable": true },
+                    "closureCaptureHints": { "enable": true },
+                },
+                "typing": { "triggerChars": ".=<>{(+" },
+                "assist": { "preferSelf": true },
+                "checkOnSave": true,
+                "diagnostics": { "enable": true },
+                "semanticHighlighting": {
+                    "punctuation": {
+                        "separate": {
+                            "macroBang": true
+                        },
+                        "specialization": { "enable": true },
+                        "enable": true
+                    }
+                },
+                "workspace": {
+                    "symbol": {
+                        "search": { "limit": 1024 }
+                    }
+                },
+                "showUnlinkedFileNotification": false,
+                "completion": {
+                    "fullFunctionSignatures": { "enable": true, },
+                    "autoIter": { "enable": false, },
+                    "autoImport": { "enable": true, },
+                    "termSearch": { "enable": true, },
+                    "autoself": { "enable": true, },
+                    "privateEditable": { "enable": true },
+                },
+                "imports": {
+                    "granularity": "group",
+                },
+            }
     }
 }

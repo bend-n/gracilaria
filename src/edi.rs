@@ -32,7 +32,7 @@ use crate::error::WDebug;
 use crate::gotolist::{At, GoTo};
 use crate::hov::{self, Hovr};
 use crate::lsp::{
-    Anonymize, Client, Map_, PathURI, RequestError, Rq, tdpp,
+    Anonymize, Client, Map_, PathURI, RequestError, Rq, tdpp, vsc_settings,
 };
 use crate::menu::generic::MenuData;
 use crate::meta::META;
@@ -190,6 +190,14 @@ impl Editor {
             .and_then(|x| rooter(&x, "Cargo.toml"))
             .and_then(|x| x.canonicalize().ok());
 
+        let vsc = o
+            .as_ref()
+            .and_then(|x| x.parent())
+            .and_then(|x| rooter(&x, ".vscode"))
+            .map(|x| (x.clone(), x.join(".vscode").join("settings.json")))
+            .filter(|x| x.1.exists())
+            .and_then(|(ws, x)| (vsc_settings::load(&x, &ws)).ok());
+
         let mut loaded_state = false;
         if let Some(ws) = me.workspace.as_deref()
             && let h = hash(&ws)
@@ -265,6 +273,7 @@ impl Editor {
                         .to_string_lossy()
                         .into_owned(),
                 },
+                vsc,
             );
             (&*Box::leak(Box::new(c)), (t2), Some(changed))
         });
