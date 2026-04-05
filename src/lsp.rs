@@ -53,7 +53,6 @@ pub fn run(
     if let Some(v) = vscode_conf {
         opts.initialization_options.as_mut().unwrap().merge(&v);
     };
-    dbg!(opts.initialization_options.as_ref());
     _ = c.request::<Initialize>(&opts).unwrap();
     let x = serde_json::from_value::<InitializeResult>(
         rx.recv().unwrap().response().unwrap().result.unwrap(),

@@ -47,10 +47,10 @@ impl Bar {
                     .for_each(|(x, y)| x.letter = Some(y));
             }
             State::Default => {
-                row[1.."gracilaria".len() + 1]
-                    .iter_mut()
-                    .zip("gracilaria".chars())
-                    .for_each(|(x, y)| x.letter = Some(y));
+                // row[1.."gracilaria".len() + 1]
+                //     .iter_mut()
+                //     .zip("gracilaria".chars())
+                //     .for_each(|(x, y)| x.letter = Some(y));
                 row[w / 2 - fname.len() / 2
                     ..w / 2 - fname.len() / 2 + fname.len()]
                     .iter_mut()
