@@ -95,6 +95,13 @@ macro_rules! lsp {
     ($self:ident + p) => {
         $crate::edi::lsp!($self).zip($self.origin.as_deref())
     };
+    (let $lsp:ident, $path:ident = $self:ident) => {
+        let Some(($lsp, $path)) =
+            $crate::edi::lsp!($self).zip($self.origin.as_deref())
+        else {
+            return;
+        };
+    };
 }
 pub(crate) use lsp;
 macro_rules! inlay {
@@ -128,7 +135,7 @@ macro_rules! change {
                 origin,
             )
             .unwrap();
-            inlay!($self);
+            $crate::edi::inlay!($self);
             let o_ = $self.origin.clone();
             let w = $self.git_dir.clone();
             let r = $self.text.rope.clone();

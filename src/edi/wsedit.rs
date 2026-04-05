@@ -8,7 +8,6 @@ use ropey::Rope;
 
 use super::*;
 use crate::error::WDebug;
-use crate::lsp::Void;
 use crate::text::{SortTedits, TextArea};
 
 impl Editor {

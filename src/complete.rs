@@ -8,8 +8,10 @@ use lsp_types::*;
 use serde::{Deserialize, Serialize};
 
 use crate::FG;
+use crate::edi::{Editor, change, lsp};
+use crate::lsp::Rq;
 use crate::menu::{Key, back, charc, filter, next, score};
-use crate::text::{col, color_, set_a};
+use crate::text::{SortTedits, col, color_, set_a};
 
 #[derive(Serialize, Deserialize)]
 pub struct Complete {
@@ -214,4 +216,48 @@ fn t() {
     };
     // println!("{:?}", now.elapsed());
     x.as_ref().save("x");
+}
+
+impl Editor {
+    pub fn apply_completion(&mut self, x: Complete) {
+        let Some((lsp, o)) = lsp!(self + p) else { unreachable!() };
+        let sel = x.sel(&crate::filter(&self.text));
+        let sel = lsp.resolve(sel.clone()).unwrap();
+        let CompletionItem {
+            text_edit: Some(CompletionTextEdit::Edit(ed)),
+            additional_text_edits,
+            insert_text_format,
+            ..
+        } = sel.clone()
+        else {
+            panic!()
+        };
+        match insert_text_format {
+            Some(InsertTextFormat::SNIPPET) => {
+                self.text.apply_snippet(&ed).unwrap();
+            }
+            _ => {
+                self.text.apply(&ed).unwrap();
+                // self.text
+                //     .cursor
+                //     .first_mut()
+                //     .position =
+                //     s + ed.new_text.chars().count();
+            }
+        }
+        if let Some(mut additional_tedits) = additional_text_edits {
+            additional_tedits.sort_tedits();
+            for additional in additional_tedits {
+                self.text.apply_adjusting(&additional).unwrap();
+            }
+        }
+        if self.hist.record(&self.text) {
+            change!(self, window.clone());
+        }
+        self.requests.sig_help =
+            Rq::new(lsp.runtime.spawn(lsp.request_sig_help(
+                o,
+                self.text.cursor.first().cursor(&self.text.rope),
+            )));
+    }
 }

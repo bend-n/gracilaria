@@ -68,39 +68,11 @@ impl Editor {
                     log::error!("opening terminal failed {e}");
                 }
             }
-            Some(Do::MatchingBrace) => {
+            Some(Do::MatchingBrace) =>
                 if let Some((l, f)) = lsp!(self + p) {
-                    l.matching_brace(f, &mut self.text);
-                }
-            }
-            Some(Do::DeleteBracketPair) => {
-                if let Some((l, f)) = lsp!(self + p) {
-                    if let Ok(x) = l.matching_brace_at(
-                        f,
-                        self.text.cursor.positions(&self.text.rope),
-                    ) {
-                        use itertools::Itertools;
-                        for p in
-                            // self.text.cursor.iter()
-                            x
-                                .iter()
-                                .flatten()
-                                .flat_map(|(a, b)| {
-                                    [a, b].map(|c| {
-                                        self.text
-                                            .rope
-                                            .l_position(*c)
-                                            .unwrap()
-                                    })
-                                })
-                                .sorted()
-                                .rev()
-                        {
-                            self.text.remove(p..p + 1).unwrap();
-                        }
-                    }
-                }
-            }
+                    l.matching_brace(f, &mut self.text)
+                },
+            Some(Do::DeleteBracketPair) => self.delete_bracket_pair(),
             Some(Do::Symbols) =>
                 if let Some((lsp, o)) = lsp!(self + p) {
                     let mut q = Rq::new(
@@ -253,87 +225,10 @@ impl Editor {
                 if let Some(Ok(x)) = x.sel()
                     && let Err(e) = self.go(x.at, window.clone())
                 {
-                    log::error!("alas! {e}");
+                    log::error!("alas! {e}")
                 },
-            Some(Do::RenameSymbol(to)) => {
-                if let Some((lsp, f)) = lsp!(self + p) {
-                    let x = lsp
-                        .request_immediate::<lsp_request!("textDocument/rename")>(
-                            &RenameParams {
-                                text_document_position:
-                                    TextDocumentPositionParams {
-                                        text_document: f.tid(),
-                                        position: self
-                                            .text
-                                            .to_l_position(
-                                                self.text
-                                                    .cursor
-                                                    .first()
-                                                    .position,
-                                            )
-                                            .unwrap(),
-                                    },
-                                new_name: to,
-                                work_done_progress_params: default(),
-                            },
-                        );
-
-                    match x {
-                        Ok(Some(x)) =>
-                            if let Err(e) = self.apply_wsedit(x) {
-                                log::error!(
-                                    "couldnt apply one or more wsedits: \
-                                     {e}"
-                                );
-                            },
-                        Err(RequestError::Failure(
-                            lsp_server::Response {
-                                result: None,
-                                error:
-                                    Some(ResponseError {
-                                        code: -32602,
-                                        message,
-                                        data: None,
-                                    }),
-                                ..
-                            },
-                            ..,
-                        )) => self.bar.last_action = message,
-                        _ => {}
-                    }
-                }
-            }
-            Some(Do::CodeAction) => {
-                if let Some((lsp, f)) = lsp!(self + p) {
-                    let r = lsp
-                    .request::<lsp_request!("textDocument/codeAction")>(
-                        &CodeActionParams {
-                            text_document: f.tid(),
-                            range: self
-                                .text
-                                .to_l_range(
-                                    self.text.cursor.first().position..self.text.cursor.first().position,
-                                )
-                                .unwrap(),
-                            context: CodeActionContext {
-                                trigger_kind: Some(
-                                    CodeActionTriggerKind::INVOKED,
-                                ),
-                                // diagnostics: if let Some((lsp, p)) = lsp!() && let uri = Url::from_file_path(p).unwrap() && let Some(diag) = lsp.requests.diagnostics.get(&uri, &lsp.requests.diagnostics.guard()) { dbg!(diag.iter().filter(|x| {
-                                //                                             self.text.l_range(x.range).unwrap().contains(&self.text.cursor)
-                                //                                         }).cloned().collect()) } else { vec![] },
-                                ..default()
-                            },
-                            work_done_progress_params: default(),
-                            partial_result_params: default(),
-                        },
-                    )
-                    .unwrap();
-
-                    self.state =
-                        State::CodeAction(Rq::new(lsp.runtime.spawn(r.0)));
-                }
-            }
+            Some(Do::RenameSymbol(to)) => self.rename_symbol(to),
+            Some(Do::CodeAction) => self.request_code_actions(),
             Some(Do::CASelectLeft) => {
                 let State::CodeAction(Rq { result: Some(c), .. }) =
                     &mut self.state
@@ -402,236 +297,7 @@ impl Editor {
                 self.origin = Some(PathBuf::try_from(x).unwrap());
                 self.save();
             }
-            Some(Do::Edit) => {
-                self.text.cursor.clear_selections();
-                self.hist.test_push(&mut self.text);
-                let cb4 = self.text.cursor.first();
-                if let Key::Named(Enter | ArrowUp | ArrowDown | Tab) =
-                    event.logical_key
-                    && let CompletionState::Complete(..) =
-                        self.requests.complete
-                {
-                } else {
-                    if let Some(x) = handle2(
-                    &event.logical_key,
-                    &mut self.text,
-                    lsp!(self + p),
-                ) && let Some((l, p)) = lsp!(self + p)
-                    && let Some(
-                        InitializeResult {
-                            capabilities:
-                                ServerCapabilities {
-                                    document_on_type_formatting_provider:
-                                        Some(DocumentOnTypeFormattingOptions {
-                                            first_trigger_character,
-                                            more_trigger_character: Some(t),
-                                        }),
-                                    ..
-                                },
-                            ..
-                        },
-                        ..,
-                    ) = &l.initialized
-                    && (first_trigger_character == first_trigger_character
-                        || t.iter().any(|y| y == x))
-                    && self.text.cursor.inner.len() == 1
-                    && change!(just self).is_some()
-                    && let Ok(Some(mut x)) = l
-                        .request_immediate::<OnTypeFormatting>(
-                            &DocumentOnTypeFormattingParams {
-                                text_document_position:
-                                    TextDocumentPositionParams {
-                                        text_document: p.tid(),
-                                        position: self
-                                            .text
-                                            .to_l_position(
-                                                *self.text.cursor.first(),
-                                            )
-                                            .unwrap(),
-                                    },
-                                ch: x.into(),
-                                options: FormattingOptions {
-                                    tab_size: 4,
-                                    ..default()
-                                },
-                            },
-                        )
-                {
-                    x.sort_tedits();
-                    for x in x {
-                        self.text.apply_snippet_tedit(&x).unwrap();
-                    }
-                }
-                };
-                self.text.scroll_to_cursor();
-                if cb4 != self.text.cursor.first()
-                    && let CompletionState::Complete(Rq {
-                        result: Some(c),
-                        ..
-                    }) = &self.requests.complete
-                    && let at =
-                        self.text.cursor.first().at_(&self.text.rope)
-                    && ((self.text.cursor.first() < c.start)
-                        || (!crate::is_word(at)
-                            && (at != '.' || at != ':')))
-                {
-                    self.requests.complete = CompletionState::None;
-                }
-                if self.requests.sig_help.running()
-                    && cb4 != self.text.cursor.first()
-                    && let Some((lsp, path)) = lsp!(self + p)
-                {
-                    self.requests.sig_help.request(
-                        lsp.runtime.spawn(
-                            lsp.request_sig_help(
-                                path,
-                                self.text
-                                    .cursor
-                                    .first()
-                                    .cursor(&self.text.rope),
-                            ),
-                        ),
-                    );
-                }
-                if self.hist.record(&self.text) {
-                    change!(self, window.clone());
-                }
-                lsp!(self + p).map(|(lsp, o)| {
-                    match event.logical_key.as_ref() {
-                        Key::Character(y)
-                            if let Some(x) = &lsp.initialized
-                                && let Some(x) = &x
-                                    .capabilities
-                                    .signature_help_provider
-                                && let Some(x) = &x.trigger_characters
-                                && x.contains(&y.to_string()) =>
-                        {
-                            self.requests.sig_help.request(
-                                lsp.runtime.spawn(
-                                    lsp.request_sig_help(
-                                        o,
-                                        self.text
-                                            .cursor
-                                            .first()
-                                            .cursor(&self.text.rope),
-                                    ),
-                                ),
-                            );
-                        }
-                        _ => {}
-                    }
-                    match self
-                        .requests
-                        .complete
-                        .consume(CompletionAction::K(
-                            event.logical_key.as_ref(),
-                        ))
-                        .unwrap()
-                    {
-                        Some(CDo::Request(ctx)) => {
-                            let h = DropH::new(
-                                lsp.runtime.spawn(
-                                    lsp.request_complete(
-                                        o,
-                                        self.text
-                                            .cursor
-                                            .first()
-                                            .cursor(&self.text.rope),
-                                        ctx,
-                                    ),
-                                ),
-                            );
-                            let CompletionState::Complete(Rq {
-                                request: x,
-                                result: c,
-                            }) = &mut self.requests.complete
-                            else {
-                                panic!()
-                            };
-                            use ttools::OptionOfMutRefToTuple;
-                            *x = Some((
-                                h,
-                                c.as_ref()
-                                    .map(|x| x.start)
-                                    .or(x.on::<1>().copied())
-                                    .unwrap_or(*self.text.cursor.first()),
-                            ));
-                        }
-                        Some(CDo::SelectNext) => {
-                            let CompletionState::Complete(Rq {
-                                result: Some(c),
-                                ..
-                            }) = &mut self.requests.complete
-                            else {
-                                panic!()
-                            };
-                            c.next(&filter(&self.text));
-                        }
-                        Some(CDo::SelectPrevious) => {
-                            let CompletionState::Complete(Rq {
-                                result: Some(c),
-                                ..
-                            }) = &mut self.requests.complete
-                            else {
-                                panic!()
-                            };
-                            c.back(&filter(&self.text));
-                        }
-                        Some(CDo::Finish(x)) => {
-                            let sel = x.sel(&filter(&self.text));
-                            let sel = lsp.resolve(sel.clone()).unwrap();
-                            let CompletionItem {
-                                text_edit:
-                                    Some(CompletionTextEdit::Edit(ed)),
-                                additional_text_edits,
-                                insert_text_format,
-                                ..
-                            } = sel.clone()
-                            else {
-                                panic!()
-                            };
-                            match insert_text_format {
-                                Some(InsertTextFormat::SNIPPET) => {
-                                    self.text.apply_snippet(&ed).unwrap();
-                                }
-                                _ => {
-                                    self.text.apply(&ed).unwrap();
-                                    // self.text
-                                    //     .cursor
-                                    //     .first_mut()
-                                    //     .position =
-                                    //     s + ed.new_text.chars().count();
-                                }
-                            }
-                            if let Some(mut additional_tedits) =
-                                additional_text_edits
-                            {
-                                additional_tedits.sort_tedits();
-                                for additional in additional_tedits {
-                                    self.text
-                                        .apply_adjusting(&additional)
-                                        .unwrap();
-                                }
-                            }
-                            if self.hist.record(&self.text) {
-                                change!(self, window.clone());
-                            }
-                            self.requests.sig_help = Rq::new(
-                                lsp.runtime.spawn(
-                                    lsp.request_sig_help(
-                                        o,
-                                        self.text
-                                            .cursor
-                                            .first()
-                                            .cursor(&self.text.rope),
-                                    ),
-                                ),
-                            );
-                        }
-                        None => return,
-                    };
-                });
-            }
+            Some(Do::Edit) => self.handle_edit(event),
             Some(Do::Undo) => {
                 self.hist.test_push(&mut self.text);
                 self.hist.undo(&mut self.text).unwrap();
@@ -881,5 +547,249 @@ impl Editor {
             None => {}
         }
         ControlFlow::Continue(())
+    }
+    fn handle_edit(&mut self, event: KeyEvent) {
+        self.text.cursor.clear_selections();
+        self.hist.test_push(&mut self.text);
+        let cb4 = self.text.cursor.first();
+        if let Key::Named(Enter | ArrowUp | ArrowDown | Tab) =
+            event.logical_key
+            && let CompletionState::Complete(..) = self.requests.complete
+        {
+            // dont
+        } else if let Some(x) =
+            handle2(&event.logical_key, &mut self.text, lsp!(self + p))
+            && let Some((l, p)) = lsp!(self + p)
+            && let Some(
+                InitializeResult {
+                    capabilities:
+                        ServerCapabilities {
+                            document_on_type_formatting_provider:
+                                Some(DocumentOnTypeFormattingOptions {
+                                    first_trigger_character,
+                                    more_trigger_character: Some(t),
+                                }),
+                            ..
+                        },
+                    ..
+                },
+                ..,
+            ) = &l.initialized
+            && (first_trigger_character == first_trigger_character
+                || t.iter().any(|y| y == x))
+            && self.text.cursor.inner.len() == 1
+            && change!(just self).is_some()
+            && let Ok(Some(mut x)) = l
+                .request_immediate::<OnTypeFormatting>(
+                    &DocumentOnTypeFormattingParams {
+                        text_document_position:
+                            TextDocumentPositionParams {
+                                text_document: p.tid(),
+                                position: self
+                                    .text
+                                    .to_l_position(
+                                        *self.text.cursor.first(),
+                                    )
+                                    .unwrap(),
+                            },
+                        ch: x.into(),
+                        options: FormattingOptions {
+                            tab_size: 4,
+                            ..default()
+                        },
+                    },
+                )
+        {
+            x.sort_tedits();
+            for x in x {
+                self.text.apply_snippet_tedit(&x).unwrap();
+            }
+        };
+        self.text.scroll_to_cursor();
+        if cb4 != self.text.cursor.first()
+            && let CompletionState::Complete(Rq {
+                result: Some(c), ..
+            }) = &self.requests.complete
+            && let at = self.text.cursor.first().at_(&self.text.rope)
+            && ((self.text.cursor.first() < c.start)
+                || (!crate::is_word(at) && (at != '.' || at != ':')))
+        {
+            self.requests.complete = CompletionState::None;
+        }
+        if self.requests.sig_help.running()
+            && cb4 != self.text.cursor.first()
+            && let Some((lsp, path)) = lsp!(self + p)
+        {
+            self.requests.sig_help.request(lsp.runtime.spawn(
+                lsp.request_sig_help(
+                    path,
+                    self.text.cursor.first().cursor(&self.text.rope),
+                ),
+            ));
+        }
+        if self.hist.record(&self.text) {
+            change!(self, window.clone());
+        }
+        lsp!(let lsp, o = self);
+        match event.logical_key.as_ref() {
+            Key::Character(y)
+                if let Some(x) = &lsp.initialized
+                    && let Some(x) =
+                        &x.capabilities.signature_help_provider
+                    && let Some(x) = &x.trigger_characters
+                    && x.contains(&y.to_string()) =>
+            {
+                self.requests.sig_help.request(lsp.runtime.spawn(
+                    lsp.request_sig_help(
+                        o,
+                        self.text.cursor.first().cursor(&self.text.rope),
+                    ),
+                ));
+            }
+            _ => {}
+        }
+        match self
+            .requests
+            .complete
+            .consume(CompletionAction::K(event.logical_key.as_ref()))
+            .unwrap()
+        {
+            Some(CDo::Request(ctx)) => {
+                let h =
+                    DropH::new(lsp.runtime.spawn(lsp.request_complete(
+                        o,
+                        self.text.cursor.first().cursor(&self.text.rope),
+                        ctx,
+                    )));
+                let CompletionState::Complete(Rq {
+                    request: x,
+                    result: c,
+                }) = &mut self.requests.complete
+                else {
+                    panic!()
+                };
+                use ttools::TryRefTuple;
+                *x = Some((
+                    h,
+                    c.as_ref()
+                        .map(|x| x.start)
+                        .or(x.as_ref().on::<1>().copied())
+                        .unwrap_or(*self.text.cursor.first()),
+                ));
+            }
+            Some(CDo::SelectNext) => {
+                let CompletionState::Complete(Rq {
+                    result: Some(c), ..
+                }) = &mut self.requests.complete
+                else {
+                    panic!()
+                };
+                c.next(&filter(&self.text));
+            }
+            Some(CDo::SelectPrevious) => {
+                let CompletionState::Complete(Rq {
+                    result: Some(c), ..
+                }) = &mut self.requests.complete
+                else {
+                    panic!()
+                };
+                c.back(&filter(&self.text));
+            }
+            Some(CDo::Finish(x)) => self.apply_completion(x),
+            None => return,
+        };
+    }
+    pub fn delete_bracket_pair(&mut self) {
+        lsp!(let l, f = self);
+        let Ok(x) = l.matching_brace_at(
+            f,
+            self.text.cursor.positions(&self.text.rope),
+        ) else {
+            return;
+        };
+        use itertools::Itertools;
+        for p in
+            // self.text.cursor.iter()
+            x
+                .iter()
+                .flatten()
+                .flat_map(|(a, b)| {
+                    [a, b].map(|c| self.text.rope.l_position(*c).unwrap())
+                })
+                .sorted()
+                .rev()
+        {
+            self.text.remove(p..p + 1).unwrap();
+        }
+    }
+    pub fn rename_symbol(&mut self, new_name: String) {
+        lsp!(let lsp, f = self);
+        let x = lsp
+            .request_immediate::<lsp_request!("textDocument/rename")>(
+                &RenameParams {
+                    text_document_position: TextDocumentPositionParams {
+                        text_document: f.tid(),
+                        position: self
+                            .text
+                            .to_l_position(
+                                self.text.cursor.first().position,
+                            )
+                            .unwrap(),
+                    },
+                    new_name,
+                    work_done_progress_params: default(),
+                },
+            );
+
+        match x {
+            Ok(Some(x)) =>
+                if let Err(e) = self.apply_wsedit(x) {
+                    log::error!("couldnt apply one or more wsedits: {e}");
+                },
+            Err(RequestError::Failure(
+                lsp_server::Response {
+                    result: None,
+                    error:
+                        Some(ResponseError {
+                            code: -32602,
+                            message,
+                            data: None,
+                        }),
+                    ..
+                },
+                ..,
+            )) => self.bar.last_action = message,
+            _ => {}
+        }
+    }
+
+    pub fn request_code_actions(&mut self) {
+        lsp!(let lsp, f = self);
+        let r = lsp
+            .request::<lsp_request!("textDocument/codeAction")>(
+                &CodeActionParams {
+                    text_document: f.tid(),
+                    range: self
+                        .text
+                        .to_l_range(
+                            self.text.cursor.first().position
+                                ..self.text.cursor.first().position,
+                        )
+                        .unwrap(),
+                    context: CodeActionContext {
+                        trigger_kind: Some(CodeActionTriggerKind::INVOKED),
+                        // diagnostics: if let Some((lsp, p)) = lsp!() && let uri = Url::from_file_path(p).unwrap() && let Some(diag) = lsp.requests.diagnostics.get(&uri, &lsp.requests.diagnostics.guard()) { dbg!(diag.iter().filter(|x| {
+                        //                                             self.text.l_range(x.range).unwrap().contains(&self.text.cursor)
+                        //                                         }).cloned().collect()) } else { vec![] },
+                        ..default()
+                    },
+                    work_done_progress_params: default(),
+                    partial_result_params: default(),
+                },
+            )
+            .unwrap()
+            .0;
+
+        self.state = State::CodeAction(Rq::new(lsp.runtime.spawn(r)));
     }
 }

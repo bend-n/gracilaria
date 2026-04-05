@@ -8,7 +8,6 @@ use itertools::Itertools;
 use markdown::mdast::{self, Node};
 use ropey::Rope;
 use serde_derive::{Deserialize, Serialize};
-use ttools::{IteratorOfTuples, IteratorOfTuplesWithF};
 const D: Cell = Cell { letter: None, style: Style::new(FG, BG) };
 use crate::{FG, text};
 
