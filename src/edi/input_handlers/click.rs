@@ -33,21 +33,11 @@ impl Editor {
                             ),
                         ));
                     }
-                    self.requests.document_highlights.request(
-                        lsp.runtime.spawn(
-                            lsp.document_highlights(
-                                path,
-                                text.to_l_position(
-                                    text.cursor.first().position,
-                                )
-                                .unwrap(),
-                            ),
-                        ),
-                    );
                 }
                 self.hist.lc = text.cursor.clone();
                 self.chist.push(text.primary_cursor());
                 text.cursor.first().setc(&text.rope);
+                self.refresh_document_highlights();
             }
             Some(Do::NavForward) => self.nav_forward(),
             Some(Do::NavBack) => self.nav_back(),

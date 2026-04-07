@@ -4,6 +4,7 @@ use std::sync::{Arc, LazyLock};
 use std::time::Instant;
 
 use atools::prelude::*;
+pub use cell_buffer::CellBuffer;
 use dsb::Cell;
 use dsb::cell::Style;
 use fimg::pixels::Blend;
@@ -20,15 +21,13 @@ use crate::edi::st::State;
 use crate::edi::{Editor, lsp};
 use crate::gotolist::{At, GoTo};
 use crate::lsp::Rq;
-use crate::sym::{UsedSI};
+use crate::sym::UsedSI;
 use crate::text::{CoerceOption, RopeExt, col, color_};
 use crate::{
     BG, BORDER, CompletionAction, CompletionState, FG, FONT, complete,
     filter, lsp, sig,
 };
-pub use cell_buffer::CellBuffer;
 mod cell_buffer;
-
 
 #[implicit_fn::implicit_fn]
 pub fn render(
@@ -84,10 +83,12 @@ pub fn render(
             style: Style { fg: BG, secondary_color: BG, bg: BG, flags: 0 },
             letter: None,
         });
-        let bmks = text.bookmarks .iter().filter_map(|x| {
-                text.try_char_to_line(x.position).ok()
-                }).collect::<Vec<_>>();
-                
+        let bmks = text
+            .bookmarks
+            .iter()
+            .filter_map(|x| text.try_char_to_line(x.position).ok())
+            .collect::<Vec<_>>();
+
         let z = match &ed.state {
             State::Selection => Some(
                 text.cursor
@@ -98,7 +99,7 @@ pub fn render(
             ),
             _ => None,
         };
-         
+
         text.line_numbers(
             (c, r - 1),
             [67, 76, 87],
@@ -107,17 +108,20 @@ pub fn render(
             (1, 0),
             |_text, mut f, y| {
                 if let State::GoToL(menu) = &ed.state
-                    && let Some(Ok(( GoTo{ at: At::R(r),path}, _))) = menu.sel()
+                    && let Some(Ok((GoTo { at: At::R(r), path }, _))) =
+                        menu.sel()
                     && Some(&*path) == ed.origin.as_deref()
-                {    
+                {
                     if (r.start.line..=r.end.line).contains(&(y as _)) {
                         f.style.fg = col!("#FFCC66");
                     }
                 }
                 if let State::Symbols(Rq { result: Some(menu), .. }) =
                     &ed.state
-                    && let Some(Ok(UsedSI { at: GoTo{ at: At::R(x),..}, .. })) =
-                        menu.sel()
+                    && let Some(Ok(UsedSI {
+                        at: GoTo { at: At::R(x), .. },
+                        ..
+                    })) = menu.sel()
                 {
                     if (x.start.line..=x.end.line).contains(&(y as _)) {
                         f.style.fg = col!("#FFCC66");
@@ -553,100 +557,96 @@ pub fn render(
                 &lsp.diagnostics.guard(),
             )
         {
-            let dawg = diag.iter().filter(|diag| {
-                text.l_range(diag.range).is_some_and(|x| {
-                    x.contains(&text.mapped_index_at(cursor_position))
-                        && (text.vo..text.vo + r)
-                            .contains(&(diag.range.start.line as _))
-                })
-            });
-            for diag in dawg {
-                match diag
-                    .data
-                    .as_ref()
-                    .unwrap_or_default()
-                    .get("rendered")
+            'out: {
+                let dawgs = diag.iter().filter(|diag| {
+                    text.l_range(diag.range).is_some_and(|x| {
+                        x.contains(&text.mapped_index_at(cursor_position))
+                            && (text.vo..text.vo + r)
+                                .contains(&(diag.range.start.line as _))
+                    })
+                });
+                let Some(diag) = dawgs.clone().next() else { break 'out };
+                let dawg = dawgs
+                    .filter_map(|x| {
+                        x.data
+                            .as_ref()
+                            .unwrap_or_default()
+                            .get("rendered")
+                            .and_then(serde_json::Value::as_str)
+                    })
+                    .collect::<String>();
+
+                let mut t = pattypan::term::Terminal::new(
+                    (95, (r.saturating_sub(5)) as _),
+                    false,
+                );
+                for b in simplify_path(
+                    &dawg.replace('\n', "\r\n").replace("⸬", ":"),
+                )
+                .bytes()
                 {
-                    Some(x) if let Some(x) = x.as_str() => {
-                        let mut t = pattypan::term::Terminal::new(
-                            (95, (r.saturating_sub(5)) as _),
-                            false,
-                        );
-                        for b in simplify_path(
-                            &x.replace('\n', "\r\n").replace("⸬", ":"),
-                        )
-                        .bytes()
-                        {
-                            t.rx(
-                                b,
-                                std::fs::File::open("/dev/null")
-                                    .unwrap()
-                                    .as_fd(),
-                            );
-                        }
-                        let y_lim = t
-                            .cells
-                            .rows()
-                            .position(|x| x.iter().all(_.letter.is_none()))
-                            .unwrap_or(20);
-                        let c = t.cells.c() as usize;
-                        let Some(x_lim) = t
-                            .cells
-                            .rows()
-                            .map(
-                                _.iter()
-                                    .rev()
-                                    .take_while(_.letter.is_none())
-                                    .count(),
-                            )
-                            .map(|x| c - x)
-                            .max()
-                        else {
-                            continue;
-                        };
-                        let n = t
-                            .cells
-                            .rows()
-                            .take(y_lim)
-                            .flat_map(|x| &x[..x_lim])
-                            .copied()
-                            .collect::<Vec<_>>();
-                        let Ok((_, left, top, w, h)) = place_around(
-                            {
-                                let (x, y) = text.map_to_visual((
-                                    diag.range.start.character as _,
-                                    diag.range.start.line as usize,
-                                ));
-                                (
-                                    x + text.line_number_offset() + 1,
-                                    y - text.vo,
-                                )
-                            },
-                            i.copy(),
-                            &*n,
-                            x_lim,
-                            17.0,
-                            0.,
-                            0.,
-                            0.,
-                            0.,
-                            true,
-                        ) else {
-                            continue;
-                        };
-                        pass = false;
-                        i.r#box(
-                            (
-                                left.saturating_sub(1) as _,
-                                top.saturating_sub(1) as _,
-                            ),
-                            w as _,
-                            h as _,
-                            BORDER,
-                        );
-                    }
-                    _ => {}
+                    t.rx(
+                        b,
+                        std::fs::File::open("/dev/null").unwrap().as_fd(),
+                    );
                 }
+                let y_lim = t
+                    .cells
+                    .rows()
+                    .position(|x| x.iter().all(_.letter.is_none()))
+                    .unwrap_or(20);
+                let c = t.cells.c() as usize;
+                let Some(x_lim) = t
+                    .cells
+                    .rows()
+                    .map(
+                        _.iter()
+                            .rev()
+                            .take_while(_.letter.is_none())
+                            .count(),
+                    )
+                    .map(|x| c - x)
+                    .max()
+                else {
+                    break 'out;
+                };
+                let n = t
+                    .cells
+                    .rows()
+                    .take(y_lim)
+                    .flat_map(|x| &x[..x_lim])
+                    .copied()
+                    .collect::<Vec<_>>();
+                let Ok((_, left, top, w, h)) = place_around(
+                    {
+                        let (x, y) = text.map_to_visual((
+                            diag.range.start.character as _,
+                            diag.range.start.line as usize,
+                        ));
+                        (x + text.line_number_offset() + 1, y - text.vo)
+                    },
+                    i.copy(),
+                    &*n,
+                    x_lim,
+                    17.0,
+                    0.,
+                    0.,
+                    0.,
+                    0.,
+                    true,
+                ) else {
+                    break 'out;
+                };
+                pass = false;
+                i.r#box(
+                    (
+                        left.saturating_sub(1) as _,
+                        top.saturating_sub(1) as _,
+                    ),
+                    w as _,
+                    h as _,
+                    BORDER,
+                );
             }
         };
         ed.requests.hovering.result.as_ref().filter(|_| pass).map(|x| {

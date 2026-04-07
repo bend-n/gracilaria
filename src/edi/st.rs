@@ -43,6 +43,7 @@ Default => {
     K(Key::Character("q") if ctrl()) => Dead [Quit],
     K(Key::Character("v") if ctrl()) => _ [Paste],
     K(Key::Character("z") if ctrl()) => _ [Undo],
+    K(Key::Character("d") if ctrl()) => _ [GoToMatch],
     K(Key::Character("y") if ctrl()) => _ [Redo],
     K(Key::Character("f") if ctrl()) => Procure((default(), InputRequest::Search)),
     K(Key::Character("o") if ctrl()) => Procure((default(), InputRequest::OpenFile)),

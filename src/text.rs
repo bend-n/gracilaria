@@ -727,10 +727,12 @@ impl TextArea {
             self.set_ho();
         }
     }
-
-    #[lower::apply(saturating)]
     pub fn scroll_to_cursor(&mut self) {
-        let (_, y) = self.primary_cursor();
+        self.scroll_to(*self.cursor.first());
+    }
+    #[lower::apply(saturating)]
+    pub fn scroll_to(&mut self, c: usize) {
+        let y = self.y(c).unwrap();
 
         if !(self.vo..self.vo + self.r).contains(&y) {
             if self.vo > y {

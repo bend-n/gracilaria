@@ -12,6 +12,7 @@ use ropey::Rope;
 use rust_analyzer::lsp::ext::OnTypeFormatting;
 use rust_fsm::StateMachine;
 use tokio_util::task::AbortOnDropHandle as DropH;
+use ttools::{IteratorOfTuples, IteratorOfTuplesWithF, fns, hrf};
 use winit::event::KeyEvent;
 use winit::keyboard::Key;
 use winit::window::Window;
@@ -274,6 +275,40 @@ impl Editor {
                 };
                 c.up();
             }
+            Some(Do::GoToMatch)
+                if let Some(x) =
+                    &self.requests.document_highlights.result =>
+            {
+                let lc = &self
+                    .text
+                    .cursor
+                    .iter()
+                    .max_by_key(|x| x.position)
+                    .unwrap();
+                let n = x
+                    .iter()
+                    .zip(0..)
+                    .filter_map_at::<0>(|x| self.text.l_range(x.range))
+                    .filter_on::<0>(hrf(|x: &std::ops::Range<usize>| {
+                        x.contains(lc)
+                    }))
+                    .max_by_key(|x| x.0.start)
+                    .unwrap()
+                    .1;
+
+                let p = self
+                    .text
+                    .l_position(x[(n + 1) % x.len()].range.start)
+                    .unwrap();
+                self.text.scroll_to(p);
+                if !self.text.cursor.iter().any(|x| *x == p) {
+                    self.text.cursor.add(p, &self.text.rope);
+                }
+            }
+            Some(Do::GoToMatch) =>
+                if self.requests.document_highlights.request.is_none() {
+                    self.refresh_document_highlights();
+                },
             Some(Do::NavBack) => self.nav_back(),
             Some(Do::NavForward) => self.nav_forward(),
             Some(
@@ -791,5 +826,18 @@ impl Editor {
             .0;
 
         self.state = State::CodeAction(Rq::new(lsp.runtime.spawn(r)));
+    }
+    pub fn refresh_document_highlights(&mut self) {
+        lsp!(let lsp, path = self);
+        self.requests.document_highlights.request(
+            lsp.runtime.spawn(
+                lsp.document_highlights(
+                    path,
+                    self.text
+                        .to_l_position(self.text.cursor.first().position)
+                        .unwrap(),
+                ),
+            ),
+        );
     }
 }
