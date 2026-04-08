@@ -369,12 +369,12 @@ fn handle(key: Key, mut text: TextArea) -> TextArea {
     text
 }
 pub static FONT: LazyLock<FontRef<'static>> = LazyLock::new(|| {
-    FontRef::from_index(&include_bytes!("../CascadiaCodeNF.ttf")[..], 0)
+    FontRef::from_index(&include_bytes!("../dist/fonts/CascadiaCodeNF.ttf")[..], 0)
         .unwrap()
 });
 pub static IFONT: LazyLock<FontRef<'static>> = LazyLock::new(|| {
     FontRef::from_index(
-        &include_bytes!("../CascadiaCodeNFItalic.ttf")[..],
+        &include_bytes!("../dist/fonts/CascadiaCodeNFItalic.ttf")[..],
         0,
     )
     .unwrap()
@@ -382,7 +382,7 @@ pub static IFONT: LazyLock<FontRef<'static>> = LazyLock::new(|| {
 
 pub static BIFONT: LazyLock<FontRef<'static>> = LazyLock::new(|| {
     FontRef::from_index(
-        &include_bytes!("../CascadiaCodeNFBoldItalic.ttf")[..],
+        &include_bytes!("../dist/fonts/CascadiaCodeNFBoldItalic.ttf")[..],
         0,
     )
     .unwrap()
@@ -390,7 +390,7 @@ pub static BIFONT: LazyLock<FontRef<'static>> = LazyLock::new(|| {
 
 pub static BFONT: LazyLock<FontRef<'static>> = LazyLock::new(|| {
     FontRef::from_index(
-        &include_bytes!("../CascadiaCodeNFBold.ttf")[..],
+        &include_bytes!("../dist/fonts/CascadiaCodeNFBold.ttf")[..],
         0,
     )
     .unwrap()
