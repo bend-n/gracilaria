@@ -12,7 +12,7 @@ use ropey::Rope;
 use rust_analyzer::lsp::ext::OnTypeFormatting;
 use rust_fsm::StateMachine;
 use tokio_util::task::AbortOnDropHandle as DropH;
-use ttools::{IteratorOfTuples, IteratorOfTuplesWithF, fns, hrf};
+use ttools::{IteratorOfTuples, IteratorOfTuplesWithF, hrf};
 use winit::event::KeyEvent;
 use winit::keyboard::Key;
 use winit::window::Window;
