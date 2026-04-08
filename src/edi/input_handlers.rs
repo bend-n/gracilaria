@@ -28,6 +28,7 @@ pub fn handle2<'a>(
         Character("q") if alt() => text.home(),
         Named(Home) => text.home(),
         Named(End) => text.end(),
+        Named(Tab) if shift() => text.dedent().unwrap(),
         Named(Tab) => text.tab(),
         Named(Delete) => {
             text.right();

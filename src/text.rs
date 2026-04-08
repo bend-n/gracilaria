@@ -1156,6 +1156,18 @@ impl TextArea {
             .context("couldnt apply one or more tedits")?;
         Ok(())
     }
+
+    pub(crate) fn dedent(&mut self) -> rootcause::Result<()> {
+        ceach!(self.cursor, |c| {
+            let s = self.rope.beginning_of_line(*c).context("couldnt get line of cursor")?;
+            if self.rope.slice(s..s + 4).chars().all(char::is_whitespace) {
+                self.remove(s..s + 4)?;
+            }
+            rootcause::Result::<()>::Ok(())
+        } => ?);
+
+        rootcause::Result::Ok(())
+    }
 }
 
 pub fn is_word(r: char) -> bool {
