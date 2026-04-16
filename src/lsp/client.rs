@@ -14,9 +14,11 @@ use lsp_server::{
 use lsp_types::notification::*;
 use lsp_types::request::*;
 use lsp_types::*;
+use rootcause::option_ext::OptionExt;
 use rust_analyzer::lsp::ext::*;
 use tokio::sync::oneshot;
 use ttools::*;
+use winit::platform::x11::ffi::BadImplementation;
 
 use crate::lsp::BehaviourAfter::{self, *};
 use crate::lsp::init_opts::ra_config;
@@ -585,6 +587,65 @@ impl Client {
             &DidChangeConfigurationParams { settings: x },
         )
         .unwrap();
+    }
+    pub fn find_function(
+        &self,
+        at: TextDocumentPositionParams,
+    ) -> Result<
+        impl Future<
+            Output = Result<
+                Option<CallHierarchyItem>,
+                RequestError<CallHierarchyPrepare>,
+            >,
+        >,
+        SendError<Message>,
+    > {
+        self.request::<CallHierarchyPrepare>(&CallHierarchyPrepareParams {
+            text_document_position_params: at,
+            work_done_progress_params: default(),
+        })
+        .map(fst)
+        .map(|x| x.map(|x| x.map(|x| x.and_then(|mut x| x.try_remove(0)))))
+    }
+    pub async fn callers(
+        &self,
+        at: TextDocumentPositionParams,
+    ) -> rootcause::Result<Vec<CallHierarchyIncomingCall>> {
+        let calls = self
+            .request::<CallHierarchyIncomingCalls>(
+                &CallHierarchyIncomingCallsParams {
+                    item: self
+                        .find_function(at)?
+                        .await?
+                        .context("no chi")?,
+                    work_done_progress_params: default(),
+                    partial_result_params: default(),
+                },
+            )?
+            .0
+            .await?
+            .context("Couldnt find incoming calls")?;
+        Ok(calls)
+    }
+    pub async fn calling(
+        &self,
+        at: TextDocumentPositionParams,
+    ) -> rootcause::Result<Vec<CallHierarchyOutgoingCall>> {
+        let calls = self
+            .request::<CallHierarchyOutgoingCalls>(
+                &CallHierarchyOutgoingCallsParams {
+                    item: self
+                        .find_function(at)?
+                        .await?
+                        .context("no chi")?,
+                    work_done_progress_params: default(),
+                    partial_result_params: default(),
+                },
+            )?
+            .0
+            .await?
+            .context("Couldnt find incoming calls")?;
+        Ok(calls)
     }
 }
 

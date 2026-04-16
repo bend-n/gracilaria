@@ -16,8 +16,8 @@ use helix_core::Syntax;
 use helix_core::syntax::{HighlightEvent, Loader};
 use implicit_fn::implicit_fn;
 use lsp_types::{
-    DocumentSymbol, Location, SemanticTokensLegend,
-    SnippetTextEdit, TextEdit,
+    DocumentSymbol, Location, SemanticTokensLegend, SnippetTextEdit,
+    TextEdit,
 };
 pub use manipulations::Manip;
 use rootcause::option_ext::OptionExt;

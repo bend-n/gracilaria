@@ -4,10 +4,13 @@ use std::path::Path;
 use dsb::Cell;
 use dsb::cell::Style;
 use lsp_types::request::GotoImplementation;
-use lsp_types::{Location, LocationLink, Range};
+use lsp_types::{
+    CallHierarchyIncomingCall, CallHierarchyOutgoingCall, Location,
+    LocationLink, Range,
+};
 
 use crate::FG;
-use crate::lsp::RqS;
+use crate::lsp::{Rq, RqS};
 use crate::menu::Key;
 use crate::menu::generic::{GenericMenu, MenuData};
 use crate::rnd::simplify_path;
@@ -18,6 +21,12 @@ pub enum GTL {}
 pub enum O {
     Impl(RqS<(), GotoImplementation>),
     References(RqS<(), lsp_types::request::References>),
+    Incoming(
+        Rq<(), Vec<CallHierarchyIncomingCall>, (), rootcause::Report>,
+    ),
+    Outgoing(
+        Rq<(), Vec<CallHierarchyOutgoingCall>, (), rootcause::Report>,
+    ),
     Bmk,
 }
 impl<'a> Key<'a> for (GoTo<'a>, Option<&'a str>) {
@@ -37,12 +46,7 @@ impl MenuData for GTL {
         x: &'a Self::Data,
     ) -> impl Iterator<Item = Self::Element<'a>> {
         use ttools::*;
-        x.0.iter()
-            // .map(|x| {
-            // x
-            // })
-            .map_at::<0>(GoTo::asref)
-            .map_at::<1>(Option::as_deref)
+        x.0.iter().map_all((GoTo::asref, Option::as_deref))
     }
 
     fn r(
@@ -67,6 +71,7 @@ impl MenuData for GTL {
                 desc.map(str::chars)
                     .into_iter()
                     .flatten()
+                    .chain([' '])
                     .chain(
                         simplify_path(
                             &elem
@@ -132,7 +137,26 @@ impl From<&LocationLink> for GoTo<'static> {
         }
     }
 }
-
+impl From<CallHierarchyIncomingCall> for GoTo<'static> {
+    fn from(
+        CallHierarchyIncomingCall { from, from_ranges }: CallHierarchyIncomingCall,
+    ) -> Self {
+        Self {
+            path: from.uri.to_file_path().unwrap().into(),
+            at: At::R(from_ranges[0]),
+        }
+    }
+}
+impl From<CallHierarchyOutgoingCall> for GoTo<'static> {
+    fn from(
+        CallHierarchyOutgoingCall { to, from_ranges }: CallHierarchyOutgoingCall,
+    ) -> Self {
+        Self {
+            path: to.uri.to_file_path().unwrap().into(),
+            at: At::R(from_ranges[0]),
+        }
+    }
+}
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
 pub enum At {
     R(Range),

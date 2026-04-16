@@ -86,7 +86,12 @@ impl crate::edi::Editor {
                 self.text.set_inlay(x);
             })
         });
-        self.requests.document_highlights.poll(|x, _| x.ok());
+        self.requests.document_highlights.poll(|x, _| {
+            x.ok().map(|mut x| {
+                x.sort_unstable_by_key(|x| x.range.start);
+                x
+            })
+        });
         self.requests.diag.poll(|x, _| x.ok().flatten());
         if let CompletionState::Complete(rq) = &mut self.requests.complete
         {
@@ -190,7 +195,35 @@ impl crate::edi::Editor {
                         })
                     });
                 }
-                _ => {}
+                Some(crate::gotolist::O::Bmk) => {}
+                Some(crate::gotolist::O::Incoming(x)) => {
+                    x.poll(|x, _| {
+                        let x = x.ok()?;
+                        z.data.0 = x
+                            .into_iter()
+                            .map(|x| {
+                                let y = Some(x.from.name.clone());
+                                (GoTo::from(x), y)
+                            })
+                            .collect();
+                        Some(())
+                    });
+                }
+                Some(crate::gotolist::O::Outgoing(x)) => {
+                    x.poll(|x, _| {
+                        let x = x.ok()?;
+                        z.data.0 = x
+                            .into_iter()
+                            .map(|x| {
+                                let y = Some(x.to.name.clone());
+                                (GoTo::from(x), y)
+                            })
+                            .collect();
+                        Some(())
+                    });
+                }
+
+                None => {}
             },
             _ => {}
         }

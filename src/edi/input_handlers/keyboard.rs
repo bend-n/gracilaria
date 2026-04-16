@@ -278,14 +278,14 @@ impl Editor {
             Some(Do::GoToMatch)
                 if let Some(x) =
                     &self.requests.document_highlights.result =>
-            {
+            'out: {
                 let lc = &self
                     .text
                     .cursor
                     .iter()
                     .max_by_key(|x| x.position)
                     .unwrap();
-                let n = x
+                let Some((p_, n)) = x
                     .iter()
                     .zip(0..)
                     .filter_map_at::<0>(|x| self.text.l_range(x.range))
@@ -293,16 +293,24 @@ impl Editor {
                         x.contains(lc)
                     }))
                     .max_by_key(|x| x.0.start)
-                    .unwrap()
-                    .1;
-
-                let p = self
-                    .text
-                    .l_position(x[(n + 1) % x.len()].range.start)
-                    .unwrap();
-                self.text.scroll_to(p);
-                if !self.text.cursor.iter().any(|x| *x == p) {
-                    self.text.cursor.add(p, &self.text.rope);
+                else {
+                    self.bar.last_action =
+                        "couldnt get symbol here".into();
+                    break 'out;
+                };
+                if self.text.cursor.inner.len() == 1
+                    && self.text.cursor.first() != p_.start
+                {
+                    self.text.cursor.just(p_.start, &self.text.rope);
+                } else {
+                    let p = self
+                        .text
+                        .l_position(x[(n + 1) % x.len()].range.start)
+                        .unwrap();
+                    self.text.scroll_to(p);
+                    if !self.text.cursor.iter().any(|x| *x == p) {
+                        self.text.cursor.add(p, &self.text.rope);
+                    }
                 }
             }
             Some(Do::GoToMatch) =>

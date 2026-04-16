@@ -111,6 +111,10 @@ commands!(
     @ RARunTest: "run-test",
     ///  Go to the references to this symbol
     @ References: "references",
+    /// Incoming callers of this function
+    @ Incoming: "callers-of",
+    /// Functions this function calls
+    @ Outgoing: "calling",
     // /// View child modules
     // @ ViewChildModules: "child-modules",
     /// GoTo line,
@@ -410,6 +414,26 @@ impl Editor {
                     ),
                     ..default()
                 }),
+            Cmd::Incoming => {
+                let x = l.runtime.spawn(l.callers(tdpp!(self)));
+                self.state = crate::edi::st::State::GoToL(GoToList {
+                    data: (
+                        vec![],
+                        Some(crate::gotolist::O::Incoming(Rq::new(x))),
+                    ),
+                    ..default()
+                });
+            }
+            Cmd::Outgoing => {
+                let x = l.runtime.spawn(l.calling(tdpp!(self)));
+                self.state = crate::edi::st::State::GoToL(GoToList {
+                    data: (
+                        vec![],
+                        Some(crate::gotolist::O::Outgoing(Rq::new(x))),
+                    ),
+                    ..default()
+                });
+            }
             _ => unimplemented!(),
         }
         Ok(())
