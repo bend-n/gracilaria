@@ -360,7 +360,11 @@ pub fn render(
                 }
             }
         }
-
+            let fw_15 = {
+                let ppem = 15.0;
+                let (fw, _) = dsb::dims(&fonts.regular, ppem);
+                fw
+                };
         let mut place_around =
             |(_x, _y): (usize, usize),
              i: Image<&mut [u8], 3>,
@@ -575,9 +579,8 @@ pub fn render(
                             .and_then(serde_json::Value::as_str)
                     })
                     .collect::<String>();
-
                 let mut t = pattypan::term::Terminal::new(
-                    (95, (r.saturating_sub(5)) as _),
+                    (95, (window.surface_size().width as f32 / fw_15) as u16 - 5),
                     false,
                 );
                 for b in simplify_path(
@@ -628,7 +631,7 @@ pub fn render(
                     i.copy(),
                     &*n,
                     x_lim,
-                    17.0,
+                    15.0,
                     0.,
                     0.,
                     0.,
