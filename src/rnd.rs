@@ -572,6 +572,7 @@ pub fn render(
                 let Some(diag) = dawgs.clone().next() else { break 'out };
                 let dawg = dawgs
                     .filter_map(|x| {
+                        dbg!(&x.related_information);
                         x.data
                             .as_ref()
                             .unwrap_or_default()
@@ -580,7 +581,7 @@ pub fn render(
                     })
                     .collect::<String>();
                 let mut t = pattypan::term::Terminal::new(
-                    (95, (window.surface_size().width as f32 / fw_15) as u16 - 5),
+                    (((window.surface_size().width as f32 / fw_15) as u16 - 5), r as u16 - 5),
                     false,
                 );
                 for b in simplify_path(

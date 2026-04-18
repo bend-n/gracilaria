@@ -142,7 +142,7 @@ pub(crate) fn entry(event_loop: EventLoop) {
     assert_eq!(unsafe { atexit(cleanup) }, 0);
     unsafe { signal(libc::SIGINT, sigint as *const () as usize) };
     let ed: &'static mut Editor = unsafe { __ED.assume_init_mut() };
-    let ppem = 20.0;
+    let ppem = 18.0;
     let ls = 20.0;
     // let ed = Box::leak(Box::new(ed));
 
