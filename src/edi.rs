@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 use Default::default;
-use bind::Bind;
+use ftools::Bind;
 use lsp_server::Connection;
 use lsp_types::*;
 use regex::Regex;
