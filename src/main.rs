@@ -1,8 +1,7 @@
 #![feature(
-    field_projections,
-    trim_prefix_suffix,
-    const_closures,
     yeet_expr,
+    const_array,
+    const_closures,
     adt_const_params,
     inherent_associated_types,
     never_type,
@@ -10,43 +9,30 @@
     btree_set_entry,
     associated_type_defaults,
     array_try_map,
-    tuple_trait,
     unboxed_closures,
-    fn_traits,
-    allocator_api,
-    type_alias_impl_trait,
     decl_macro,
     duration_millis_float,
     anonymous_lifetime_in_impl_trait,
     try_blocks_heterogeneous,
     current_thread_id,
     vec_try_remove,
-    iter_next_chunk,
-    iter_array_chunks,
     lazy_type_alias,
     const_convert,
     const_result_trait_fn,
     thread_local,
-    result_option_map_or_default,
     iter_intersperse,
     stmt_expr_attributes,
-    new_range_api,
     iter_collect_into,
-    mpmc_channel,
-    const_cmp,
     super_let,
     gen_blocks,
-    const_default,
     coroutines,
     iter_from_coroutine,
     coroutine_trait,
-    cell_get_cloned,
     import_trait_associated_functions,
     deref_patterns,
     generic_const_exprs,
     const_trait_impl,
     try_blocks,
-    portable_simd
 )]
 #![allow(incomplete_features, irrefutable_let_patterns, static_mut_refs)]
 mod act;
@@ -231,8 +217,8 @@ pub(crate) fn entry(event_loop: EventLoop) {
             // let before = ed.state.name();
             ed.poll();
             // println!("{before} -> poll -> {}", ed.state.name());
-            // let before = ed.state.name();
-            // let ev = format!("{event:?}");
+            let before = ed.state.name();
+            let ev = format!("{event:?}");
             // use WindowEvent as Event;
             match event {
                 // Event::AboutToWait => {}                

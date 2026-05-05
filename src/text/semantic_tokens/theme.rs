@@ -5,7 +5,7 @@ macro_rules! theme {
         #[rustfmt::skip]
         pub const NAMES: [&str; [$($x),+].len()] = [$($x),+];
         #[rustfmt::skip]
-        pub const COLORS: [[u8; 3]; NAMES.len()] = car::map!([$($color),+], |x| crate::text::color(x));
+        pub const COLORS: [[u8; 3]; NAMES.len()] = ([$($color),+]).map(const |x| crate::text::color(x));
         pub const STYLES: [u8; NAMES.len()] = [$(
             ($($style, )? 0, ).0
         ),+];
@@ -17,7 +17,7 @@ macro_rules! modified {
             pub const MODIFIED: [(&str, &str); $count] = [
                 $(($x, $mod),)+
             ];
-            pub const MCOLORS: [[u8;3]; MODIFIED.len()] = car::map!([$($color),+], |x| crate::text::color(x));
+            pub const MCOLORS: [[u8;3]; MODIFIED.len()] = ([$($color),+]).map(const |x| crate::text::color(x));
             pub const MSTYLE: [u8; MODIFIED.len()] = [$(($($style, )? 0, ).0 ,)+];
         }
 }

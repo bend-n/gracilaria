@@ -19,7 +19,7 @@ impl Editor {
             .consume(CompletionAction::Click)
             .unwrap();
         match self.state.consume(Action::M(bt)).unwrap() {
-            Some(Do::MoveCursor) => {
+            Some(Do::ClickedHover | Do::MoveCursor) => {
                 text.cursor.just(
                     text.mapped_index_at(cursor_position),
                     &text.rope,

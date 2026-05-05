@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::ops::ControlFlow;
 use std::sync::Arc;
 
 use Default::default;
@@ -9,7 +10,11 @@ use rust_fsm::StateMachine;
 use tokio::task::spawn_blocking;
 use tokio_util::task::AbortOnDropHandle as DropH;
 use winit::window::Window;
-
+enum Set<T> {
+    To(T),
+    Reset,
+    Ignore,
+}
 use crate::edi::*;
 use crate::rnd::CellBuffer;
 impl Editor {
@@ -40,34 +45,53 @@ impl Editor {
                     .text
                     .visual_index_at(cursor_position)
                     .map(Mapping::own)
-                    && let Some(_) = lsp!(self) =>
+                    && let Some(x) = lsp!(self)
+                    && x.initialized.is_some()
+                    && let Mapping::Char(e, ..) | Mapping::Fake(.., e) =
+                        hover
+                    && !e.is_whitespace() =>
             'out: {
-                let l = &mut self.requests.hovering.result;
-                if let Some(Hovr {
-                    span: Some([(_x, _y), (_x2, _)]), ..
-                }) = &*l
-                    && let Some(_y) = _y.checked_sub(self.text.vo)
-                    && let Some(_x) = _x.checked_sub(self.text.ho)
-                    && let Some(_x2) = _x2.checked_sub(self.text.ho)
-                    && cursor_position.1 == _y
-                    && (_x..=_x2).contains(
-                        &&(cursor_position.0
-                            - self.text.line_number_offset()
-                            - 1),
-                    )
+                match self
+                    .state
+                    .consume(Action::HOnSomething(cursor_position))
+                    .unwrap()
                 {
-                    break 'out;
-                } else {
-                    // println!("span no longer below cursor; cancel hover {_x}..{_x2} {}", cursor_position.0 - text.line_number_offset() - 1);
-                    *l = None;
-                    w.request_redraw();
+                    Some(Do::SetHovering) => {
+                        let State::Hovering(l) = &mut self.state else {
+                            panic!()
+                        };
+
+                        let l2 = &mut l.result;
+                        if let Some(Hovr {
+                            span: Some([(_x, _y), (_x2, _)]),
+                            ..
+                        }) = &*l2
+                            && let Some(_y) = _y.checked_sub(self.text.vo)
+                            && let Some(_x) = _x.checked_sub(self.text.ho)
+                            && let Some(_x2) =
+                                _x2.checked_sub(self.text.ho)
+                            && cursor_position.1 == _y
+                            && (_x..=_x2).contains(
+                                &&(cursor_position.0
+                                    - self.text.line_number_offset()
+                                    - 1),
+                            )
+                        {
+                            break 'out;
+                        } else {
+                            // println!("span no longer below cursor; cancel hover {_x}..{_x2} {}", cursor_position.0 - text.line_number_offset() - 1);
+                            *l2 = None;
+                            w.request_redraw();
+                        }
+                        self.rq_hover(hover, cursor_position, c);
+                    }
+                    _ => {}
                 }
-                self.rq_hover(hover, cursor_position, c);
+                // let l = &mut self.requests.hovering.result;
             }
             Some(Do::Hover) => {
-                self.requests.def.result = None;
-                self.requests.hovering.result = None;
-                w.request_redraw();
+                self.state.consume(Action::HOnNothing).unwrap();
+                // w.request_redraw();
             }
             None => {}
             x => unreachable!("{x:?}"),
@@ -117,7 +141,7 @@ impl Editor {
                 }
             }
         };
-        if ctrl() {
+        let x = if ctrl() {
             if self
                 .requests
                 .def
@@ -136,8 +160,9 @@ impl Editor {
                     .unwrap()
                     .0,
                 );
-                self.requests.def.request =
-                    Some((DropH::new(handle), cursor_position));
+                Set::To((handle, cursor_position))
+                // self.requests.def.request =
+                // Some((DropH::new(handle), cursor_position));
             } else if self.requests.def.result.as_ref().is_some_and(|em| {
                 let z = em.origin_selection_range.unwrap();
                 (z.start.character..z.end.character).contains(
@@ -145,16 +170,20 @@ impl Editor {
                         as _),
                 )
             }) {
-                self.requests.def.result = None;
+                Set::Reset
+            } else {
+                Set::Ignore
             }
         } else {
-            self.requests.def.result = None;
-        }
-        if let Some((_, c)) = self.requests.hovering.request
-            && c == cursor_position
-        {
-            return;
-        }
+            Set::Reset
+        };
+
+        // match self.state.consume(cursor_position) {}
+        // if let Some((_, c)) = hov.request
+        //     && c == cursor_position
+        // {
+        //     return;
+        // }
         // if !running.insert(hover) {return}
         let (rx, _) = lsp
             .request::<HoverRequest>(&HoverParams {
@@ -235,8 +264,11 @@ impl Editor {
                     .into(),
                 ))
             });
-        self.requests.hovering.request =
-            (DropH::new(handle), cursor_position).into();
+        self.state
+            .consume(Action::SetHovering(handle, cursor_position))
+            .unwrap();
+        // self.requests.hovering.request =
+        // (DropH::new(handle), cursor_position).into();
         // requests.hovering.result = None;
         //                             lsp!().map(|(cl, o)| {
         // let window = window.clone();

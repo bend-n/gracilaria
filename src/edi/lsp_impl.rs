@@ -16,8 +16,8 @@ use crate::{CompletionState, act, sig, sym};
 
 #[derive(Default, Debug, Serialize, Deserialize)]
 pub struct Requests {
-    pub hovering:
-        Rq<Hovr, Option<Hovr>, (usize, usize), RequestError<HoverRequest>>,
+    // pub hovering:
+    // Rq<Hovr, Option<Hovr>, (usize, usize), RequestError<HoverRequest>>,
     pub document_highlights: Rq<
         Vec<DocumentHighlight>,
         Vec<DocumentHighlight>,
@@ -149,6 +149,11 @@ impl crate::edi::Editor {
                     })
                 });
             }
+            State::Hovering(x) => {
+                if x.poll(|x, _| x.ok().flatten()) && x.result.is_none() {
+                    self.state = State::Default;
+                }
+            }
             State::GoToL(z) => match &mut z.data.1 {
                 Some(crate::gotolist::O::References(y)) => {
                     y.poll(|x, _| {
@@ -247,7 +252,7 @@ impl crate::edi::Editor {
                 }
             })
         });
-        self.requests.hovering.poll(|x, _| x.ok().flatten());
+        // self.requests.hovering.poll(|x, _| x.ok().flatten());
         self.requests.git_diff.poll(|x, _| x.ok());
         self.requests.document_symbols.poll(|x, _| {
             x.ok().flatten().map(|x| match x {

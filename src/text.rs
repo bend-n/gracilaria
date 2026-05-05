@@ -52,12 +52,8 @@ pub const fn color_(x: &str) -> [u8; 3] {
     };
     color(&x)
 }
-pub const fn set_a([a, b, c]: [u8; 3], to: f32) -> [u8; 3] {
-    [
-        (((a as f32 / 255.0) * to) * 255.0) as u8,
-        (((b as f32 / 255.0) * to) * 255.0) as u8,
-        (((c as f32 / 255.0) * to) * 255.0) as u8,
-    ]
+pub const fn set_a(x: [u8; 3], to: f32) -> [u8; 3] {
+    x.map(const |x| (((x as f32 / 255.0) * to) * 255.0) as u8)
 }
 pub const fn color<const N: usize>(x: &[u8; N]) -> [u8; (N - 1) / 2]
 where
@@ -65,8 +61,8 @@ where
     [(); (N - 1) % 2 + usize::MAX]:,
 {
     let x = x.tail();
-    let parse = car::map!(x, |b| (b & 0xF) + 9 * (b >> 6)).chunked::<2>();
-    car::map!(parse, |[a, b]| a * 16 + b)
+    let parse = x.map(const |b| (b & 0xF) + 9 * (b >> 6)).chunked::<2>();
+    parse.map(const |[a, b]| a * 16 + b)
 }
 
 macro_rules! col {

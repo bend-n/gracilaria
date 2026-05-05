@@ -97,7 +97,7 @@ fn r(
     let d: Cell = Cell { letter: None, style: ds };
     let mut b = vec![d; c];
     const MAP: [([u8; 3], [u8; 3], &str); 26] = {
-        car::map!(
+        (
             amap::amap! {
             const { CompletionItemKind::TEXT.0 as usize } => ("#9a9b9a", " "),
             const { CompletionItemKind::METHOD.0 as usize } | const { CompletionItemKind::FUNCTION.0 as usize } => ("#FFD173", "λ "),
@@ -118,8 +118,8 @@ fn r(
             const { CompletionItemKind::TYPE_PARAMETER.0 as usize } => ("#9a9b9a", "T "),
             const { CompletionItemKind::KEYWORD.0 as usize } => ("#FFAD66", "as"),
             _ => ("#9a9b9a", " ")
-                    },
-            |(x, y)| (set_a(color_(x), 0.5), color_(x), y)
+                    }).map(const 
+            |(x, y)| (set_a(color_(x), 0.5), color_(x), y),
         )
     };
     let (bgt, col, ty) =

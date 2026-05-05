@@ -1,6 +1,7 @@
-#![allow(dead_code, unused)]
+#![allow(dead_code, unused, unexpected_cfgs)]
 use Default::default;
 use NamedKey::*;
+use lsp_types::request::HoverRequest;
 use lsp_types::*;
 use regex::Regex;
 use rust_analyzer::lsp::ext::Runnable;
@@ -10,7 +11,8 @@ use winit::keyboard::{Key, NamedKey, SmolStr};
 use crate::commands::Commands;
 use crate::edi::handle2;
 use crate::gotolist::GoToList;
-use crate::lsp::{AQErr, Rq, RqS};
+use crate::hov::Hovr;
+use crate::lsp::{AQErr, RequestError, Rq, RqS};
 use crate::menu::generic::{GenericMenu, MenuData};
 use crate::sym::{Symbols, SymbolsList};
 use crate::text::TextArea;
@@ -72,9 +74,26 @@ Default => {
     C(((usize, usize)) => .. if unsafe { CLICKING }) => Selection [StartSelection],
     Changed => RequestBoolean(BoolRequest => BoolRequest::ReloadFile),
     K(Key::Named(Escape)) => _ [Escape],
-    C(_) => _ [Hover],
+    C(_) => Hovered [Hover],
     K(_) => _ [Edit],
     M(_) => _,
+},
+Hovered => {
+    HOnSomething(((usize, usize)) => pos) => Hovering(Rq<Hovr, Option<Hovr>, (usize, usize), RequestError<HoverRequest>> => default()) [SetHovering],
+    HOnNothing => Default,
+},
+Hovering(x) => {
+    // now hovering over something else, cancel existing hover
+    HOnSomething(pos if let Some((_, c)) = x.request && dbg!(c != pos)) => _ [SetHovering],
+    HOnSomething(_) => _ [SetHovering],
+    HOnNothing => Default,
+    SetHovering((tokio::task::JoinHandle<
+            Result<Option<Hovr>, RequestError<HoverRequest>>,
+        >, (usize, usize)) => (h, d)) => Hovering({ let mut x = x; x.request_d(h, d); x }),
+    C(_) => _ [Hover],
+    MovedOut => Default,
+    K(_) => _,
+    M(_) => _ [ClickedHover],
 },
 Command(_) => K(Key::Named(Escape)) => Default,
 Command(t) => K(Key::Named(Enter) if let Some(Ok(x)) = t.sel()) => Default [ProcessCommand((Commands, crate::commands::Cmd) => (t, x))],

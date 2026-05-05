@@ -387,7 +387,7 @@ impl Editor {
     }
     pub fn scroll(&mut self, rows: f32) {
         let rows = if alt() { rows * 8. } else { rows * 3. };
-        let (vo, max) = lower::saturating::math! { if let Some(x)= &mut self.requests.hovering.result && shift() {
+        let (vo, max) = lower::saturating::math! { if let State::Hovering(Rq {result: Some(x), ..}) = &mut self.state && shift() {
             let n = x.item.l();
             (&mut x.item.vo, n - 15)
         } else if let Some((_, ref mut vo, Some(max))) = self.requests.sig_help.result && shift(){

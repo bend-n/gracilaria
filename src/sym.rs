@@ -195,7 +195,7 @@ fn r<'a>(
     let d: Cell = Cell { letter: None, style: ds };
     let mut b = vec![d; c];
     const MAP: [([u8; 3], [u8; 3], &str); 85] = {
-        car::map!(
+        (
             amap::amap! {
             const { SymbolKind::FILE.0 as usize } => ("#9a9b9a", "󰈙 "),
             const { SymbolKind::METHOD.0 as usize } | const { SymbolKind::FUNCTION.0 as usize } => ("#FFD173", "λ "),
@@ -220,8 +220,9 @@ fn r<'a>(
             const { SymbolKind::PROC_MACRO.0 as usize } => ("#f28f74", "r!"),
             const { SymbolKind::BOOKMARK.0 as usize } => ("#73D0FF", "󰃀 "),
             _ => ("#9a9b9a", " ")
-                    },
-            |(x, y)| (set_a(color_(x), 0.5), color_(x), y)
+                    })
+        .map(
+            const |(x, y)| (set_a(color_(x), 0.5), color_(x), y),
         )
     };
     let (bgt, col, ty) = MAP[x.kind.0 as usize];

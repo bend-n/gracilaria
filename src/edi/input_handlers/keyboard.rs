@@ -325,7 +325,9 @@ impl Editor {
                 | Do::MoveCursor
                 | Do::ExtendSelectionToMouse
                 | Do::Hover
-                | Do::InsertCursorAtMouse,
+                | Do::InsertCursorAtMouse
+                | Do::SetHovering
+                | Do::ClickedHover,
             ) => panic!(),
             Some(Do::Save) => match &self.origin {
                 Some(_) => {

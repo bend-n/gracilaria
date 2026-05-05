@@ -20,6 +20,7 @@ use winit::window::{ImeRequestData, Window};
 use crate::edi::st::State;
 use crate::edi::{Editor, lsp};
 use crate::gotolist::{At, GoTo};
+use crate::hov::Hovr;
 use crate::lsp::Rq;
 use crate::sym::UsedSI;
 use crate::text::{CoerceOption, RopeExt, col, color_};
@@ -181,7 +182,7 @@ pub fn render(
                                     x.style.fg = col!("#FFD173");
                                 });
                             } }
-                            if let Some(crate::hov::Hovr{ range:Some(r),..} ) = &ed.requests.hovering.result {
+                            if let State::Hovering(Rq{  result: Some(crate::hov::Hovr{ range:Some(r),..} ), ..}) = &ed.state {
                                x.get_range(text.map_to_visual((r.start.character as _, r.start.line as _)),
                                                         text.map_to_visual((r.end.character as usize, r.end.line as _)))
                                                 .for_each(|x| {
@@ -653,8 +654,11 @@ pub fn render(
                 );
             }
         };
-        ed.requests.hovering.result.as_ref().filter(|_| pass).map(|x| {
-            x.span.clone().map(|[(_x, _y), (_x2, _)]| {
+        if let State::Hovering(Rq { result: Some(x@Hovr { span: Some([(_x, _y,), (_x2, _)]),.. }), ..}, .. ) = &ed.state && pass {
+            
+        // }
+        // ed.requests.hovering.result.as_ref().filter(|_| pass).map(|x| {
+        //     x.span.clone().map(|[(_x, _y), (_x2, _)]| {
                 // let [(_x, _y), (_x2, _)] = text.position(sp);
                 // dbg!(x..=x2, cursor_position.0)
                 // if !(_x..=_x2).contains(&&(cursor_position.0 .wrapping_sub( text.line_number_offset()+1))) {
@@ -662,7 +666,7 @@ pub fn render(
                 // }
 
                 let [_x, _x2] =
-                    [_x, _x2].add(text.line_number_offset() + 1);
+                    [*_x, *_x2].add(text.line_number_offset() + 1);
                 let Some(_y) = _y.checked_sub(text.vo) else {
                     return;
                 };
@@ -699,8 +703,7 @@ pub fn render(
                     h as _,
                     BORDER,
                 );
-            })
-        });
+            }
         let mut drawb = |cells, c| {
             // let ws = ed.workspace.as_deref().unwrap();
             // let (_x, _y) = text.cursor_visual();

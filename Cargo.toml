@@ -14,7 +14,6 @@ swash = "0.2.5"
 winit = "0.31.0-beta.2"
 
 tree-sitter = "0.25.0"
-car = "0.1.2"
 memchr = "2.7.5"
 lower = "0.2.0"
 amap = "0.1.4"

@@ -117,7 +117,12 @@ impl<T, R, E> Rq<T, R, (), E> {
         }
     }
     pub fn request(&mut self, f: task::JoinHandle<Result<R, E>>) {
-        self.request = Some((AbortOnDropHandle::new(f), ()));
+        self.request_d(f, ());
+    }
+}
+impl<T, R, D, E> Rq<T, R, D, E> {
+    pub fn request_d(&mut self, f: task::JoinHandle<Result<R, E>>, d: D) {
+        self.request = Some((AbortOnDropHandle::new(f), d));
     }
 }
 impl<T, R, D, E> Rq<T, R, D, E> {

@@ -41,13 +41,13 @@ impl MenuData for Runb {
         let d: Cell = Cell { letter: None, style: ds };
         let mut b = vec![d; columns];
         const MAP: [([u8; 3], [u8; 3], &str); 70] = {
-            car::map!(
+            (
                 amap::amap! {
                     const { RunnableKind::Cargo as usize } => ("#9a9b9a", "󱣘 "),
                     const { RunnableKind::Shell as usize } => ("#FFAD66", "$ "),
                     _ => ("#9a9b9a", " "),
-                },
-                |(x, y)| (set_a(color_(x), 0.5), color_(x), y)
+                }).map(const 
+                |(x, y)| (set_a(color_(x), 0.5), color_(x), y),
             )
         };
         let (bgt, col, ty) = MAP[x.kind.clone() as usize];
