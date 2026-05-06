@@ -17,8 +17,6 @@
     current_thread_id,
     vec_try_remove,
     lazy_type_alias,
-    const_convert,
-    const_result_trait_fn,
     thread_local,
     iter_intersperse,
     stmt_expr_attributes,

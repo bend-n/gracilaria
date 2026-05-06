@@ -235,6 +235,7 @@ impl Editor {
             //     .stderr(Stdio::inherit())
             //     .spawn()
             //     .unwrap();
+            let w = workspace.clone();
             let (a, b) = Connection::memory();
             std::thread::Builder::new()
                 .name("Rust Analyzer".into())
@@ -244,6 +245,7 @@ impl Editor {
                     std::panic::set_hook(Box::new(move |info| {
                         // iz
                         if std::thread::current_id() == main {
+                            println!("{:x}", hash(&w));
                             dh(info);
                         } else if std::thread::current_id() == ra
                             || std::thread::current()

@@ -47,11 +47,10 @@ use crate::sni::{Snippet, StopP};
 use crate::text::hist::Action;
 
 pub const fn color_(x: &str) -> [u8; 3] {
-    let Some(x): Option<[u8; 7]> = x.as_bytes().try_into().ok() else {
-        panic!()
-    };
+    let x = x.as_bytes().as_array::<7>().unwrap();
     color(&x)
 }
+
 pub const fn set_a(x: [u8; 3], to: f32) -> [u8; 3] {
     x.map(const |x| (((x as f32 / 255.0) * to) * 255.0) as u8)
 }
