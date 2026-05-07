@@ -1,13 +1,17 @@
 use std::iter::{empty, once, repeat_n};
 use std::pin::pin;
+use std::str::FromStr;
 use std::vec::Vec;
 
+use Default::default;
 use dsb::Cell;
 use dsb::cell::Style;
 use itertools::Itertools;
+use lsp_types::{TextDocumentIdentifier, TextDocumentPositionParams};
 use markdown::mdast::{self, Node};
 use ropey::Rope;
 use serde_derive::{Deserialize, Serialize};
+use url::Url;
 const D: Cell = Cell { letter: None, style: Style::new(FG, BG) };
 use crate::{FG, text};
 
@@ -308,6 +312,15 @@ pub struct Hovr {
     pub(crate) item: crate::rnd::CellBuffer,
     #[serde(skip)]
     pub(crate) range: Option<lsp_types::Range>,
+    #[serde(skip, default = "tdp")]
+    pub(crate) tdpp: TextDocumentPositionParams,
 }
-
+fn tdp() -> TextDocumentPositionParams {
+    TextDocumentPositionParams {
+        text_document: TextDocumentIdentifier {
+            uri: Url::from_str("/home/").unwrap(),
+        },
+        position: default(),
+    }
+}
 pub type VisualX = usize;

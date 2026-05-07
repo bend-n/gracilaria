@@ -107,7 +107,7 @@ impl Editor {
         let (lsp, o) = lsp!(self + p).unwrap();
         let text = self.text.clone();
         let mut rang = None;
-        let z = match hover {
+        let tdpp = match hover {
             Mapping::Char(_, _, i) => TextDocumentPositionParams {
                 position: text.to_l_position(i).unwrap(),
                 text_document: o.tid(),
@@ -152,7 +152,7 @@ impl Editor {
                 let handle = lsp.runtime.spawn(
                     lsp.request::<lsp_request!("textDocument/definition")>(
                         &GotoDefinitionParams {
-                            text_document_position_params: z.clone(),
+                            text_document_position_params: tdpp.clone(),
                             work_done_progress_params: default(),
                             partial_result_params: default(),
                         },
@@ -178,6 +178,12 @@ impl Editor {
             Set::Reset
         };
 
+        match x {
+            Set::To((x, y)) =>
+                self.requests.def.request = Some((DropH::new(x), y)),
+            Set::Reset => self.requests.def.result = None,
+            Set::Ignore => {}
+        }
         // match self.state.consume(cursor_position) {}
         // if let Some((_, c)) = hov.request
         //     && c == cursor_position
@@ -187,11 +193,12 @@ impl Editor {
         // if !running.insert(hover) {return}
         let (rx, _) = lsp
             .request::<HoverRequest>(&HoverParams {
-                text_document_position_params: z,
+                text_document_position_params: tdpp.clone(),
                 work_done_progress_params: default(),
             })
             .unwrap();
         // println!("rq hov of {hover:?} (cur {})", requests.hovering.request.is_some());
+        let tdp = tdpp.clone();
         let handle: tokio::task::JoinHandle<Result<Option<Hovr>, _>> =
             lsp.runtime.spawn(async move {
                 let Some(x) = rx.await? else {
@@ -253,6 +260,7 @@ impl Editor {
                 Ok(Some(
                     hov::Hovr {
                         span,
+                        tdpp: tdp,
                         item: CellBuffer {
                             c: w,
                             vo: 0,
@@ -264,8 +272,9 @@ impl Editor {
                     .into(),
                 ))
             });
+
         self.state
-            .consume(Action::SetHovering(handle, cursor_position))
+            .consume(Action::SetHovering(handle, (cursor_position, tdpp)))
             .unwrap();
         // self.requests.hovering.request =
         // (DropH::new(handle), cursor_position).into();

@@ -321,7 +321,7 @@ impl Editor {
             Some(Do::NavForward) => self.nav_forward(),
             Some(
                 Do::Reinsert
-                | Do::GoToDefinition
+                | Do::GoToDefinition(_)
                 | Do::MoveCursor
                 | Do::ExtendSelectionToMouse
                 | Do::Hover

@@ -65,7 +65,7 @@ Default => {
     K(Key::Named(ArrowUp | ArrowLeft | ArrowDown | ArrowRight | Home | End) if shift()) => Selection [StartSelection],
     M(MouseButton::Left if shift()) => Selection [StartSelection],
     M(MouseButton::Left if alt()) => _ [InsertCursorAtMouse],
-    M(MouseButton::Left if ctrl()) => _ [GoToDefinition],
+    M(MouseButton::Left if ctrl()) => _ [GoToDefinition(Option<TextDocumentPositionParams> => None)],
     M(MouseButton::Left) => _ [MoveCursor],
     K(Key::Character("=") if ctrl()) => _ [NavForward],
     K(Key::Character("-") if ctrl()) => _ [NavBack],
@@ -79,20 +79,21 @@ Default => {
     M(_) => _,
 },
 Hovered => {
-    HOnSomething(((usize, usize)) => pos) => Hovering(Rq<Hovr, Option<Hovr>, (usize, usize), RequestError<HoverRequest>> => default()) [SetHovering],
+    HOnSomething(((usize, usize)) => pos) => Hovering(Rq<Hovr, Option<Hovr>, ((usize, usize), TextDocumentPositionParams), RequestError<HoverRequest>> => default()) [SetHovering],
     HOnNothing => Default,
 },
 Hovering(x) => {
     // now hovering over something else, cancel existing hover
-    HOnSomething(pos if let Some((_, c)) = x.request && dbg!(c != pos)) => _ [SetHovering],
+    HOnSomething(pos if let Some((_, (c, _))) = x.request && (c != pos)) => _ [SetHovering],
     HOnSomething(_) => _ [SetHovering],
     HOnNothing => Default,
     SetHovering((tokio::task::JoinHandle<
             Result<Option<Hovr>, RequestError<HoverRequest>>,
-        >, (usize, usize)) => (h, d)) => Hovering({ let mut x = x; x.request_d(h, d); x }),
+        >, ((usize, usize), TextDocumentPositionParams)) => (h, d)) => Hovering({ let mut x = x; x.request_d(h, d); x }),
     C(_) => _ [Hover],
     MovedOut => Default,
     K(_) => _,
+    M(MouseButton::Left if ctrl()) => Default [GoToDefinition(x.request.map(|x| x.1.1).or(x.result.map(|x| x.tdpp)))],
     M(_) => _ [ClickedHover],
 },
 Command(_) => K(Key::Named(Escape)) => Default,

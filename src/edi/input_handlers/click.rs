@@ -53,8 +53,23 @@ impl Editor {
                 text.cursor.first_mut().extend_selection_to(p, &text.rope);
                 self.hist.lc = text.cursor.clone();
             }
-            Some(Do::GoToDefinition) => {
-                if let Some(x) = self.requests.def.result.clone()
+            Some(Do::GoToDefinition(tdpp)) => {
+                dbg!(&tdpp);
+                if let Some(x) = self.requests.def.result.clone().or_else(|| {
+                   tdpp.zip(lsp!(self)).and_then(|(tdpp, lsp)| {
+                      lsp.request_immediate::<lsp_request!("textDocument/definition")>(
+                        &GotoDefinitionParams {
+                            text_document_position_params: tdpp,
+                            work_done_progress_params: default(),
+                            partial_result_params: default(),
+                        },
+                    ).ok()
+                   }).flatten().and_then(|x| match &x {
+                        GotoDefinitionResponse::Link([x, ..]) => Some(x.clone()),
+                    _ => None,
+                   })
+                
+                })
                     && let Err(e) = self.go(&x, w.clone())
                 {
                     log::error!("gtd: {e}");
