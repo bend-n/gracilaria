@@ -361,11 +361,11 @@ pub fn render(
                 }
             }
         }
-            let fw_15 = {
-                let ppem = 15.0;
-                let (fw, _) = dsb::dims(&fonts.regular, ppem);
-                fw
-                };
+        let fw_15 = {
+            let ppem = 15.0;
+            let (fw, _) = dsb::dims(&fonts.regular, ppem);
+            fw
+        };
         let mut place_around =
             |(_x, _y): (usize, usize),
              i: Image<&mut [u8], 3>,
@@ -570,6 +570,7 @@ pub fn render(
                                 .contains(&(diag.range.start.line as _))
                     })
                 });
+
                 let Some(diag) = dawgs.clone().next() else { break 'out };
                 let dawg = dawgs
                     .filter_map(|x| {
@@ -582,7 +583,12 @@ pub fn render(
                     })
                     .collect::<String>();
                 let mut t = pattypan::term::Terminal::new(
-                    (((window.surface_size().width as f32 / fw_15) as u16 - 5), r as u16 - 5),
+                    (
+                        ((window.surface_size().width as f32 / fw_15)
+                            as u16
+                            - 5),
+                        r as u16 - 5,
+                    ),
                     false,
                 );
                 for b in simplify_path(
@@ -598,7 +604,9 @@ pub fn render(
                 let y_lim = t
                     .cells
                     .rows()
-                    .position(|x| x.iter().all(_.letter.is_none()))
+                    .rev()
+                    .position(|x| !x.iter().all(_.letter.is_none()))
+                    .map(|x| t.cells.r() as usize - x)
                     .unwrap_or(20);
                 let c = t.cells.c() as usize;
                 let Some(x_lim) = t
@@ -622,6 +630,7 @@ pub fn render(
                     .flat_map(|x| &x[..x_lim])
                     .copied()
                     .collect::<Vec<_>>();
+
                 let Ok((_, left, top, w, h)) = place_around(
                     {
                         let (x, y) = text.map_to_visual((
@@ -654,56 +663,64 @@ pub fn render(
                 );
             }
         };
-        if let State::Hovering(Rq { result: Some(x@Hovr { span: Some([(_x, _y,), (_x2, _)]),.. }), ..}, .. ) = &ed.state && pass {
-            
-        // }
-        // ed.requests.hovering.result.as_ref().filter(|_| pass).map(|x| {
-        //     x.span.clone().map(|[(_x, _y), (_x2, _)]| {
-                // let [(_x, _y), (_x2, _)] = text.position(sp);
-                // dbg!(x..=x2, cursor_position.0)
-                // if !(_x..=_x2).contains(&&(cursor_position.0 .wrapping_sub( text.line_number_offset()+1))) {
-                //     return
-                // }
-
-                let [_x, _x2] =
-                    [*_x, *_x2].add(text.line_number_offset() + 1);
-                let Some(_y) = _y.checked_sub(text.vo) else {
-                    return;
-                };
-                let Some(_x) = _x.checked_sub(text.ho) else {
-                    return;
-                };
-
-                // if !(cursor_position.1 == _y && (_x..=_x2).contains(&cursor_position.0)) {
-                // return;
-                // }
-
-                let r = x.item.l().min(15);
-                let c = x.item.displayable(r);
-                let Ok((_, left, top, w, h)) = place_around(
-                    (_x, _y),
-                    i.copy(),
-                    c,
-                    x.item.c,
-                    17.0,
-                    10.0,
-                    0.,
-                    0.,
-                    0.,
-                    true,
-                ) else {
-                    return;
-                };
-                i.r#box(
-                    (
-                        left.saturating_sub(1) as _,
-                        top.saturating_sub(1) as _,
+        if let State::Hovering(
+            Rq {
+                result:
+                    Some(
+                        x @ Hovr {
+                            span: Some([(_x, _y), (_x2, _)]), ..
+                        },
                     ),
-                    w as _,
-                    h as _,
-                    BORDER,
-                );
-            }
+                ..
+            },
+            ..,
+        ) = &ed.state
+            && pass
+        {
+            // }
+            // ed.requests.hovering.result.as_ref().filter(|_| pass).map(|x| {
+            //     x.span.clone().map(|[(_x, _y), (_x2, _)]| {
+            // let [(_x, _y), (_x2, _)] = text.position(sp);
+            // dbg!(x..=x2, cursor_position.0)
+            // if !(_x..=_x2).contains(&&(cursor_position.0 .wrapping_sub( text.line_number_offset()+1))) {
+            //     return
+            // }
+
+            let [_x, _x2] = [*_x, *_x2].add(text.line_number_offset() + 1);
+            let Some(_y) = _y.checked_sub(text.vo) else {
+                return;
+            };
+            let Some(_x) = _x.checked_sub(text.ho) else {
+                return;
+            };
+
+            // if !(cursor_position.1 == _y && (_x..=_x2).contains(&cursor_position.0)) {
+            // return;
+            // }
+
+            let r = x.item.l().min(15);
+            let c = x.item.displayable(r);
+            let Ok((_, left, top, w, h)) = place_around(
+                (_x, _y),
+                i.copy(),
+                c,
+                x.item.c,
+                17.0,
+                10.0,
+                0.,
+                0.,
+                0.,
+                true,
+            ) else {
+                return;
+            };
+            i.r#box(
+                (left.saturating_sub(1) as _, top.saturating_sub(1) as _),
+                w as _,
+                h as _,
+                BORDER,
+            );
+        }
         let mut drawb = |cells, c| {
             // let ws = ed.workspace.as_deref().unwrap();
             // let (_x, _y) = text.cursor_visual();

@@ -30,7 +30,7 @@
     deref_patterns,
     generic_const_exprs,
     const_trait_impl,
-    try_blocks,
+    try_blocks
 )]
 #![allow(incomplete_features, irrefutable_let_patterns, static_mut_refs)]
 mod act;
@@ -353,8 +353,11 @@ fn handle(key: Key, mut text: TextArea) -> TextArea {
     text
 }
 pub static FONT: LazyLock<FontRef<'static>> = LazyLock::new(|| {
-    FontRef::from_index(&include_bytes!("../dist/fonts/CascadiaCodeNF.ttf")[..], 0)
-        .unwrap()
+    FontRef::from_index(
+        &include_bytes!("../dist/fonts/CascadiaCodeNF.ttf")[..],
+        0,
+    )
+    .unwrap()
 });
 pub static IFONT: LazyLock<FontRef<'static>> = LazyLock::new(|| {
     FontRef::from_index(
@@ -407,6 +410,7 @@ impl InputRequest {
     }
 }
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
+// #[rustc_x]
 enum BoolRequest {
     ReloadFile,
 }
