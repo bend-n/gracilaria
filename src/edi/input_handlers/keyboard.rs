@@ -345,8 +345,11 @@ impl Editor {
             Some(Do::Edit) => self.handle_edit(event),
             Some(Do::Undo) => {
                 self.hist.test_push(&mut self.text);
-                self.hist.undo(&mut self.text).unwrap();
+                if let Err(e) = self.hist.undo(&mut self.text) {
+                    eprintln!("undo failed: {e}");
+                }
                 self.bar.last_action = "undid".to_string();
+
                 change!(self, window.clone());
             }
             Some(Do::Redo) => {
@@ -758,9 +761,10 @@ impl Editor {
             x
                 .iter()
                 .flatten()
-                .flat_map(|(a, b)| {
-                    [a, b].map(|c| self.text.rope.l_position(*c).unwrap())
-                })
+                .map(|c| self.text.rope.l_position(*c).unwrap())
+                // .flat_map(|(a, b)| {
+                // [a, b].map(|c| self.text.rope.l_position(*c).unwrap())
+                // })
                 .sorted()
                 .rev()
         {

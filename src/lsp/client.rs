@@ -18,7 +18,6 @@ use rootcause::option_ext::OptionExt;
 use rust_analyzer::lsp::ext::*;
 use tokio::sync::oneshot;
 use ttools::*;
-use winit::platform::x11::ffi::BadImplementation;
 
 use crate::lsp::BehaviourAfter::{self, *};
 use crate::lsp::init_opts::ra_config;
@@ -355,10 +354,7 @@ impl Client {
         &self,
         f: &Path,
         x: Vec<Position>,
-    ) -> Result<
-        Vec<Option<(Position, Position)>>,
-        RequestError<MatchingBrace>,
-    > {
+    ) -> Result<Vec<Option<Position>>, RequestError<MatchingBrace>> {
         self.request_immediate::<MatchingBrace>(&MatchingBraceParams {
             text_document: f.tid(),
             positions: x,
@@ -375,7 +371,7 @@ impl Client {
         {
             for (c, p) in t.cursor.inner.iter_mut().zip(x) {
                 if let Some(p) = p {
-                    c.position = t.rope.l_position(p.1).unwrap();
+                    c.position = t.rope.l_position(p).unwrap();
                 }
             }
         }

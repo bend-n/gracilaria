@@ -2,7 +2,7 @@ use std::ops::Deref;
 
 use dsb::Cell;
 
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(serde::Serialize, serde::Deserialize, Hash)]
 pub struct CellBuffer {
     pub c: usize,
     pub vo: usize,

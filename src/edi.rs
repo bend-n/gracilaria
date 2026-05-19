@@ -7,6 +7,7 @@ use std::time::SystemTime;
 
 use Default::default;
 use ftools::Bind;
+use helix_core::snippets::RenderedSnippet;
 use lsp_server::Connection;
 use lsp_types::*;
 use regex::Regex;
@@ -30,7 +31,7 @@ use crate::bar::Bar;
 use crate::commands::Cmds;
 use crate::error::WDebug;
 use crate::gotolist::{At, GoTo};
-use crate::hov::{self, Hovr};
+use crate::hov::{self, Hovr, Hovring, Rendered};
 use crate::lsp::{
     Anonymize, Client, Map_, PathURI, RequestError, Rq, tdpp, vsc_settings,
 };
@@ -95,11 +96,11 @@ macro_rules! lsp {
     ($self:ident + p) => {
         $crate::edi::lsp!($self).zip($self.origin.as_deref())
     };
-    (let $lsp:ident, $path:ident = $self:ident) => {
+    (let $lsp:ident, $path:ident = $self:ident $(else $else:expr)?) => {
         let Some(($lsp, $path)) =
             $crate::edi::lsp!($self).zip($self.origin.as_deref())
         else {
-            return;
+            return $($else)?;
         };
     };
 }
@@ -389,14 +390,17 @@ impl Editor {
     }
     pub fn scroll(&mut self, rows: f32) {
         let rows = if alt() { rows * 8. } else { rows * 3. };
-        let (vo, max) = lower::saturating::math! { if let State::Hovering(Rq {result: Some(x), ..}) = &mut self.state && shift() {
-            let n = x.item.l();
-            (&mut x.item.vo, n - 15)
-        } else if let Some((_, ref mut vo, Some(max))) = self.requests.sig_help.result && shift(){
-            (vo, max - 15)
-        } else {
-            let n =self. text.l() - 1; (&mut self.text.vo, n)
-        }};
+        let (vo, max) = lower::saturating::math! { if let State::Hovering(Rq {result: Some(Hovring {
+        rndr: Some(Rendered  {scroll, .. }),..
+                }), ..}) = &mut self.state && shift() {
+                    // let n = x.item.l();
+                    // (&mut x.item.vo, n - 15)
+                    todo!()
+                } else if let Some((_, ref mut vo, Some(max))) = self.requests.sig_help.result && shift(){
+                    (vo, max - 15)
+                } else {
+                    let n =self. text.l() - 1; (&mut self.text.vo, n)
+                }};
         if rows < 0.0 {
             let rows = rows.ceil().abs() as usize;
             *vo = (*vo + rows).min(max);

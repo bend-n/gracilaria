@@ -1,19 +1,26 @@
+use std::fmt::Debug;
 use std::iter::{empty, once, repeat_n};
+use std::os::fd::AsFd;
 use std::pin::pin;
 use std::str::FromStr;
+use std::sync::Arc;
 use std::vec::Vec;
 
 use Default::default;
 use dsb::Cell;
 use dsb::cell::Style;
+use implicit_fn::implicit_fn;
 use itertools::Itertools;
-use lsp_types::{TextDocumentIdentifier, TextDocumentPositionParams};
+use lsp_types::{
+    Diagnostic, TextDocumentIdentifier, TextDocumentPositionParams,
+};
 use markdown::mdast::{self, Node};
 use ropey::Rope;
 use serde_derive::{Deserialize, Serialize};
 use url::Url;
 const D: Cell = Cell { letter: None, style: Style::new(FG, BG) };
-use crate::{FG, text};
+use crate::rnd::{CellBuffer, simplify_path};
+use crate::{FG, FONT, text};
 
 struct Builder {
     c: usize,
@@ -306,7 +313,7 @@ fn t() {
     println!("{:?}", now.elapsed());
     x.as_ref().save("x");
 }
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Hash)]
 pub struct Hovr {
     pub(crate) span: Option<[(VisualX, usize); 2]>,
     pub(crate) item: crate::rnd::CellBuffer,
@@ -323,4 +330,152 @@ fn tdp() -> TextDocumentPositionParams {
         position: default(),
     }
 }
+
+#[derive(Serialize, Deserialize, Hash)]
+pub struct DiagnosticHovr {
+    pub(crate) span: Option<[(VisualX, usize); 2]>,
+    pub(crate) t: CellBuffer,
+    pub diag: Diagnostic,
+}
+impl DiagnosticHovr {
+    #[implicit_fn]
+    pub fn new(
+        span: Option<[(VisualX, usize); 2]>,
+        diag: Diagnostic,
+        window: &Arc<dyn winit::window::Window>,
+        r: usize,
+    ) -> Self {
+        let fw_15 = {
+            let ppem = 15.0;
+            let (fw, _) = dsb::dims(&FONT, ppem);
+            fw
+        };
+        let dawg = once(&diag)
+            .filter_map(|x| {
+                x.data
+                    .as_ref()
+                    .unwrap_or_default()
+                    .get("rendered")
+                    .and_then(serde_json::Value::as_str)
+            })
+            .collect::<String>();
+        let mut t = pattypan::term::Terminal::new(
+            (
+                ((window.surface_size().width as f32 / fw_15) as u16 - 5),
+                r as u16 - 5,
+            ),
+            false,
+        );
+        for b in
+            simplify_path(&dawg.replace('\n', "\r\n").replace("⸬", ":"))
+                .bytes()
+        {
+            t.rx(b, std::fs::File::open("/dev/null").unwrap().as_fd());
+        }
+        let y_lim = t
+            .cells
+            .rows()
+            .rev()
+            .position(|x| !x.iter().all(_.letter.is_none()))
+            .map(|x| t.cells.r() as usize - x)
+            .unwrap_or(20);
+        let c = t.cells.c() as usize;
+        let Some(x_lim) = t
+            .cells
+            .rows()
+            .map(_.iter().rev().take_while(_.letter.is_none()).count())
+            .map(|x| c - x)
+            .max()
+        else {
+            panic!()
+        };
+        let n = t
+            .cells
+            .rows()
+            .take(y_lim)
+            .flat_map(|x| &x[..x_lim])
+            .copied()
+            .collect();
+
+        Self { t: CellBuffer { c: x_lim, vo: 0, cells: n }, diag, span }
+
+        //         let Ok((_, left, top, w, h)) = place_around(
+        //             {
+        //                 let (x, y) = text.map_to_visual((
+        //                     diag.range.start.character as _,
+        //                     diag.range.start.line as usize,
+        //                 ));
+        //                 (x + text.line_number_offset() + 1, y - text.vo)
+        //             },
+        //             i.copy(),
+        //             &*n,
+        //             x_lim,
+        //             15.0,
+        //             -200.,
+        //             0.,
+        //             0.,
+        //             0.,
+        //             true,
+        //         ) else {
+        //             break 'out;
+        //         };
+        //         pass = false;
+        //         i.r#box(
+        //             (
+        //                 left.saturating_sub(1) as _,
+        //                 top.saturating_sub(1) as _,
+        //             ),
+        //             w as _,
+        //             h as _,
+        //             BORDER,
+        //         );
+        //     }
+        // };
+    }
+}
+impl std::fmt::Debug for DiagnosticHovr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DiagnosticHovr")
+            .field("span", &self.span)
+            .field("diag", &self.diag)
+            .finish()
+    }
+}
+
 pub type VisualX = usize;
+#[derive(Debug, Serialize, Deserialize, Hash)]
+pub enum Hoverable {
+    Lsp(Hovr),
+    Diagnostic(DiagnosticHovr),
+}
+impl Hoverable {
+    pub fn tdpp(&self) -> Option<TextDocumentPositionParams> {
+        match self {
+            Hoverable::Lsp(hovr) => Some(hovr.tdpp.clone()),
+            Hoverable::Diagnostic(_) => None,
+        }
+    }
+}
+#[derive(Debug, Serialize, Deserialize, Default)]
+pub struct Hovring {
+    pub of: Vec<Hoverable>,
+
+    #[serde(skip)]
+    pub rndr: Option<Rendered>,
+}
+impl Debug for Rendered {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Rendered")
+            .field("hash", &self.hash)
+            .field("scroll", &self.scroll)
+            .finish()
+    }
+}
+pub struct Rendered {
+    pub image: fimg::Image<Box<[u8]>, 3>,
+    pub hash: u64,
+    pub scroll: u32, // in pixels
+}
+impl Hovring {
+    pub fn rndr() {}
+}

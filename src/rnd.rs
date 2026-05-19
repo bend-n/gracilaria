@@ -1,12 +1,11 @@
 use std::iter::{chain, once, repeat_n};
-use std::os::fd::AsFd;
 use std::sync::{Arc, LazyLock};
 use std::time::Instant;
 
 use atools::prelude::*;
 pub use cell_buffer::CellBuffer;
-use dsb::Cell;
 use dsb::cell::Style;
+use dsb::{Cell, Fonts};
 use fimg::pixels::Blend;
 use fimg::{Image, OverlayAt};
 use lsp_types::*;
@@ -20,13 +19,13 @@ use winit::window::{ImeRequestData, Window};
 use crate::edi::st::State;
 use crate::edi::{Editor, lsp};
 use crate::gotolist::{At, GoTo};
-use crate::hov::Hovr;
+use crate::hov::{DiagnosticHovr, Hoverable, Hovr, Hovring, Rendered};
 use crate::lsp::Rq;
 use crate::sym::UsedSI;
 use crate::text::{CoerceOption, RopeExt, col, color_};
 use crate::{
     BG, BORDER, CompletionAction, CompletionState, FG, FONT, complete,
-    filter, lsp, sig,
+    filter, hash, lsp, sig,
 };
 mod cell_buffer;
 
@@ -182,13 +181,22 @@ pub fn render(
                                     x.style.fg = col!("#FFD173");
                                 });
                             } }
-                            if let State::Hovering(Rq{  result: Some(crate::hov::Hovr{ range:Some(r),..} ), ..}) = &ed.state {
-                               x.get_range(text.map_to_visual((r.start.character as _, r.start.line as _)),
+                            
+                            if let State::Hovering(Rq{  result: Some(crate::hov::Hovring{ of, ..}),..}) = &ed.state {
+                               for thing in of {
+                                   // if let Some(Hoverable::Diagnostic(DiagnosticHovr{ span, .. })) = thing {
+                                   
+                                   // }
+                                   if let Hoverable::Lsp(Hovr { range:Some(r),.. })=thing {
+                                   x.get_range(text.map_to_visual((r.start.character as _, r.start.line as _)),
                                                         text.map_to_visual((r.end.character as usize, r.end.line as _)))
                                                 .for_each(|x| {
                                                 x.style.secondary_color = col!("#73d0ff");
                                                 x.style.flags |= Style::UNDERCURL;
                                                 });
+                                   }
+                               
+                                                }
                                 // x.range;
                             }
                             if let Some((lsp, p)) = lsp!(ed + p) && let uri = Url::from_file_path(p).unwrap() && let Some(diag) = lsp.diagnostics.get(&uri, &lsp.diagnostics.guard()) {
@@ -361,12 +369,64 @@ pub fn render(
                 }
             }
         }
-        let fw_15 = {
-            let ppem = 15.0;
-            let (fw, _) = dsb::dims(&fonts.regular, ppem);
-            fw
+
+        let position = |(_x, _y): (usize, usize),
+                        (w, h): (usize, usize),
+                        // i: Image<&mut [u8], 3>,
+                        // c: &[Cell],
+                        // columns: usize,
+                        ls_: f32,
+                        ox: f32,
+                        oy: f32,
+                        toy: f32,
+                        add1_below: bool| {
+            let met = super::FONT.metrics(&[]);
+            let fac = ppem / met.units_per_em as f32;
+            let position = (
+                (((_x) as f32 * fw).round() + ox) as usize,
+                (((_y) as f32 * (fh + ls * fac)).round() + oy) as usize,
+            );
+
+            let ls = ls_;
+            // let mut r = c.len() / columns;
+            // assert_eq!(c.len() % columns, 0);
+            // std::fs::write("cells", Cell::store(c));
+
+            if w >= size.width as usize
+                || (position
+                    .1
+                    .checked_add(h)
+                    .is_none_or(|x| x >= size.height as usize)
+                    && !position.1.checked_sub(h).is_some())
+                || position.1 >= size.height as usize
+                || position.0 >= size.width as usize
+            {
+                return Err(());
+            }
+            assert!(
+                w < window.surface_size().width as _
+                    && h < window.surface_size().height as _
+            );
+            let is_above = position.1.checked_sub(h).is_some();
+            let top = position.1.checked_sub(h).unwrap_or(
+                ((((_y + add1_below as usize) as f32) * (fh + ls * fac))
+                    .round()
+                    + toy) as usize,
+            );
+
+            let left = if position.0 + w as usize
+                > window.surface_size().width as usize
+            {
+                window.surface_size().width as usize - w as usize
+            } else {
+                position.0
+            };
+
+            // let (w, h) =
+            // dsb::size(&fonts.regular, ppem, ls, (columns, r));
+            Ok((is_above, left, top))
         };
-        let mut place_around =
+        let place_around =
             |(_x, _y): (usize, usize),
              i: Image<&mut [u8], 3>,
              c: &[Cell],
@@ -376,75 +436,85 @@ pub fn render(
              ox: f32,
              oy: f32,
              toy: f32,
-             add1_below: bool| {
-                let met = super::FONT.metrics(&[]);
-                let fac = ppem / met.units_per_em as f32;
-                let position = (
-                    (((_x) as f32 * fw).round() + ox) as usize,
-                    (((_y) as f32 * (fh + ls * fac)).round() + oy)
-                        as usize,
-                );
+             add1_below: bool,
+             fonts: &mut Fonts<'_, '_, '_, '_>| {
+                // let met = super::FONT.metrics(&[]);
+                // let fac = ppem / met.units_per_em as f32;
+                // let position = (
+                //     (((_x) as f32 * fw).round() + ox) as usize,
+                //     (((_y) as f32 * (fh + ls * fac)).round() + oy)
+                //         as usize,
+                // );
 
                 let ppem = ppem_;
                 let ls = ls_;
-                let mut r = c.len() / columns;
                 assert_eq!(c.len() % columns, 0);
                 let (w, h) =
                     dsb::size(&fonts.regular, ppem, ls, (columns, r));
+
+                let (is_above, left, top) = position(
+                    (_x, _y),
+                    (w, h),
+                    ls_,
+                    ox,
+                    oy,
+                    toy,
+                    add1_below,
+                )?;
                 // std::fs::write("cells", Cell::store(c));
 
-                if w >= size.width as usize
-                    || (position
-                        .1
-                        .checked_add(h)
-                        .is_none_or(|x| x >= size.height as usize)
-                        && !position.1.checked_sub(h).is_some())
-                    || position.1 >= size.height as usize
-                    || position.0 >= size.width as usize
-                {
-                    unsafe {
-                        dsb::render_owned(
-                            c,
-                            (columns, c.len() / columns),
-                            ppem,
-                            fonts,
-                            ls,
-                            true,
-                        )
-                        .save("fail.png")
-                    };
-                    return Err(());
-                }
+                // if w >= size.width as usize
+                //     || (position
+                //         .1
+                //         .checked_add(h)
+                //         .is_none_or(|x| x >= size.height as usize)
+                //         && !position.1.checked_sub(h).is_some())
+                //     || position.1 >= size.height as usize
+                //     || position.0 >= size.width as usize
+                // {
+                //     unsafe {
+                //         dsb::render_owned(
+                //             c,
+                //             (columns, c.len() / columns),
+                //             ppem,
+                //             fonts,
+                //             ls,
+                //             true,
+                //         )
+                //         .save("fail.png")
+                //     };
+                //     return Err(());
+                // }
                 assert!(
                     w < window.surface_size().width as _
                         && h < window.surface_size().height as _
                 );
-                let is_above = position.1.checked_sub(h).is_some();
-                let top = position.1.checked_sub(h).unwrap_or(
-                    ((((_y + add1_below as usize) as f32)
-                        * (fh + ls * fac))
-                        .round()
-                        + toy) as usize,
-                );
-                let (_, y) = dsb::fit(
-                    &fonts.regular,
-                    ppem,
-                    ls,
-                    (
-                        window.surface_size().width as _, /* - left */
-                        ((window.surface_size().height as usize)
-                            .saturating_sub(top)),
-                    ),
-                ); /* suspicious saturation */
-                r = r.min(y);
+                // let is_above = position.1.checked_sub(h).is_some();
+                // let top = position.1.checked_sub(h).unwrap_or(
+                //     ((((_y + add1_below as usize) as f32)
+                //         * (fh + ls * fac))
+                //         .round()
+                //         + toy) as usize,
+                // );
+                // let (_, y) = dsb::fit(
+                //     &fonts.regular,
+                //     ppem,
+                //     ls,
+                //     (
+                //         window.surface_size().width as _, /* - left */
+                //         ((window.surface_size().height as usize)
+                //             .saturating_sub(top)),
+                //     ),
+                // ); /* suspicious saturation */
+                // r = r.min(y);
 
-                let left = if position.0 + w as usize
-                    > window.surface_size().width as usize
-                {
-                    window.surface_size().width as usize - w as usize
-                } else {
-                    position.0
-                };
+                // let left = if position.0 + w as usize
+                //     > window.surface_size().width as usize
+                // {
+                //     window.surface_size().width as usize - w as usize
+                // } else {
+                //     position.0
+                // };
 
                 let (w, h) =
                     dsb::size(&fonts.regular, ppem, ls, (columns, r));
@@ -460,7 +530,7 @@ pub fn render(
                         (left as _, top as _),
                     )
                 };
-                Ok((is_above, left, top, w, h))
+                Ok::<_, ()>((is_above, left, top, w, h))
             };
         // dbg!(&ed.requests.document_symbols);
 
@@ -545,6 +615,7 @@ pub fn render(
                 0.,
                 0.,
                 false,
+                fonts,
             ) {
                 i.filled_box(
                     (w as u32, 0),
@@ -553,173 +624,129 @@ pub fn render(
                     color_("#191d27"),
                 );
             }
-            // dbg    !(x);
         }
-        let mut pass = true;
-        if let Some((lsp, p)) = lsp!(ed + p)
-            && let Some(diag) = lsp.diagnostics.get(
-                &Url::from_file_path(p).unwrap(),
-                &lsp.diagnostics.guard(),
-            )
-        {
-            'out: {
-                let dawgs = diag.iter().filter(|diag| {
-                    text.l_range(diag.range).is_some_and(|x| {
-                        x.contains(&text.mapped_index_at(cursor_position))
-                            && (text.vo..text.vo + r)
-                                .contains(&(diag.range.start.line as _))
-                    })
-                });
-
-                let Some(diag) = dawgs.clone().next() else { break 'out };
-                let dawg = dawgs
-                    .filter_map(|x| {
-                        dbg!(&x.related_information);
-                        x.data
-                            .as_ref()
-                            .unwrap_or_default()
-                            .get("rendered")
-                            .and_then(serde_json::Value::as_str)
-                    })
-                    .collect::<String>();
-                let mut t = pattypan::term::Terminal::new(
-                    (
-                        ((window.surface_size().width as f32 / fw_15)
-                            as u16
-                            - 5),
-                        r as u16 - 5,
-                    ),
-                    false,
-                );
-                for b in simplify_path(
-                    &dawg.replace('\n', "\r\n").replace("⸬", ":"),
-                )
-                .bytes()
-                {
-                    t.rx(
-                        b,
-                        std::fs::File::open("/dev/null").unwrap().as_fd(),
-                    );
-                }
-                let y_lim = t
-                    .cells
-                    .rows()
-                    .rev()
-                    .position(|x| !x.iter().all(_.letter.is_none()))
-                    .map(|x| t.cells.r() as usize - x)
-                    .unwrap_or(20);
-                let c = t.cells.c() as usize;
-                let Some(x_lim) = t
-                    .cells
-                    .rows()
-                    .map(
-                        _.iter()
-                            .rev()
-                            .take_while(_.letter.is_none())
-                            .count(),
-                    )
-                    .map(|x| c - x)
-                    .max()
-                else {
-                    break 'out;
-                };
-                let n = t
-                    .cells
-                    .rows()
-                    .take(y_lim)
-                    .flat_map(|x| &x[..x_lim])
-                    .copied()
-                    .collect::<Vec<_>>();
-
-                let Ok((_, left, top, w, h)) = place_around(
-                    {
-                        let (x, y) = text.map_to_visual((
-                            diag.range.start.character as _,
-                            diag.range.start.line as usize,
-                        ));
-                        (x + text.line_number_offset() + 1, y - text.vo)
+        if let State::Hovering(
+            Rq { result: Some(Hovring { of, rndr }), .. },
+            ..,
+        ) = &mut ed.state
+            && let sized = of.iter().map(|hovr| {
+                (
+                    match hovr {
+                        Hoverable::Lsp(x) => dsb::size(
+                            &fonts.regular,
+                            ppem,
+                            ls,
+                            (x.item.c, x.item.l()),
+                        ),
+                        Hoverable::Diagnostic(x) => dsb::size(
+                            &fonts.regular,
+                            15.0,
+                            -200.,
+                            (x.t.c, x.t.l().into()),
+                        ),
                     },
-                    i.copy(),
-                    &*n,
-                    x_lim,
-                    15.0,
-                    -200.,
-                    0.,
-                    0.,
-                    0.,
+                    hovr,
+                )
+            })
+            && let (tw, th) = sized
+                .clone()
+                .fold((0, 0), |(w_, h_), ((w, h), _)| (w_.max(w), h_ + h))
+            && th != 0
+        // && pass
+        {
+            let hof = hash(&of);
+            let buffer = match rndr {
+                Some(Rendered { hash, image, .. }) if *hash == hof =>
+                    image,
+                _ => {
+                    let mut buffer =
+                        Image::<_, 3>::build(tw as _, th as _).alloc();
+                    let mut oy = 0;
+                    for ((_, h), item) in sized.collect::<Vec<_>>() {
+                        // println!("{item:?}");
+                        let c = match item {
+                            Hoverable::Diagnostic(x) => &x.t,
+                            Hoverable::Lsp(x) => &x.item,
+                        };
+                        // TODO: reflow lsp documentation to fit wide diagnostics?
+                        unsafe {
+                            dsb::render(
+                                &c.cells,
+                                (c.c, c.l()),
+                                match item {
+                                    Hoverable::Diagnostic(_) => 15.0,
+                                    _ => ppem,
+                                },
+                                fonts,
+                                match item {
+                                    Hoverable::Diagnostic(_) => -200.,
+                                    _ => ls,
+                                },
+                                true,
+                                buffer.as_mut(),
+                                (0, oy),
+                            );
+                            //                dsb::render_owned(
+                            //     &c.cells,
+                            //     (c.c, c.l()),
+                            //     match item {
+                            //         Hoverable::Diagnostic(_) => 15.0,
+                            //         _ => ppem,
+                            //     },
+                            //     fonts,
+                            //     match item {
+                            //         Hoverable::Diagnostic(_) => -200.,
+                            //         _ => ls,
+                            //     },
+                            //     true,
+                            // ).save(format!("{oy}.png"));
+
+                            oy += h as u32;
+                        }
+                    }
+                    *rndr = Some(Rendered {
+                        image: buffer.boxed(),
+                        hash: hof,
+                        scroll: 0,
+                    });
+                    &mut rndr.as_mut().unwrap().image
+                }
+            };
+
+            if let Some(
+                Hoverable::Diagnostic(DiagnosticHovr { span, .. })
+                | Hoverable::Lsp(Hovr { span, .. }),
+            ) = of.iter().next()
+                && let Some([(_x, _y), (_x2, _)]) = *span
+                && (_x..=_x2).contains(
+                    &(cursor_position
+                        .0
+                        .wrapping_sub(text.line_number_offset() + 1)),
+                )
+                && let [_x, _x2] =
+                    [_x, _x2].add(text.line_number_offset() + 1)
+                && let Some(_y) = _y.checked_sub(text.vo)
+                && let Some(_x) = _x.checked_sub(text.ho)
+                && (cursor_position.1 == _y
+                    && (_x..=_x2).contains(&cursor_position.0))
+                && let Ok((_, x, y)) = position(
+                    (_x, _y),
+                    (tw, th),
+                    -200.0,
+                    0.0,
+                    0.0,
+                    0.0,
                     true,
-                ) else {
-                    break 'out;
-                };
-                pass = false;
+                )
+            {
+                unsafe { i.overlay_at(&buffer.as_ref(), x as _, y as _) };
                 i.r#box(
-                    (
-                        left.saturating_sub(1) as _,
-                        top.saturating_sub(1) as _,
-                    ),
-                    w as _,
-                    h as _,
+                    (x.saturating_sub(1) as _, y.saturating_sub(1) as _),
+                    tw as _,
+                    th as _,
                     BORDER,
                 );
             }
-        };
-        if let State::Hovering(
-            Rq {
-                result:
-                    Some(
-                        x @ Hovr {
-                            span: Some([(_x, _y), (_x2, _)]), ..
-                        },
-                    ),
-                ..
-            },
-            ..,
-        ) = &ed.state
-            && pass
-        {
-            // }
-            // ed.requests.hovering.result.as_ref().filter(|_| pass).map(|x| {
-            //     x.span.clone().map(|[(_x, _y), (_x2, _)]| {
-            // let [(_x, _y), (_x2, _)] = text.position(sp);
-            // dbg!(x..=x2, cursor_position.0)
-            // if !(_x..=_x2).contains(&&(cursor_position.0 .wrapping_sub( text.line_number_offset()+1))) {
-            //     return
-            // }
-
-            let [_x, _x2] = [*_x, *_x2].add(text.line_number_offset() + 1);
-            let Some(_y) = _y.checked_sub(text.vo) else {
-                return;
-            };
-            let Some(_x) = _x.checked_sub(text.ho) else {
-                return;
-            };
-
-            // if !(cursor_position.1 == _y && (_x..=_x2).contains(&cursor_position.0)) {
-            // return;
-            // }
-
-            let r = x.item.l().min(15);
-            let c = x.item.displayable(r);
-            let Ok((_, left, top, w, h)) = place_around(
-                (_x, _y),
-                i.copy(),
-                c,
-                x.item.c,
-                17.0,
-                10.0,
-                0.,
-                0.,
-                0.,
-                true,
-            ) else {
-                return;
-            };
-            i.r#box(
-                (left.saturating_sub(1) as _, top.saturating_sub(1) as _),
-                w as _,
-                h as _,
-                BORDER,
-            );
         }
         let mut drawb = |cells, c| {
             // let ws = ed.workspace.as_deref().unwrap();
@@ -737,6 +764,7 @@ pub fn render(
                 0.,
                 0.,
                 true,
+                fonts,
             ) else {
                 println!("ra?");
                 return;
@@ -769,6 +797,7 @@ pub fn render(
                     0.,
                     0.,
                     true,
+                    fonts,
                 ) else {
                     println!("ra?");
                     break 'out;
@@ -843,6 +872,7 @@ pub fn render(
                     0.,
                     0.,
                     true,
+                    fonts,
                 ) else {
                     break 'out;
                 };
@@ -867,6 +897,7 @@ pub fn render(
                         -(h as f32),
                         if is_above { 0.0 } else { h as f32 },
                         true,
+                        fonts,
                     ) else {
                         return None;
                     };
@@ -914,6 +945,7 @@ pub fn render(
                                 h as f32
                             },
                             true,
+                            fonts,
                         ) else {
                             return;
                         };
@@ -944,6 +976,7 @@ pub fn render(
                     0.,
                     0.,
                     true,
+                    fonts,
                 ) else {
                     break 'out;
                 };

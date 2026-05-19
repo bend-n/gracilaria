@@ -32,7 +32,7 @@
     const_trait_impl,
     try_blocks
 )]
-#![allow(incomplete_features, irrefutable_let_patterns, static_mut_refs)]
+#![allow(incomplete_features, irrefutable_let_patterns, static_mut_refs, unexpected_cfgs)]
 mod act;
 mod edi;
 mod error;
@@ -215,8 +215,8 @@ pub(crate) fn entry(event_loop: EventLoop) {
             // let before = ed.state.name();
             ed.poll();
             // println!("{before} -> poll -> {}", ed.state.name());
-            let before = ed.state.name();
-            let ev = format!("{event:?}");
+            // let before = ed.state.name();
+            // let ev = format!("{event:?}");
             // use WindowEvent as Event;
             match event {
                 // Event::AboutToWait => {}                

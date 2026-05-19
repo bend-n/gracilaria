@@ -7,7 +7,7 @@ use dsb::cell::Style;
 use itertools::Itertools;
 use kitty_rc::LaunchCommand;
 use lsp_types::LocationLink;
-use rust_analyzer::lsp::ext::{Runnable, RunnableArgs, RunnableKind};
+use rust_analyzer::lsp::ext::{Runnable, RunnableArgs};
 
 use crate::menu::generic::{GenericMenu, MenuData};
 use crate::menu::{Key, charc};
@@ -41,16 +41,14 @@ impl MenuData for Runb {
         let d: Cell = Cell { letter: None, style: ds };
         let mut b = vec![d; columns];
         const MAP: [([u8; 3], [u8; 3], &str); 70] = {
-            (
-                amap::amap! {
-                    const { RunnableKind::Cargo as usize } => ("#9a9b9a", "󱣘 "),
-                    const { RunnableKind::Shell as usize } => ("#FFAD66", "$ "),
-                    _ => ("#9a9b9a", " "),
-                }).map(const 
-                |(x, y)| (set_a(color_(x), 0.5), color_(x), y),
-            )
+            (amap::amap! {
+                0 => ("#9a9b9a", "󱣘 "),
+                1 => ("#FFAD66", "$ "),
+                _ => ("#9a9b9a", " "),
+            })
+            .map(const |(x, y)| (set_a(color_(x), 0.5), color_(x), y))
         };
-        let (bgt, col, ty) = MAP[x.kind.clone() as usize];
+        let (bgt, col, ty) = MAP[0];
         b.iter_mut().zip(ty.chars()).for_each(|(x, c)| {
             *x = (Style::new(col, bgt) | Style::BOLD).basic(c)
         });

@@ -11,7 +11,7 @@ use winit::keyboard::{Key, NamedKey, SmolStr};
 use crate::commands::Commands;
 use crate::edi::handle2;
 use crate::gotolist::GoToList;
-use crate::hov::Hovr;
+use crate::hov::{Hoverable, Hovr, Hovring};
 use crate::lsp::{AQErr, RequestError, Rq, RqS};
 use crate::menu::generic::{GenericMenu, MenuData};
 use crate::sym::{Symbols, SymbolsList};
@@ -79,7 +79,7 @@ Default => {
     M(_) => _,
 },
 Hovered => {
-    HOnSomething(((usize, usize)) => pos) => Hovering(Rq<Hovr, Option<Hovr>, ((usize, usize), TextDocumentPositionParams), RequestError<HoverRequest>> => default()) [SetHovering],
+    HOnSomething(((usize, usize)) => pos) => Hovering(Rq<Hovring, Option<Hovr>, ((usize, usize), TextDocumentPositionParams), RequestError<HoverRequest>> => default()) [SetHovering],
     HOnNothing => Default,
 },
 Hovering(x) => {
@@ -87,9 +87,9 @@ Hovering(x) => {
     HOnSomething(pos if let Some((_, (c, _))) = x.request && (c != pos)) => _ [SetHovering],
     HOnSomething(_) => _ [SetHovering],
     HOnNothing => Default,
-    SetHovering((tokio::task::JoinHandle<
+    SetHovering((Option<Hovring>, tokio::task::JoinHandle<
             Result<Option<Hovr>, RequestError<HoverRequest>>,
-        >, ((usize, usize), TextDocumentPositionParams)) => (h, d)) => Hovering({ let mut x = x; x.request_d(h, d); x }),
+        >, ((usize, usize), TextDocumentPositionParams)) => (v, h, d)) => Hovering({ let mut x = x; x.result = v; x.request_d(h, d); x }),
     C(_) => _ [Hover],
     MovedOut => Default,
 
@@ -131,7 +131,7 @@ Hovering(x) => {
     // duplicate zone
 
 
-    M(MouseButton::Left if ctrl()) => Default [GoToDefinition(x.request.map(|x| x.1.1).or(x.result.map(|x| x.tdpp)))],
+    M(MouseButton::Left if ctrl()) => Default [GoToDefinition(x.request.map(|x| x.1.1).or(x.result.and_then(|x| x.of.iter().find_map(|x| x.tdpp()))))],
     M(_) => _ [ClickedHover],
 },
 Command(_) => K(Key::Named(Escape)) => Default,

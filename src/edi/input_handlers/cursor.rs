@@ -1,5 +1,4 @@
 use std::borrow::Cow;
-use std::ops::ControlFlow;
 use std::sync::Arc;
 
 use Default::default;
@@ -16,6 +15,7 @@ enum Set<T> {
     Ignore,
 }
 use crate::edi::*;
+use crate::hov::{DiagnosticHovr, Hoverable, Hovring};
 use crate::rnd::CellBuffer;
 impl Editor {
     #[implicit_fn]
@@ -62,28 +62,46 @@ impl Editor {
                         };
 
                         let l2 = &mut l.result;
-                        if let Some(Hovr {
-                            span: Some([(_x, _y), (_x2, _)]),
-                            ..
-                        }) = &*l2
-                            && let Some(_y) = _y.checked_sub(self.text.vo)
-                            && let Some(_x) = _x.checked_sub(self.text.ho)
-                            && let Some(_x2) =
-                                _x2.checked_sub(self.text.ho)
-                            && cursor_position.1 == _y
-                            && (_x..=_x2).contains(
-                                &&(cursor_position.0
-                                    - self.text.line_number_offset()
-                                    - 1),
-                            )
-                        {
-                            break 'out;
-                        } else {
-                            // println!("span no longer below cursor; cancel hover {_x}..{_x2} {}", cursor_position.0 - text.line_number_offset() - 1);
-                            *l2 = None;
-                            w.request_redraw();
+                        match l2 {
+                            Some(hovrables) => {
+                                for hoverable in &hovrables.of {
+                                    if let Hoverable::Lsp(Hovr {
+                                        span,
+                                        ..
+                                    })
+                                    | Hoverable::Diagnostic(
+                                        DiagnosticHovr { span, .. },
+                                    ) = &*hoverable
+                                        && let Some([(_x, _y), (_x2, _)]) =
+                                            span
+                                        && let Some(_y) =
+                                            _y.checked_sub(self.text.vo)
+                                        && let Some(_x) =
+                                            _x.checked_sub(self.text.ho)
+                                        && let Some(_x2) =
+                                            _x2.checked_sub(self.text.ho)
+                                        && cursor_position.1 == _y
+                                        && (_x..=_x2).contains(
+                                            &&(cursor_position.0
+                                                - self
+                                                    .text
+                                                    .line_number_offset()
+                                                - 1),
+                                        )
+                                    {
+                                        break 'out;
+                                    } else {
+                                        // println!("span no longer below cursor; cancel hover {_x}..{_x2} {}", cursor_position.0 - text.line_number_offset() - 1);
+                                        *l2 = None;
+                                        w.request_redraw();
+                                        break;
+                                    }
+                                }
+                            }
+                            None => {}
                         }
-                        self.rq_hover(hover, cursor_position, c);
+
+                        self.rq_hover(hover, cursor_position, c, w);
                     }
                     _ => {}
                 }
@@ -97,12 +115,64 @@ impl Editor {
             x => unreachable!("{x:?}"),
         }
     }
+    pub fn find_diags(
+        &mut self,
+        cursor_position: (usize, usize),
+        w: Arc<dyn Window>,
+    ) -> Option<Vec<Hoverable>> {
+        lsp!(let lsp, p = self else None);
+
+        lsp.diagnostics
+            .get(
+                &Url::from_file_path(p).unwrap(),
+                &lsp.diagnostics.guard(),
+            )
+            .map(|diag| {
+                let text = &mut self.text;
+                let r = text.r;
+
+                diag.iter()
+                    .filter(|diag| {
+                        text.l_range(diag.range).is_some_and(|x| {
+                            x.contains(
+                                &text.mapped_index_at(cursor_position),
+                            ) && (text.vo..text.vo + r)
+                                .contains(&(diag.range.start.line as _))
+                        })
+                    })
+                    .cloned()
+                    .map(|x| {
+                        let span = try {
+                            let range = x.range;
+                            let (startx, starty) =
+                                text.l_pos_to_char(range.start)?;
+                            let (endx, endy) =
+                                text.l_pos_to_char(range.end)?;
+                            let x1 = text
+                                .reverse_source_map(starty)?
+                                .nth(startx)?;
+                            let x2 = text
+                                .reverse_source_map(endy)?
+                                .nth(endx)?;
+                            [
+                                (x1, range.start.line as _),
+                                (x2, range.start.line as _),
+                            ]
+                        };
+                        // println!("{x:?}");
+                        DiagnosticHovr::new(span, x, &w, r)
+                    })
+                    .map(Hoverable::Diagnostic)
+                    .collect::<Vec<_>>()
+            })
+    }
     #[implicit_fn]
     pub fn rq_hover(
         &mut self,
         hover: Mapping<'_>,
         cursor_position: (usize, usize),
         c: usize,
+        w: Arc<dyn Window>,
     ) {
         let (lsp, o) = lsp!(self + p).unwrap();
         let text = self.text.clone();
@@ -272,9 +342,13 @@ impl Editor {
                     .into(),
                 ))
             });
-
+        let diags = self.find_diags(cursor_position, w);
         self.state
-            .consume(Action::SetHovering(handle, (cursor_position, tdpp)))
+            .consume(Action::SetHovering(
+                diags.map(|of| Hovring { of, ..default() }),
+                handle,
+                (cursor_position, tdpp),
+            ))
             .unwrap();
         // self.requests.hovering.request =
         // (DropH::new(handle), cursor_position).into();

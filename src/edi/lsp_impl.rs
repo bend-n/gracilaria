@@ -1,5 +1,6 @@
 use std::iter::repeat;
 
+use Default::default;
 use lsp_server::Request as LRq;
 use lsp_types::request::*;
 use lsp_types::*;
@@ -8,7 +9,7 @@ use ttools::{Tupl, With};
 
 use crate::complete::Complete;
 use crate::edi::st::*;
-use crate::hov::Hovr;
+use crate::hov::{Hoverable, Hovring};
 use crate::lsp::{RequestError, Rq};
 use crate::runnables::Runnables;
 use crate::sym::GoTo;
@@ -150,7 +151,21 @@ impl crate::edi::Editor {
                 });
             }
             State::Hovering(x) => {
-                if x.poll(|x, _| x.ok().flatten()) && x.result.is_none() {
+                if x.poll(|x, (_, p)| {
+                    Some(match p {
+                        Some(mut p) if !p.of.is_empty() => {
+                            p.of.extend(
+                                x.ok().flatten().map(Hoverable::Lsp),
+                            );
+                            p
+                        }
+                        _ => Hovring {
+                            of: vec![Hoverable::Lsp(x.ok()??)],
+                            ..default()
+                        },
+                    })
+                }) && x.result.is_none()
+                {
                     self.state = State::Default;
                 }
             }
