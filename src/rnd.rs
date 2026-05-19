@@ -22,10 +22,10 @@ use crate::gotolist::{At, GoTo};
 use crate::hov::{DiagnosticHovr, Hoverable, Hovr, Hovring, Rendered};
 use crate::lsp::Rq;
 use crate::sym::UsedSI;
-use crate::text::{CoerceOption, RopeExt, col, color_};
+use crate::text::{CoerceOption, RopeExt, TextArea, col, color_};
 use crate::{
     BG, BORDER, CompletionAction, CompletionState, FG, FONT, complete,
-    filter, hash, lsp, sig,
+    filter, hash, sig,
 };
 mod cell_buffer;
 
@@ -151,150 +151,227 @@ pub fn render(
         //     off += label.chars().count();
         //     }
         // }
+        let wt = |(_c, _r),
+                  text: &TextArea,
+                  mut x: crate::text::Output<'_>| {
+            if let Some(hl) = &ed.requests.document_highlights.result {
+                for DocumentHighlight { range: r, .. } in hl {
+                    // let s = match kind {
+                    //     Some(DocumentHighlightKind::READ) => Style::UNDERLINE,
+                    //     Some(DocumentHighlightKind::WRITE) => Style::UNDERLINE,
+                    //     _ => Style::UNDERCURL,
+                    // };
+                    let (x1, y1) = text.map_to_visual((
+                        r.start.character as _,
+                        r.start.line as _,
+                    ));
+                    let (x2, y2) = text.map_to_visual((
+                        r.end.character as _,
+                        r.end.line as _,
+                    ));
 
-        text.write_to((cells, (c, r)),
-                        (t_ox, 0),
-                        z,
-                        |(_c, _r), text,  mut x| {
-                            if let Some(hl) = &ed.requests.document_highlights.result {
-                                for DocumentHighlight { range: r, .. } in hl {
-                                    // let s = match kind {
-                                    //     Some(DocumentHighlightKind::READ) => Style::UNDERLINE,
-                                    //     Some(DocumentHighlightKind::WRITE) => Style::UNDERLINE,
-                                    //     _ => Style::UNDERCURL,
-                                    // };
-                                    let (x1, y1) = text.map_to_visual((r.start.character as _, r.start.line as _));
-                                    let (x2, y2) = text.map_to_visual((r.end.character as _, r.end.line as _));
-                                    
-                                    x.get_simple((x1, y1), (x2, y2)).coerce().for_each(|x| {
-                                        x.style.bg = col!("#3a4358");
-                                    }); 
-                                }
-                            }
-                            if let Some(LocationLink {
-                                origin_selection_range: Some(r), ..
-                            }) = ed.requests.def.result { _ = try {
-                                let (x1, y1) = text.map_to_visual((r.start.character as _, r.start.line as _));
-                                let (x2, y2) = text.map_to_visual((r.end.character as _, r.end.line as _));
-                                x.get_simple((x1, y1), (x2, y2))?.iter_mut().for_each(|x| {
-                                    x.style.flags |= Style::UNDERLINE;
-                                    x.style.fg = col!("#FFD173");
-                                });
-                            } }
-                            
-                            if let State::Hovering(Rq{  result: Some(crate::hov::Hovring{ of, ..}),..}) = &ed.state {
-                               for thing in of {
-                                   // if let Some(Hoverable::Diagnostic(DiagnosticHovr{ span, .. })) = thing {
-                                   
-                                   // }
-                                   if let Hoverable::Lsp(Hovr { range:Some(r),.. })=thing {
-                                   x.get_range(text.map_to_visual((r.start.character as _, r.start.line as _)),
-                                                        text.map_to_visual((r.end.character as usize, r.end.line as _)))
-                                                .for_each(|x| {
-                                                x.style.secondary_color = col!("#73d0ff");
-                                                x.style.flags |= Style::UNDERCURL;
-                                                });
-                                   }
-                               
-                                                }
-                                // x.range;
-                            }
-                            if let Some((lsp, p)) = lsp!(ed + p) && let uri = Url::from_file_path(p).unwrap() && let Some(diag) = lsp.diagnostics.get(&uri, &lsp.diagnostics.guard()) {
-                                #[derive(Copy, Clone, Debug)]
-                                enum EType {
-                                    Hint, Info, Error,Warning,Related(DiagnosticSeverity),
-                                }
-                                let mut occupied = vec![];
-                                diag.iter().flat_map(|diag| {
-                                    let sev =  diag.severity.unwrap_or(DiagnosticSeverity::ERROR);
-                                    let sev_ = match sev {
-                                        DiagnosticSeverity::ERROR => EType::Error,
-                                        DiagnosticSeverity::WARNING => EType::Warning,
-                                        DiagnosticSeverity::HINT => EType::Hint,
-                                        _ => EType::Info,
-                                    };
-                                    once((diag.range, &*diag.message, sev_)).chain(diag.related_information.iter().flatten().filter(|sp| sp.location.uri == uri).map(move |x| {
-                                        (x.location.range, &*x.message, EType::Related(sev))
-                                    }))
-                                }).for_each(|(mut r, m, sev)| {
-                                        if let EType::Related(x) = sev && x != DiagnosticSeverity::ERROR {
-                                            return;
-                                        }
-                                        let p = r.start.line;
-                                        while occupied.contains(&r.start.line) {
-                                            r.start.line+=1;
-                                        };
-                                        occupied.push(r.start.line);
-                                        let f = |cell:&mut Cell| {
-                                            cell.style.bg.blend(match sev {
-                                                EType::Error => col!("#ff66662c"),
-                                                EType::Warning | EType::Hint | EType::Info => col!("#9469242c"),
-                                                EType::Related(DiagnosticSeverity::ERROR) => col!("#dfbfff26"),
-                                                EType::Related(_) => col!("#ffad6625"),
-                                            });
-                                        };
-                                        if r.start == r.end {
-                                            x.get(text.map_to_visual((r.start.character as _, p as _))).map(f);
-                                        } else {
-                                            x.get_range(text.map_to_visual((r.start.character as _, p as _)),
-                                                        text.map_to_visual((r.end.character as usize, r.end.line as _)))
-                                                .for_each(f)
-                                        }
-                                        let l = r.start.line as usize;
-                                        let Some(x_) = text.visual_eol(l).map(_+2) else {
-                                            return;
-                                        };
-                                    let m = m.lines().next().unwrap_or(m);
-                                    x.get_range(
-                                        (x_, l),
-                                        (x_ + m.chars().count(), l),
-                                    ).zip(m.chars()).for_each(|(x, ch)| {
-                                        let (bg, fg) = match sev {
-                                            EType::Warning => {  col!("#ff942f1b", "#fa973a") },
-                                            EType::Error => { col!("#ff942f1b", "#f26462") },
-                                            EType::Related(DiagnosticSeverity::WARNING) => { col!("#dfbfff26", "#DFBFFF") }
-                                            _ => return
-                                        };
-                                        x.style.bg.blend(bg);
-                                        x.style.fg = fg;
-                                        x.letter = Some(ch);
-                                    })
-                                });
-                            }
-                            if let State::Search(re, j, _) = &ed.state {
-                                re.find_iter(&text.rope.to_string())
-                                    .enumerate()
-                                    .for_each(|(i, m)| {
-                                        for x in x.get_range(
-                                        text.map_to_visual(text.xy(text.rope.byte_to_char(m.start())).unwrap()),text.map_to_visual(                                             text.xy(text
-                                                    .rope
-                                                    .byte_to_char(
-                                                        m.end(),
-                                                    )).unwrap()))
-                                         {
-                                            x.style.bg = if i == *j {
-                                                [105, 83, 128]
-                                            } else {
-                                                [65, 62, 83]
-                                            }
-                                        }
-                                    });
-                            }
-                        },
-                        ed.origin.as_deref(),
-                        match lsp!(ed) {
-                                Some(lsp::Client { initialized: Some(lsp_types::InitializeResult {
-                                    capabilities: ServerCapabilities {
-                                        semantic_tokens_provider:
-                                        Some(SemanticTokensServerCapabilities::SemanticTokensOptions(SemanticTokensOptions{
-                                            legend,..
-                                        })),..
-                                    }, ..
-                                }), ..
-                            }) => Some(legend),
-                            _ => None,
+                    x.get_simple((x1, y1), (x2, y2)).coerce().for_each(
+                        |x| {
+                            x.style.bg = col!("#3a4358");
                         },
                     );
+                }
+            }
+            if let Some(LocationLink {
+                origin_selection_range: Some(r),
+                ..
+            }) = ed.requests.def.result
+            {
+                _ = try {
+                    let (x1, y1) = text.map_to_visual((
+                        r.start.character as _,
+                        r.start.line as _,
+                    ));
+                    let (x2, y2) = text.map_to_visual((
+                        r.end.character as _,
+                        r.end.line as _,
+                    ));
+                    x.get_simple((x1, y1), (x2, y2))?.iter_mut().for_each(
+                        |x| {
+                            x.style.flags |= Style::UNDERLINE;
+                            x.style.fg = col!("#FFD173");
+                        },
+                    );
+                }
+            }
+
+            if let State::Hovering(Rq {
+                result: Some(crate::hov::Hovring { of, .. }),
+                ..
+            }) = &ed.state
+            {
+                for thing in of {
+                    // if let Some(Hoverable::Diagnostic(DiagnosticHovr{ span, .. })) = thing {
+
+                    // }
+                    if let Hoverable::Lsp(Hovr {
+                        range: Some(r), ..
+                    }) = thing
+                    {
+                        x.get_range(
+                            text.map_to_visual((
+                                r.start.character as _,
+                                r.start.line as _,
+                            )),
+                            text.map_to_visual((
+                                r.end.character as usize,
+                                r.end.line as _,
+                            )),
+                        )
+                        .for_each(|x| {
+                            x.style.secondary_color = col!("#73d0ff");
+                            x.style.flags |= Style::UNDERCURL;
+                        });
+                    }
+                }
+                // x.range;
+            }
+            if let Some((lsp, p)) = lsp!(ed + p)
+                && let uri = Url::from_file_path(p).unwrap()
+                && let Some(diag) =
+                    lsp.diagnostics.get(&uri, &lsp.diagnostics.guard())
+            {
+                #[derive(Copy, Clone, Debug)]
+                enum EType {
+                    Hint,
+                    Info,
+                    Error,
+                    Warning,
+                    Related(DiagnosticSeverity),
+                }
+                let mut occupied = vec![];
+                diag.iter()
+                    .flat_map(|diag| {
+                        let sev = diag
+                            .severity
+                            .unwrap_or(DiagnosticSeverity::ERROR);
+                        let sev_ = match sev {
+                            DiagnosticSeverity::ERROR => EType::Error,
+                            DiagnosticSeverity::WARNING => EType::Warning,
+                            DiagnosticSeverity::HINT => EType::Hint,
+                            _ => EType::Info,
+                        };
+                        once((diag.range, &*diag.message, sev_)).chain(
+                            diag.related_information
+                                .iter()
+                                .flatten()
+                                .filter(|sp| sp.location.uri == uri)
+                                .map(move |x| {
+                                    (
+                                        x.location.range,
+                                        &*x.message,
+                                        EType::Related(sev),
+                                    )
+                                }),
+                        )
+                    })
+                    .for_each(|(mut r, m, sev)| {
+                        if let EType::Related(x) = sev
+                            && x != DiagnosticSeverity::ERROR
+                        {
+                            return;
+                        }
+                        let p = r.start.line;
+                        while occupied.contains(&r.start.line) {
+                            r.start.line += 1;
+                        }
+                        occupied.push(r.start.line);
+                        let f = |cell: &mut Cell| {
+                            cell.style.bg.blend(match sev {
+                                EType::Error => col!("#ff66662c"),
+                                EType::Warning
+                                | EType::Hint
+                                | EType::Info => col!("#9469242c"),
+                                EType::Related(
+                                    DiagnosticSeverity::ERROR,
+                                ) => col!("#dfbfff26"),
+                                EType::Related(_) => col!("#ffad6625"),
+                            });
+                        };
+                        if r.start == r.end {
+                            x.get(text.map_to_visual((
+                                r.start.character as _,
+                                p as _,
+                            )))
+                            .map(f);
+                        } else {
+                            x.get_range(
+                                text.map_to_visual((
+                                    r.start.character as _,
+                                    p as _,
+                                )),
+                                text.map_to_visual((
+                                    r.end.character as usize,
+                                    r.end.line as _,
+                                )),
+                            )
+                            .for_each(f)
+                        }
+                        let l = r.start.line as usize;
+                        let Some(x_) = text.visual_eol(l).map(_ + 2)
+                        else {
+                            return;
+                        };
+                        let m = m.lines().next().unwrap_or(m);
+                        x.get_range((x_, l), (x_ + m.chars().count(), l))
+                            .zip(m.chars())
+                            .for_each(|(x, ch)| {
+                                let (bg, fg) = match sev {
+                                    EType::Warning => {
+                                        col!("#ff942f1b", "#fa973a")
+                                    }
+                                    EType::Error => {
+                                        col!("#ff942f1b", "#f26462")
+                                    }
+                                    EType::Related(
+                                        DiagnosticSeverity::WARNING,
+                                    ) => {
+                                        col!("#dfbfff26", "#DFBFFF")
+                                    }
+                                    _ => return,
+                                };
+                                x.style.bg.blend(bg);
+                                x.style.fg = fg;
+                                x.letter = Some(ch);
+                            })
+                    });
+            }
+            if let State::Search(re, j, _) = &ed.state {
+                re.find_iter(&text.rope.to_string()).enumerate().for_each(
+                    |(i, m)| {
+                        for x in x.get_range(
+                            text.map_to_visual(
+                                text.xy(text.rope.byte_to_char(m.start()))
+                                    .unwrap(),
+                            ),
+                            text.map_to_visual(
+                                text.xy(text.rope.byte_to_char(m.end()))
+                                    .unwrap(),
+                            ),
+                        ) {
+                            x.style.bg = if i == *j {
+                                [105, 83, 128]
+                            } else {
+                                [65, 62, 83]
+                            }
+                        }
+                    },
+                );
+            }
+        };
+        text.write_to(
+            (cells, (c, r)),
+            (t_ox, 0),
+            z,
+            wt,
+            ed.origin.as_deref(),
+            lsp!(ed).and_then(|x| x.legend()),
+        );
 
         ed.bar.write_to(
             BG,
