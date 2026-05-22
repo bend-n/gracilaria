@@ -7,7 +7,6 @@ use std::time::SystemTime;
 
 use Default::default;
 use ftools::Bind;
-use helix_core::snippets::RenderedSnippet;
 use lsp_server::Connection;
 use lsp_types::*;
 use regex::Regex;

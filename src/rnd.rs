@@ -514,14 +514,6 @@ pub fn render(
              toy: f32,
              add1_below: bool,
              fonts: &mut Fonts<'_, '_, '_, '_>| {
-                // let met = super::FONT.metrics(&[]);
-                // let fac = ppem / met.units_per_em as f32;
-                // let position = (
-                //     (((_x) as f32 * fw).round() + ox) as usize,
-                //     (((_y) as f32 * (fh + ls * fac)).round() + oy)
-                //         as usize,
-                // );
-
                 let ppem = ppem_;
                 let ls = ls_;
                 let r = c.len().div_exact(columns).unwrap();
@@ -529,61 +521,21 @@ pub fn render(
                     dsb::size(&fonts.regular, ppem, ls, (columns, r));
 
                 let (is_above, left, top) =
-                    position((_x, _y), (w, h), ox, oy, toy, add1_below)?;
-                // std::fs::write("cells", Cell::store(c));
-
-                // if w >= size.width as usize
-                //     || (position
-                //         .1
-                //         .checked_add(h)
-                //         .is_none_or(|x| x >= size.height as usize)
-                //         && !position.1.checked_sub(h).is_some())
-                //     || position.1 >= size.height as usize
-                //     || position.0 >= size.width as usize
-                // {
-                //     unsafe {
-                //         dsb::render_owned(
-                //             c,
-                //             (columns, c.len() / columns),
-                //             ppem,
-                //             fonts,
-                //             ls,
-                //             true,
-                //         )
-                //         .save("fail.png")
-                //     };
-                //     return Err(());
-                // }
-                assert!(
-                    w < window.surface_size().width as _
-                        && h < window.surface_size().height as _
-                );
-                // let is_above = position.1.checked_sub(h).is_some();
-                // let top = position.1.checked_sub(h).unwrap_or(
-                //     ((((_y + add1_below as usize) as f32)
-                //         * (fh + ls * fac))
-                //         .round()
-                //         + toy) as usize,
-                // );
-                // let (_, y) = dsb::fit(
-                //     &fonts.regular,
-                //     ppem,
-                //     ls,
-                //     (
-                //         window.surface_size().width as _, /* - left */
-                //         ((window.surface_size().height as usize)
-                //             .saturating_sub(top)),
-                //     ),
-                // ); /* suspicious saturation */
-                // r = r.min(y);
-
-                // let left = if position.0 + w as usize
-                //     > window.surface_size().width as usize
-                // {
-                //     window.surface_size().width as usize - w as usize
-                // } else {
-                //     position.0
-                // };
+                    position((_x, _y), (w, h), ox, oy, toy, add1_below)
+                        .inspect_err(|(..)| {
+                            // std::fs::write("cells", Cell::store(c));
+                            unsafe {
+                                dsb::render_owned(
+                                    c,
+                                    (columns, c.len() / columns),
+                                    ppem,
+                                    fonts,
+                                    ls,
+                                    true,
+                                )
+                                .save("fail.png")
+                            };
+                        })?;
 
                 let (w, h) =
                     dsb::size(&fonts.regular, ppem, ls, (columns, r));
@@ -603,8 +555,6 @@ pub fn render(
                     (is_above, left, top, w, h),
                 )
             };
-        // dbg!(&ed.requests.document_symbols);
-
         if let Some(Some(x)) = &ed.requests.document_symbols.result
             && let Some((_, y, z)) = text.sticky_context(
                 &x,
