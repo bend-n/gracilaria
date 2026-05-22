@@ -479,3 +479,4 @@ pub struct Rendered {
 impl Hovring {
     pub fn rndr() {}
 }
+pub const HOV_HEIGHT: usize = 500;

@@ -1,4 +1,5 @@
 #![feature(
+    exact_div,
     yeet_expr,
     const_array,
     const_closures,
@@ -16,7 +17,7 @@
     try_blocks_heterogeneous,
     current_thread_id,
     vec_try_remove,
-    lazy_type_alias,
+    // lazy_type_alias,
     thread_local,
     iter_intersperse,
     stmt_expr_attributes,
@@ -112,7 +113,6 @@ extern "C" fn sigint(_: i32) {
     std::process::exit(12);
 }
 
-#[implicit_fn::implicit_fn]
 pub(crate) fn entry(event_loop: EventLoop) {
     unsafe {
         __ED.write(match Editor::new() {
@@ -139,7 +139,7 @@ pub(crate) fn entry(event_loop: EventLoop) {
 
     let mut cursor_position = (0, 0);
     let mut i = Image::build(1, 1).fill(BG);
-    let mut cells = vec![];
+    let mut cells = vec![];    
     let mut w = match &mut ed.lsp {
         Some((.., c)) => c.take(),
         None => None,
@@ -255,6 +255,7 @@ pub(crate) fn entry(event_loop: EventLoop) {
                     window.request_redraw();
                 }
                 WindowEvent::RedrawRequested if window_id == window.id() => {
+                    println!("running redraw");
                     rnd::render(
                         ed,
                         &mut cells,
@@ -285,13 +286,10 @@ pub(crate) fn entry(event_loop: EventLoop) {
                     );
                     ed.cursor_moved(cursor_position, window.clone(), c);
                 }
-                
-                        WindowEvent::PointerButton {
-                            state: bt,
-                            button: ButtonSource::Mouse(button),
-                            ..
-                        
-                
+                WindowEvent::PointerButton {
+                    state: bt,
+                    button: ButtonSource::Mouse(button),
+                    ..
                 } if bt.is_pressed() => {
                     if button == MouseButton::Left {
                         unsafe { CLICKING = true };
@@ -299,19 +297,15 @@ pub(crate) fn entry(event_loop: EventLoop) {
                     ed.click(button, cursor_position, window.clone());
                     window.request_redraw();
                 }
-                
-                        WindowEvent::PointerButton {
-                            button: ButtonSource::Mouse(MouseButton::Left),
-                            ..
-                        }
-                    
-                 => unsafe { CLICKING = false },
-                
-                        WindowEvent::MouseWheel {
-                            device_id: _,
-                            delta: MouseScrollDelta::LineDelta(_, rows),
-                            phase: _,
-                        } => {
+                WindowEvent::PointerButton {
+                    button: ButtonSource::Mouse(MouseButton::Left),
+                    ..
+                } => unsafe { CLICKING = false },                
+                WindowEvent::MouseWheel {
+                    device_id: _,
+                    delta: MouseScrollDelta::LineDelta(_, rows),
+                    phase: _,
+                } => {
                     ed.scroll(rows);
                     window.request_redraw();
                 }
@@ -320,10 +314,10 @@ pub(crate) fn entry(event_loop: EventLoop) {
                     window.request_redraw();
                 }
                 WindowEvent::KeyboardInput {
-                            event,
-                            is_synthetic: false,
-                            ..
-                        } if event.state == ElementState::Pressed => {
+                    event,
+                    is_synthetic: false,
+                    ..
+                } if event.state == ElementState::Pressed => {
                     // if event.logical_key == Key::Named(NamedKey::F12) {
                     //     lsp.unwrap().runtime.spawn(async move {
                     //         lsp.unwrap().symbols().await;

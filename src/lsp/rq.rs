@@ -125,7 +125,7 @@ impl<T, R, D, E> Rq<T, R, D, E> {
         self.request = Some((AbortOnDropHandle::new(f), d));
     }
 }
-impl<T, R, D, E> Rq<T, R, D, E> {
+impl<T, R, D, E: std::fmt::Debug> Rq<T, R, D, E> {
     pub fn running(&self) -> bool {
         matches!(
             self,
@@ -143,7 +143,9 @@ impl<T, R, D, E> Rq<T, R, D, E> {
             let (_, d) = self.request.take().unwrap();
             self.result = f(
                 match x {
-                    Ok(x) => x,
+                    Ok(x) => x.inspect_err(|x| {
+                        dbg!(&x);
+                    }),
                     Err(e) => {
                         log::error!(
                             "unexpected join error from request poll: {e}"

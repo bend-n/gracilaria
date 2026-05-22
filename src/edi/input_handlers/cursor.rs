@@ -16,6 +16,7 @@ enum Set<T> {
 }
 use crate::edi::*;
 use crate::hov::{DiagnosticHovr, Hoverable, Hovring};
+use crate::lsp::BehaviourAfter;
 use crate::rnd::CellBuffer;
 impl Editor {
     #[implicit_fn]
@@ -118,7 +119,7 @@ impl Editor {
     pub fn find_diags(
         &mut self,
         cursor_position: (usize, usize),
-        w: Arc<dyn Window>,
+        w: &Arc<dyn Window>,
     ) -> Option<Vec<Hoverable>> {
         lsp!(let lsp, p = self else None);
 
@@ -160,7 +161,7 @@ impl Editor {
                             ]
                         };
                         // println!("{x:?}");
-                        DiagnosticHovr::new(span, x, &w, r)
+                        DiagnosticHovr::new(span, x, w, r)
                     })
                     .map(Hoverable::Diagnostic)
                     .collect::<Vec<_>>()
@@ -261,20 +262,25 @@ impl Editor {
         //     return;
         // }
         // if !running.insert(hover) {return}
-        let (rx, _) = lsp
-            .request::<HoverRequest>(&HoverParams {
-                text_document_position_params: tdpp.clone(),
-                work_done_progress_params: default(),
-            })
-            .unwrap();
+        // let (rx, _) =;
         // println!("rq hov of {hover:?} (cur {})", requests.hovering.request.is_some());
         let tdp = tdpp.clone();
+        let window = w.clone();
         let handle: tokio::task::JoinHandle<Result<Option<Hovr>, _>> =
             lsp.runtime.spawn(async move {
-                let Some(x) = rx.await? else {
+                let Some(x) = lsp
+                    .request_::<HoverRequest, { BehaviourAfter::Nil }>(
+                        &HoverParams {
+                            text_document_position_params: tdp.clone(),
+                            work_done_progress_params: default(),
+                        },
+                    )?
+                    .0
+                    .await?
+                else {
                     return Ok(None::<Hovr>);
                 };
-                let (w, cells) = spawn_blocking(move || {
+                let (width, cells) = spawn_blocking(move || {
                     let x = match &x.contents {
                         lsp_types::HoverContents::Scalar(
                             marked_string,
@@ -327,22 +333,20 @@ impl Editor {
                         ]
                     })
                 });
+                let cells = cells.into();
+                window.request_redraw();
                 Ok(Some(
                     hov::Hovr {
                         span,
                         tdpp: tdp,
-                        item: CellBuffer {
-                            c: w,
-                            vo: 0,
-                            cells: cells.into(),
-                        },
+                        item: CellBuffer { c: width, vo: 0, cells: cells },
                         range: x.range,
                         // range: x.range.and_then(|x| text.l_range(x)),
                     }
                     .into(),
                 ))
             });
-        let diags = self.find_diags(cursor_position, w);
+        let diags = self.find_diags(cursor_position, &w);
         self.state
             .consume(Action::SetHovering(
                 diags.map(|of| Hovring { of, ..default() }),

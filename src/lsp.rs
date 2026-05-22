@@ -84,6 +84,7 @@ pub fn run(
 }
 #[derive(Copy, Clone, PartialEq, Eq, std::marker::ConstParamTy, Debug)]
 pub enum BehaviourAfter {
+    RedrawNow,
     Redraw,
     // Poll, ? how impl.
     Nil,

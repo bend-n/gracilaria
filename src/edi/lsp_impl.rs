@@ -164,7 +164,9 @@ impl crate::edi::Editor {
                             ..default()
                         },
                     })
-                }) && x.result.is_none()
+                }) && super::lsp!(self).unwrap().redraw_now().unwrap() // im not a fan of this, but its kinda. necessary. annoyingly.
+                    == ()
+                    && x.result.is_none()
                 {
                     self.state = State::Default;
                 }

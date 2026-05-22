@@ -19,7 +19,9 @@ use winit::window::{ImeRequestData, Window};
 use crate::edi::st::State;
 use crate::edi::{Editor, lsp};
 use crate::gotolist::{At, GoTo};
-use crate::hov::{DiagnosticHovr, Hoverable, Hovr, Hovring, Rendered};
+use crate::hov::{
+    DiagnosticHovr, HOV_HEIGHT, Hoverable, Hovr, Hovring, Rendered,
+};
 use crate::lsp::Rq;
 use crate::sym::UsedSI;
 use crate::text::{CoerceOption, RopeExt, TextArea, col, color_};
@@ -452,51 +454,48 @@ pub fn render(
                         // i: Image<&mut [u8], 3>,
                         // c: &[Cell],
                         // columns: usize,
-                        ls_: f32,
                         ox: f32,
                         oy: f32,
                         toy: f32,
                         add1_below: bool| {
             let met = super::FONT.metrics(&[]);
             let fac = ppem / met.units_per_em as f32;
-            let position = (
+            let (px, py) = (
                 (((_x) as f32 * fw).round() + ox) as usize,
                 (((_y) as f32 * (fh + ls * fac)).round() + oy) as usize,
             );
 
-            let ls = ls_;
             // let mut r = c.len() / columns;
             // assert_eq!(c.len() % columns, 0);
             // std::fs::write("cells", Cell::store(c));
 
             if w >= size.width as usize
-                || (position
-                    .1
-                    .checked_add(h)
-                    .is_none_or(|x| x >= size.height as usize)
-                    && !position.1.checked_sub(h).is_some())
-                || position.1 >= size.height as usize
-                || position.0 >= size.width as usize
+                // if y + height > height, cant fit it anywhere
+                || ((py.checked_add(h)
+                    .is_none_or(|x| x >= size.height as usize))
+                    && !py.checked_sub(h).is_some())
+                || py >= size.height as usize
+                || px >= size.width as usize
             {
-                return Err(());
+                return Err(((px, py), size, (w, h)));
             }
             assert!(
                 w < window.surface_size().width as _
                     && h < window.surface_size().height as _
             );
-            let is_above = position.1.checked_sub(h).is_some();
-            let top = position.1.checked_sub(h).unwrap_or(
+            let is_above = py.checked_sub(h).is_some();
+            let top = py.checked_sub(h).unwrap_or(
                 ((((_y + add1_below as usize) as f32) * (fh + ls * fac))
                     .round()
                     + toy) as usize,
             );
 
-            let left = if position.0 + w as usize
+            let left = if px + w as usize
                 > window.surface_size().width as usize
             {
                 window.surface_size().width as usize - w as usize
             } else {
-                position.0
+                px
             };
 
             // let (w, h) =
@@ -525,19 +524,12 @@ pub fn render(
 
                 let ppem = ppem_;
                 let ls = ls_;
-                assert_eq!(c.len() % columns, 0);
+                let r = c.len().div_exact(columns).unwrap();
                 let (w, h) =
                     dsb::size(&fonts.regular, ppem, ls, (columns, r));
 
-                let (is_above, left, top) = position(
-                    (_x, _y),
-                    (w, h),
-                    ls_,
-                    ox,
-                    oy,
-                    toy,
-                    add1_below,
-                )?;
+                let (is_above, left, top) =
+                    position((_x, _y), (w, h), ox, oy, toy, add1_below)?;
                 // std::fs::write("cells", Cell::store(c));
 
                 // if w >= size.width as usize
@@ -607,7 +599,9 @@ pub fn render(
                         (left as _, top as _),
                     )
                 };
-                Ok::<_, ()>((is_above, left, top, w, h))
+                Ok::<_, ((usize, usize), PhysicalSize<u32>, (usize, usize))>(
+                    (is_above, left, top, w, h),
+                )
             };
         // dbg!(&ed.requests.document_symbols);
 
@@ -732,9 +726,10 @@ pub fn render(
         // && pass
         {
             let hof = hash(&of);
-            let buffer = match rndr {
-                Some(Rendered { hash, image, .. }) if *hash == hof =>
-                    image,
+            let rh = th.min(HOV_HEIGHT);
+            let (buffer, scr) = match rndr {
+                Some(Rendered { hash, image, scroll }) if *hash == hof =>
+                    (image, *scroll),
                 _ => {
                     let mut buffer =
                         Image::<_, 3>::build(tw as _, th as _).alloc();
@@ -786,7 +781,8 @@ pub fn render(
                         hash: hof,
                         scroll: 0,
                     });
-                    &mut rndr.as_mut().unwrap().image
+                    let r = rndr.as_mut().unwrap();
+                    (&mut r.image, r.scroll)
                 }
             };
 
@@ -806,21 +802,23 @@ pub fn render(
                 && let Some(_x) = _x.checked_sub(text.ho)
                 && (cursor_position.1 == _y
                     && (_x..=_x2).contains(&cursor_position.0))
-                && let Ok((_, x, y)) = position(
-                    (_x, _y),
-                    (tw, th),
-                    -200.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    true,
-                )
+                && let Ok((_, x, y)) =
+                    position((_x, _y), (tw, rh), 0.0, 0.0, 0.0, true)
             {
-                unsafe { i.overlay_at(&buffer.as_ref(), x as _, y as _) };
+                let top = scr * tw as u32 * 3;
+                let o = &buffer.bytes()[top as usize
+                    ..(top + (rh as u32 * tw as u32 * 3)) as usize];
+                unsafe {
+                    i.overlay_at(
+                        &Image::<_, 3>::build(tw as _, rh as _).buf(o),
+                        x as _,
+                        y as _,
+                    )
+                };
                 i.r#box(
                     (x.saturating_sub(1) as _, y.saturating_sub(1) as _),
                     tw as _,
-                    th as _,
+                    rh as _,
                     BORDER,
                 );
             }
@@ -1055,6 +1053,7 @@ pub fn render(
                     true,
                     fonts,
                 ) else {
+                    println!("RAHHH");
                     break 'out;
                 };
                 i.r#box(

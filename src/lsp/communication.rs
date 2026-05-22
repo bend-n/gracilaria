@@ -35,6 +35,7 @@ pub fn handler(
     loop {
         crossbeam::select! {
             recv(req_rx) -> x => match x {
+                Ok((.., BehaviourAfter::RedrawNow)) => w.request_redraw(),
                 Ok((x, y, and)) => {
                     debug!("received request {x}");
                     assert!(map.insert(x, (y, Instant::now(), and)).is_none());
@@ -162,7 +163,7 @@ impl super::Client {
         self.request_::<X, { Redraw }>(y)
     }
     #[must_use]
-    pub(super) fn request_<'me, X: Request, const THEN: BehaviourAfter>(
+    pub fn request_<'me, X: Request, const THEN: BehaviourAfter>(
         &'me self,
         y: &X::Params,
     ) -> Result<
@@ -223,5 +224,13 @@ impl super::Client {
             },
             id,
         ))
+    }
+
+    pub fn redraw_now<'me>(
+        &'me self,
+    ) -> Result<(), SendError<(i32, oneshot::Sender<Re>, BehaviourAfter)>>
+    {
+        let (tx, _) = oneshot::channel();
+        self.send_to.send((0, tx, BehaviourAfter::RedrawNow))
     }
 }
