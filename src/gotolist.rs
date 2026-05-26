@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::hash::Hash;
 use std::path::Path;
 
 use dsb::Cell;
@@ -8,6 +9,7 @@ use lsp_types::{
     CallHierarchyIncomingCall, CallHierarchyOutgoingCall, Location,
     LocationLink, Range,
 };
+use rustc_hash::FxHashMap;
 
 use crate::FG;
 use crate::lsp::{Rq, RqS};
@@ -35,6 +37,7 @@ impl<'a> Key<'a> for (GoTo<'a>, Option<&'a str>) {
         // self.display().to_string()
     }
 }
+
 impl MenuData for GTL {
     type Data = (Vec<(GoTo<'static>, Option<String>)>, Option<O>);
 
@@ -110,6 +113,11 @@ pub struct GoTo<'a> {
     pub at: At,
 }
 
+impl<'a> Hash for GoTo<'a> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.path.hash(state);
+    }
+}
 impl From<Location> for GoTo<'static> {
     fn from(Location { uri, range }: Location) -> Self {
         Self {

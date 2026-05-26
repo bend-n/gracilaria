@@ -1,9 +1,14 @@
 pub mod generic;
+use std::any::TypeId;
 use std::borrow::Cow;
 use std::cmp::Reverse;
+use std::hash::Hash;
 use std::sync::LazyLock;
 
 use itertools::Itertools;
+
+use crate::menu::generic::MenuData;
+use crate::{Freq, hash};
 
 #[lower::apply(saturating)]
 pub fn next<const N: usize>(n: usize, sel: &mut usize, vo: &mut usize) {
@@ -29,14 +34,62 @@ pub fn back<const N: usize>(n: usize, sel: &mut usize, vo: &mut usize) {
     }
 }
 
-pub fn score<'a, T: Key<'a>>(
+#[thread_local]
+static mut MATCHER: LazyLock<nucleo::Matcher> =
+    LazyLock::new(|| nucleo::Matcher::new(nucleo::Config::DEFAULT));
+
+pub fn score<'a, T: Key<'a>, D: MenuData<Element<'a> = T> + 'static>(
+    x: impl Iterator<Item = T>,
+    filter: &'_ str,
+    freq: Option<&Freq>,
+) -> Vec<(u32, T, Vec<u32>)> {
+    let p = nucleo::pattern::Pattern::parse(
+        filter,
+        nucleo::pattern::CaseMatching::Smart,
+        nucleo::pattern::Normalization::Smart,
+    );
+    let mut v = x
+        .map(move |y| {
+            if let Some(f) = freq
+                && filter == ""
+                && let Some(f) = f.get(&TypeId::of::<D>())
+            {
+                return (
+                    f.get(&D::hashed(&y).unwrap())
+                        .copied()
+                        .unwrap_or_default() as u32,
+                    y,
+                    vec![],
+                );
+            }
+            let mut utf32 = vec![];
+            // std::env::args().nth(1).unwrap().as_bytes().fi .fold(0, |acc, x| acc * 10 + x - b'0');
+            let hay = y.k();
+            let mut indices = vec![];
+            let score = p
+                .indices(
+                    nucleo::Utf32Str::new(&hay, &mut utf32),
+                    unsafe { &mut *MATCHER },
+                    &mut indices,
+                )
+                .unwrap_or(0);
+            indices.sort_unstable();
+            indices.dedup();
+
+            (score, y, indices)
+        })
+        .collect::<Vec<_>>();
+    // std::fs::write(
+    //     "com",
+    //     v.iter().map(|x| x.1.label.clone() + "\n").collect::<String>(),
+    // );
+    v.sort_by_key(|x| Reverse(x.0));
+    v
+}
+pub fn score_basic<'a, T: Key<'a>>(
     x: impl Iterator<Item = T>,
     filter: &'_ str,
 ) -> Vec<(u32, T, Vec<u32>)> {
-    #[thread_local]
-    static mut MATCHER: LazyLock<nucleo::Matcher> =
-        LazyLock::new(|| nucleo::Matcher::new(nucleo::Config::DEFAULT));
-
     let p = nucleo::pattern::Pattern::parse(
         filter,
         nucleo::pattern::CaseMatching::Smart,

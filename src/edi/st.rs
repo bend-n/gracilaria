@@ -135,7 +135,7 @@ Hovering(x) => {
     M(_) => _ [ClickedHover],
 },
 Command(_) => K(Key::Named(Escape)) => Default,
-Command(t) => K(Key::Named(Enter) if let Some(Ok(x)) = t.sel()) => Default [ProcessCommand((Commands, crate::commands::Cmd) => (t, x))],
+Command(t) => K(Key::Named(Enter) if let Some(Ok(x)) = t.sel(None)) => Default [ProcessCommand((Commands, crate::commands::Cmd) => (t, x))],
 Command(t) => K(Key::Named(Enter)) => _,
 Command(mut t) => K(Key::Named(Tab) if shift()) => Command({ t.back();t }),
 Command(mut t) => K(Key::Named(Tab)) => Command({ t.next(); t }),
@@ -151,7 +151,7 @@ Runnables(RqS::<crate::runnables::Runnables, rust_analyzer::lsp::ext::Runnables>
     K(Key::Named(Tab) if shift()) => Runnables({ x.next(); Rq { result: Some(x), request }}),
     K(Key::Named(ArrowDown)) => Runnables({ x.next(); Rq { result: Some(x), request }}),
     K(Key::Named(ArrowUp | Tab)) => Runnables({ x.back(); Rq { result: Some(x), request }}),
-    K(Key::Named(Enter) if let Some(Ok(x_)) = x.clone().sel()) => Default [Run(Runnable => x_.clone())],
+    K(Key::Named(Enter) if let Some(Ok(x_)) = x.clone().sel(None)) => Default [Run(Runnable => x_.clone())],
     K(k) => Runnables({
  if let Some(_) = handle2(&k, &mut x.tedit, None) {
     x.selection = 0; x.vo = 0;

@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use crate::FG;
 use crate::edi::{Editor, change, lsp};
 use crate::lsp::Rq;
-use crate::menu::{Key, back, charc, filter, next, score};
+use crate::menu::{Key, back, charc, filter, next, score, score_basic};
 use crate::text::{SortTedits, col, color_, set_a};
 
 #[derive(Serialize, Deserialize)]
@@ -54,7 +54,7 @@ fn score_c<'a>(
     x: impl Iterator<Item = &'a CompletionItem>,
     filter: &'_ str,
 ) -> Vec<(u32, &'a CompletionItem, Vec<u32>)> {
-    score(x, filter)
+    score_basic(x, filter)
 }
 
 fn filter_c<'a>(

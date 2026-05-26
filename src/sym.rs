@@ -77,6 +77,10 @@ impl MenuData for Symb {
     ) {
         r(x, workspace, c, selected, indices, to, sty)
     }
+
+    fn hash<'b>(x: &'b Self::Element<'_>) -> Option<impl std::hash::Hash> {
+        Some(x)
+    }
 }
 pub type Symbols = GenericMenu<Symb>;
 
@@ -87,6 +91,15 @@ pub struct UsedSI<'a> {
     pub tags: Option<&'a [SymbolTag]>,
     pub at: GoTo<'a>,
     pub right: Option<&'a str>,
+}
+
+impl<'a> std::hash::Hash for UsedSI<'a> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.name.hash(state);
+        self.kind.0.hash(state);
+        self.at.hash(state);
+        self.right.hash(state);
+    }
 }
 impl<'a> From<&'a SymbolInformation> for UsedSI<'a> {
     fn from(

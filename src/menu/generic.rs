@@ -1,9 +1,12 @@
+use std::any::TypeId;
 use std::fmt::Debug;
+use std::hash::Hash;
 use std::path::Path;
 
 use Default::default;
 use dsb::Cell;
 
+use crate::Freq;
 use crate::menu::{Key, back, filter, next, score};
 use crate::text::TextArea;
 
@@ -50,7 +53,7 @@ pub enum CorA {
     Complete,
     Accept,
 }
-pub trait MenuData: Sized {
+pub trait MenuData: Sized + 'static {
     const HEIGHT: usize = 30;
     type Data;
     type Element<'a>: Key<'a>;
@@ -67,6 +70,12 @@ pub trait MenuData: Sized {
     }
     fn should_complete<'a>(_m: &GenericMenu<Self>) -> bool {
         true
+    }
+    fn hash<'b>(_x: &'b Self::Element<'_>) -> Option<impl Hash> {
+        None::<()>
+    }
+    fn hashed<'b>(x: &'b Self::Element<'_>) -> Option<u64> {
+        Self::hash(x).map(|x| crate::hash(&x))
     }
     fn gn<'a>(
         x: &'a Self::Data,
@@ -89,8 +98,9 @@ pub trait MenuData: Sized {
     fn score_c<'a>(
         x: impl Iterator<Item = Self::Element<'a>>,
         f: &str,
+        freq: Option<&Freq>,
     ) -> Vec<(u32, Self::Element<'a>, Vec<u32>)> {
-        score(x, f)
+        score::<_, Self>(x, f, freq)
     }
 
     fn f(m: &GenericMenu<Self>) -> String {
@@ -98,7 +108,7 @@ pub trait MenuData: Sized {
     }
 }
 
-impl<T: MenuData> GenericMenu<T> {
+impl<T: MenuData + 'static> GenericMenu<T> {
     pub type I = T;
     pub fn should_render(&self) -> bool {
         T::should_complete(self)
@@ -120,12 +130,27 @@ impl<T: MenuData> GenericMenu<T> {
 
     pub fn sel(
         &self,
+        fq: Option<&mut Freq>,
     ) -> Option<Result<<T as MenuData>::Element<'_>, T::E>> {
         let f = self.f();
 
-        T::score_c(T::filter_c(&self.data, &f), &f)
+        T::score_c(T::filter_c(&self.data, &f), &f, fq.as_deref())
             .try_remove(self.selection)
             .map(|(_, x, _)| T::map(&self, x))
+            .inspect(|x| {
+                fq.map(|fq| {
+                    _ = x.as_ref().inspect(|x| {
+                        let x = T::hashed(x).expect(
+                            "if calling with freq, please impl hash",
+                        );
+
+                        *fq.entry(TypeId::of::<T>())
+                            .or_default()
+                            .entry(x)
+                            .or_default() += 1;
+                    });
+                });
+            })
     }
 
     pub fn back(&mut self)
@@ -135,10 +160,15 @@ impl<T: MenuData> GenericMenu<T> {
         let n = T::filter_c(&self.data, &self.f()).count();
         next::<{ T::HEIGHT }>(n, &mut self.selection, &mut self.vo);
     }
-    pub fn cells(&self, c: usize, ws: &Path) -> Vec<Cell> {
+    pub fn cells(
+        &self,
+        c: usize,
+        ws: &Path,
+        freq: Option<&Freq>,
+    ) -> Vec<Cell> {
         let f = self.f();
         let mut out = vec![];
-        let v = T::score_c(T::filter_c(&self.data, &f), &f);
+        let v = T::score_c(T::filter_c(&self.data, &f), &f, freq);
         let vlen = v.len();
         let i =
             v.into_iter().zip(0..vlen).skip(self.vo).take(T::HEIGHT).rev();

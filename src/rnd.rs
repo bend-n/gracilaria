@@ -26,8 +26,8 @@ use crate::lsp::Rq;
 use crate::sym::UsedSI;
 use crate::text::{CoerceOption, RopeExt, TextArea, col, color_};
 use crate::{
-    BG, BORDER, CompletionAction, CompletionState, FG, FONT, complete,
-    filter, hash, sig,
+    BG, BORDER, CompletionAction, CompletionState, FG, FONT, Freq,
+    complete, filter, hash, sig,
 };
 mod cell_buffer;
 
@@ -46,6 +46,7 @@ pub fn render(
     cursor_position: (usize, usize),
     fonts: &mut dsb::Fonts,
     mut i: Image<&mut [u8], 3>,
+    freq: &Freq,
 ) {
     let text = &mut ed.text;
     let (cx, cy) = text.primary_cursor_visual();
@@ -111,7 +112,7 @@ pub fn render(
             |_text, mut f, y| {
                 if let State::GoToL(menu) = &ed.state
                     && let Some(Ok((GoTo { at: At::R(r), path }, _))) =
-                        menu.sel()
+                        menu.sel(None)
                     && Some(&*path) == ed.origin.as_deref()
                 {
                     if (r.start.line..=r.end.line).contains(&(y as _)) {
@@ -123,7 +124,7 @@ pub fn render(
                     && let Some(Ok(UsedSI {
                         at: GoTo { at: At::R(x), .. },
                         ..
-                    })) = menu.sel()
+                    })) = menu.sel(None)
                 {
                     if (x.start.line..=x.end.line).contains(&(y as _)) {
                         f.style.fg = col!("#FFCC66");
@@ -490,13 +491,12 @@ pub fn render(
                     + toy) as usize,
             );
 
-            let left = if px + w as usize
-                > window.surface_size().width as usize
-            {
-                window.surface_size().width as usize - w as usize
+            let left = if px + w as usize > size.width as usize {
+                size.width as usize - w as usize
             } else {
                 px
             };
+            assert!(left + w <= size.width as usize);
 
             // let (w, h) =
             // dsb::size(&fonts.regular, ppem, ls, (columns, r));
@@ -839,22 +839,22 @@ pub fn render(
             }
             State::Command(x) if x.should_render() => {
                 let ws = ed.workspace.as_deref().unwrap();
-                let c = x.cells(50, ws);
+                let c = x.cells(50, ws, None);
                 drawb(&c, 50);
             }
             State::Symbols(Rq { result: Some(x), .. }) => {
                 let ws = ed.workspace.as_deref().unwrap();
-                let c = x.cells(50, ws);
+                let c = x.cells(50, ws, Some(freq));
                 drawb(&c, 50);
             }
             State::Runnables(Rq { result: Some(x), .. }) => {
                 let ws = ed.workspace.as_deref().unwrap();
-                let c = x.cells(50, ws);
+                let c = x.cells(50, ws, None);
                 drawb(&c, 50);
             }
             State::GoToL(y) => {
                 let ws = ed.workspace.as_deref().unwrap();
-                let c = y.cells(50, ws);
+                let c = y.cells(50, ws, None);
                 drawb(&c, 50);
             }
             _ => {}

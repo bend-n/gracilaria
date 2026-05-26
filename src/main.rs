@@ -33,7 +33,12 @@
     const_trait_impl,
     try_blocks
 )]
-#![allow(incomplete_features, irrefutable_let_patterns, static_mut_refs, unexpected_cfgs)]
+#![allow(
+    incomplete_features,
+    irrefutable_let_patterns,
+    static_mut_refs,
+    unexpected_cfgs
+)]
 mod act;
 mod edi;
 mod error;
@@ -45,6 +50,7 @@ mod runnables;
 mod sym;
 mod trm;
 
+use std::any::TypeId;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 use std::mem::MaybeUninit;
@@ -59,7 +65,9 @@ use fimg::Image;
 use libc::{atexit, signal};
 use lsp::Rq;
 use lsp_types::*;
+
 use rust_fsm::StateMachine;
+use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use swash::FontRef;
 use winit::dpi::{PhysicalPosition, PhysicalSize};
@@ -112,7 +120,7 @@ extern "C" fn sigint(_: i32) {
     cleanup();
     std::process::exit(12);
 }
-
+type Freq =  FxHashMap<TypeId, FxHashMap<u64, u16>>;
 pub(crate) fn entry(event_loop: EventLoop) {
     unsafe {
         __ED.write(match Editor::new() {
@@ -126,6 +134,8 @@ pub(crate) fn entry(event_loop: EventLoop) {
     assert_eq!(unsafe { atexit(cleanup) }, 0);
     unsafe { signal(libc::SIGINT, sigint as *const () as usize) };
     let ed: &'static mut Editor = unsafe { __ED.assume_init_mut() };
+
+    let mut freq:Freq  = default();
     let ppem = 18.0;
     let ls = 20.0;
     // let ed = Box::leak(Box::new(ed));
@@ -139,7 +149,7 @@ pub(crate) fn entry(event_loop: EventLoop) {
 
     let mut cursor_position = (0, 0);
     let mut i = Image::build(1, 1).fill(BG);
-    let mut cells = vec![];    
+    let mut cells = vec![];
     let mut w = match &mut ed.lsp {
         Some((.., c)) => c.take(),
         None => None,
@@ -270,6 +280,7 @@ pub(crate) fn entry(event_loop: EventLoop) {
                         cursor_position,
                         &mut fonts,
                         i.as_mut(),
+                        &freq
                     );
                 }
 
@@ -329,7 +340,7 @@ pub(crate) fn entry(event_loop: EventLoop) {
                     ) {
                         return;
                     }
-                    if ed.keyboard(event, window).is_break() {
+                    if ed.keyboard(event, window,&mut freq).is_break() {
                         elwt.exit();
                     }
                     window.request_redraw();

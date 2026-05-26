@@ -17,6 +17,7 @@ use winit::event::KeyEvent;
 use winit::keyboard::Key;
 use winit::window::Window;
 
+use crate::Freq;
 use crate::edi::*;
 
 impl Editor {
@@ -24,6 +25,7 @@ impl Editor {
         &mut self,
         event: KeyEvent,
         window: &mut Arc<dyn Window>,
+        freq: &mut Freq,
     ) -> ControlFlow<()> {
         let mut o: Option<Do> = self
             .state
@@ -135,7 +137,7 @@ impl Editor {
                     unreachable!()
                 };
                 if let Some(Ok(crate::commands::Cmd::GoTo(Some(x)))) =
-                    x.sel()
+                    x.sel(None)
                 {
                     self.text.scroll_to_ln_centering(x as _);
                 }
@@ -189,7 +191,7 @@ impl Editor {
                     unreachable!()
                 };
                 x.next();
-                if let Some(Ok(x)) = x.sel()
+                if let Some(Ok(x)) = x.sel(None)
                     && Some(&*x.at.path) == self.origin.as_deref()
                 {
                     match x.at {
@@ -209,7 +211,7 @@ impl Editor {
                     unreachable!()
                 };
                 x.back();
-                if let Some(Ok(x)) = x.sel()
+                if let Some(Ok(x)) = x.sel(None)
                     && Some(&*x.at.path) == self.origin.as_deref()
                 {
                     match x.at.at {
@@ -223,7 +225,7 @@ impl Editor {
                 }
             }
             Some(Do::SymbolsSelect(x)) =>
-                if let Some(Ok(x)) = x.sel()
+                if let Some(Ok(x)) = x.sel(Some(freq))
                     && let Err(e) = self.go(x.at, window.clone())
                 {
                     log::error!("alas! {e}")
@@ -574,7 +576,7 @@ impl Editor {
                 }
             }
             Some(Do::GTLSelect(x)) =>
-                if let Some(Ok((g, _))) = x.sel()
+                if let Some(Ok((g, _))) = x.sel(None)
                     && let Err(e) = self.go(g, window.clone())
                 {
                     eprintln!("go-to-list select fail: {e}");
@@ -584,7 +586,7 @@ impl Editor {
                     unreachable!()
                 };
                 if let Some(Ok((GoTo { path: p, at: At::R(r) }, _))) =
-                    x.sel()
+                    x.sel(None)
                     && Some(&*p) == self.origin.as_deref()
                 {
                     // let x = self.text.l_range(r).unwrap();
