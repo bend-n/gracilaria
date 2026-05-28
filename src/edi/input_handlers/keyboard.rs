@@ -77,18 +77,14 @@ impl Editor {
                 },
             Some(Do::DeleteBracketPair) => self.delete_bracket_pair(),
             Some(Do::Symbols) =>
-                if let Some((lsp, o)) = lsp!(self + p) {
-                    let mut q = Rq::new(
-                        lsp.runtime.spawn(
-                            lsp.workspace_symbols("".into())
-                                .map(|x| x.anonymize())
-                                .map(|x| {
-                                    x.map(|x| {
-                                        x.map(SymbolsList::Workspace)
-                                    })
-                                }),
-                        ),
-                    );
+                if let Some((lsp, o)) = lsp!(self + p)
+                    && let Ok(syms) = lsp.workspace_symbols("".into())
+                {
+                    let mut q = Rq::new(lsp.runtime.spawn(
+                        syms.map(Anonymize::anonymize).map(|x| {
+                            x.map(|x| x.map(SymbolsList::Workspace))
+                        }),
+                    ));
                     q.result = Some(Symbols::new(
                         self.tree.as_deref().unwrap(),
                         self.text.bookmarks.clone(),
@@ -106,15 +102,16 @@ impl Editor {
                     x.data.3 = sym::SymbolsType::Document;
                     let p = p.to_owned();
                     take(&mut x.data.0);
-                    *request = Some((
-                        DropH::new(lsp.runtime.spawn(async move {
-                            lsp.document_symbols(&p)
-                                .await
-                                .anonymize()
-                                .map(|x| x.map(SymbolsList::Document))
-                        })),
-                        (),
-                    ));
+                    if let Ok(fut) = lsp.document_symbols(&p) {
+                        *request = Some((
+                            DropH::new(lsp.runtime.spawn(async move {
+                                fut.await
+                                    .anonymize()
+                                    .map(|x| x.map(SymbolsList::Document))
+                            })),
+                            (),
+                        ));
+                    }
                 },
             Some(Do::ProcessCommand(mut x, z)) =>
                 match Cmds::complete_or_accept(&z) {
@@ -159,23 +156,25 @@ impl Editor {
                         || ptedit != x.tedit.rope
                     {
                         if x.data.3 == SymbolsType::Workspace {
-                            *request = Some((
-                                DropH::new(
-                                    lsp.runtime.spawn(
-                                        lsp.workspace_symbols(
-                                            x.tedit.rope.to_string(),
-                                        )
-                                        .map(|x| {
-                                            x.anonymize().map(|x| {
-                                                x.map(
+                            *request = lsp
+                                .workspace_symbols(
+                                    x.tedit.rope.to_string(),
+                                )
+                                .ok()
+                                .map(|fut| {
+                                    (
+                                        DropH::new(lsp.runtime.spawn(
+                                            fut.map(|x| {
+                                                x.anonymize().map(|x| {
+                                                    x.map(
                                                     SymbolsList::Workspace,
                                                 )
-                                            })
-                                        }),
-                                    ),
-                                ),
-                                (),
-                            ));
+                                                })
+                                            }),
+                                        )),
+                                        (),
+                                    )
+                                });
                         } else {
                             x.selection = 0;
                             x.vo = 0;
@@ -669,13 +668,12 @@ impl Editor {
         if self.requests.sig_help.running()
             && cb4 != self.text.cursor.first()
             && let Some((lsp, path)) = lsp!(self + p)
+            && let Ok(fut) = lsp.request_sig_help(
+                path,
+                self.text.cursor.first().cursor(&self.text.rope),
+            )
         {
-            self.requests.sig_help.request(lsp.runtime.spawn(
-                lsp.request_sig_help(
-                    path,
-                    self.text.cursor.first().cursor(&self.text.rope),
-                ),
-            ));
+            self.requests.sig_help.request(lsp.runtime.spawn(fut));
         }
         if self.hist.record(&self.text) {
             change!(self, window.clone());
@@ -687,14 +685,13 @@ impl Editor {
                     && let Some(x) =
                         &x.capabilities.signature_help_provider
                     && let Some(x) = &x.trigger_characters
-                    && x.contains(&y.to_string()) =>
-            {
-                self.requests.sig_help.request(lsp.runtime.spawn(
-                    lsp.request_sig_help(
+                    && x.contains(&y.to_string())
+                    && let Ok(fut) = lsp.request_sig_help(
                         o,
                         self.text.cursor.first().cursor(&self.text.rope),
-                    ),
-                ));
+                    ) =>
+            {
+                self.requests.sig_help.request(lsp.runtime.spawn(fut));
             }
             _ => {}
         }
@@ -705,27 +702,28 @@ impl Editor {
             .unwrap()
         {
             Some(CDo::Request(ctx)) => {
-                let h =
-                    DropH::new(lsp.runtime.spawn(lsp.request_complete(
-                        o,
-                        self.text.cursor.first().cursor(&self.text.rope),
-                        ctx,
-                    )));
-                let CompletionState::Complete(Rq {
-                    request: x,
-                    result: c,
-                }) = &mut self.requests.complete
-                else {
-                    panic!()
-                };
-                use ttools::TryRefTuple;
-                *x = Some((
-                    h,
-                    c.as_ref()
-                        .map(|x| x.start)
-                        .or(x.as_ref().on::<1>().copied())
-                        .unwrap_or(*self.text.cursor.first()),
-                ));
+                if let Ok(fut) = lsp.request_complete(
+                    o,
+                    self.text.cursor.first().cursor(&self.text.rope),
+                    ctx,
+                ) {
+                    let h = DropH::new(lsp.runtime.spawn(fut));
+                    let CompletionState::Complete(Rq {
+                        request: x,
+                        result: c,
+                    }) = &mut self.requests.complete
+                    else {
+                        panic!()
+                    };
+                    use ttools::TryRefTuple;
+                    *x = Some((
+                        h,
+                        c.as_ref()
+                            .map(|x| x.start)
+                            .or(x.as_ref().on::<1>().copied())
+                            .unwrap_or(*self.text.cursor.first()),
+                    ));
+                }
             }
             Some(CDo::SelectNext) => {
                 let CompletionState::Complete(Rq {
@@ -845,15 +843,15 @@ impl Editor {
     }
     pub fn refresh_document_highlights(&mut self) {
         lsp!(let lsp, path = self);
-        self.requests.document_highlights.request(
-            lsp.runtime.spawn(
-                lsp.document_highlights(
-                    path,
-                    self.text
-                        .to_l_position(self.text.cursor.first().position)
-                        .unwrap(),
-                ),
-            ),
-        );
+        if let Ok(fut) = lsp.document_highlights(
+            path,
+            self.text
+                .to_l_position(self.text.cursor.first().position)
+                .unwrap(),
+        ) {
+            self.requests
+                .document_highlights
+                .request(lsp.runtime.spawn(fut));
+        }
     }
 }

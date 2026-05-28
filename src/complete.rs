@@ -118,7 +118,7 @@ fn r(
             const { CompletionItemKind::TYPE_PARAMETER.0 as usize } => ("#9a9b9a", "T "),
             const { CompletionItemKind::KEYWORD.0 as usize } => ("#FFAD66", "as"),
             _ => ("#9a9b9a", " ")
-                    }).map(const 
+                    }).map(const
             |(x, y)| (set_a(color_(x), 0.5), color_(x), y),
         )
     };
@@ -254,10 +254,11 @@ impl Editor {
         if self.hist.record(&self.text) {
             change!(self, window.clone());
         }
-        self.requests.sig_help =
-            Rq::new(lsp.runtime.spawn(lsp.request_sig_help(
-                o,
-                self.text.cursor.first().cursor(&self.text.rope),
-            )));
+        if let Ok(fut) = lsp.request_sig_help(
+            o,
+            self.text.cursor.first().cursor(&self.text.rope),
+        ) {
+            self.requests.sig_help = Rq::new(lsp.runtime.spawn(fut));
+        }
     }
 }

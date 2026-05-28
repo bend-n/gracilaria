@@ -6,8 +6,8 @@ use std::sync::LazyLock;
 
 use itertools::Itertools;
 
-use crate::menu::generic::MenuData;
 use crate::Freq;
+use crate::menu::generic::MenuData;
 
 #[lower::apply(saturating)]
 pub fn next<const N: usize>(n: usize, sel: &mut usize, vo: &mut usize) {

@@ -38,7 +38,8 @@ use crate::error::WDebug;
 use crate::gotolist::{At, GoTo};
 use crate::hov::{self, HOV_HEIGHT, Hovr, Hovring, Rendered};
 use crate::lsp::{
-    Anonymize, Client, Map_, PathURI, RequestError, Rq, tdpp, vsc_settings,
+    Anonymize, Client, Map_, PathURI, Peel, RequestError, Rq, tdpp,
+    vsc_settings,
 };
 use crate::menu::generic::MenuData;
 use crate::meta::META;
@@ -115,11 +116,10 @@ pub(crate) use lsp;
 macro_rules! inlay {
     ($self:ident) => {
         $crate::edi::lsp!($self + p).map(|(lsp, path)| {
-            $self
-                .requests
-                .inlay
-                .request(lsp.runtime.spawn(lsp.inlay(path, &$self.text)))
-        })
+            if let Ok(fut) = lsp.inlay(path, &$self.text) {
+                $self.requests.inlay.request(lsp.runtime.spawn(fut))
+            }
+        });
     };
 }
 pub(crate) use inlay;
@@ -138,11 +138,11 @@ macro_rules! change {
     (@$self:ident, $w:expr) => {
         lsp!($self + p).map(|(x, origin)| {
             x.edit(&origin, $self.text.rope.to_string()).unwrap();
+            use crate::lsp::Peel;
             x.rq_semantic_tokens(
                 &mut $self.requests.semantic_tokens,
                 origin,
-            )
-            .unwrap();
+            ).peel().unwrap();
             $crate::edi::inlay!($self);
             let o_ = $self.origin.clone();
             let w = $self.git_dir.clone();
@@ -161,8 +161,8 @@ macro_rules! change {
                 });
             let origin = origin.to_owned();
             $self.requests.git_diff.request(t);
-            if $self.requests.document_symbols.result != Some(None) {
-                let h = x.runtime.spawn(async move { x.document_symbols(&origin).await });
+            if $self.requests.document_symbols.result != Some(None) && let Ok(fut) = x.document_symbols(&origin) {
+                let h = x.runtime.spawn(fut);
                 $self.requests.document_symbols.request(h);
             }
         });
@@ -339,7 +339,8 @@ impl Editor {
                 c.rq_semantic_tokens(
                     &mut me.requests.semantic_tokens,
                     origin,
-                )?;
+                )
+                .peel()?;
             }
             me.git_dir = g;
             me.mtime = Self::modify(me.origin.as_deref());
@@ -382,16 +383,16 @@ impl Editor {
         // );
         self.bar.last_action = "saved".into();
         lsp!(self + p).map(|(l, o)| {
-            let v = l.runtime.block_on(l.format(o));
-            if let Ok(Some(v)) = v {
-                if let Err(x) =
+            if let Ok(fut) = l.format(o)
+                && let Ok(Some(v)) = l.runtime.block_on(fut)
+                && let Err(x) =
                     self.text.apply_tedits_adjusting(&mut { v })
-                {
-                    eprintln!("unhappy fmt {x}")
-                }
+            {
+                eprintln!("unhappy fmt {x}")
             }
-            // self.text.cursor =
-            // self.text.cursor.min(self.text.rope.len_chars());
+            self.text.cursor.each(|c| {
+                c.position = c.position.min(self.text.rope.len_chars())
+            });
             change!(self);
             self.hist.push_if_changed(&mut self.text);
             l.notify::<lsp_notification!("textDocument/didSave")>(
@@ -600,7 +601,8 @@ impl Editor {
                 ls.rq_semantic_tokens(
                     &mut self.requests.semantic_tokens,
                     origin,
-                )?;
+                )
+                .peel()?;
             }
         }
         self.set_title(w);

@@ -1,5 +1,5 @@
 use std::backtrace::Backtrace;
-use std::fmt::Debug;
+use std::fmt::{Debug, Display};
 use std::marker::PhantomData;
 
 use crossbeam::channel::SendError;
@@ -11,13 +11,15 @@ use tokio::sync::oneshot;
 use tokio::task;
 use tokio_util::task::AbortOnDropHandle;
 
+use crate::lsp::Void;
+
 #[derive(Serialize, Deserialize)]
 pub enum RequestError<X> {
     Rx(PhantomData<X>),
     Failure(Re, #[serde(skip)] Option<Backtrace>),
     Cancelled(Re, DiagnosticServerCancellationData),
     Send(Message),
-    Unsupported,
+    // Unsupported,
 }
 pub type AQErr = RequestError<LSPError>;
 impl Request for LSPError {
@@ -37,7 +39,7 @@ impl<T, E> Anonymize<T> for Result<T, RequestError<E>> {
             RequestError::Rx(_) => RequestError::Rx(PhantomData),
             RequestError::Failure(r, b) => RequestError::Failure(r, b),
             RequestError::Cancelled(r, d) => RequestError::Cancelled(r, d),
-            RequestError::Unsupported => RequestError::Unsupported,
+            // RequestError::Unsupported => RequestError::Unsupported,
         })
     }
 }
@@ -65,8 +67,8 @@ impl<X: Request> std::fmt::Display for RequestError<X> {
                 write!(f, "{} failed; couldnt send {x:?}", X::METHOD),
             Self::Rx(_) =>
                 write!(f, "{} failed; couldnt get from thingy", X::METHOD),
-            RequestError::Unsupported =>
-                write!(f, "{} failed; detected as unsupported", X::METHOD),
+            // RequestError::Unsupported =>
+            // write!(f, "{} failed; detected as unsupported", X::METHOD),
             Self::Failure(x, bt) => write!(
                 f,
                 "{} failed; returned badge :( {x:?} ({bt:?})",
@@ -82,6 +84,42 @@ impl<R: Request> Debug for RequestError<R> {
         std::fmt::Display::fmt(&self, f)
     }
 }
+pub trait Require<const R: &'static str> {
+    fn require(&self) -> Requiring<R, ()>;
+}
+impl<T, const R: &'static str> Require<R> for Option<T> {
+    fn require(&self) -> Requiring<R, ()> {
+        self.void().ok_or(Unsupported)
+    }
+}
+pub struct Unsupported<const R: &'static str>;
+pub type Requiring<const R: &'static str, T> = Result<T, Unsupported<R>>;
+impl<const R: &'static str> Display for Unsupported<R> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "request {} isnt supported by this LSP", R)
+    }
+}
+pub trait Peel<E> {
+    fn peel(self) -> Result<(), E>;
+}
+impl<E, N> Peel<E> for Result<Result<(), E>, N> {
+    fn peel(self) -> Result<(), E> {
+        match self {
+            Ok(Err(e)) => Err(e),
+            Ok(Ok(_)) | Err(_) => Ok(()),
+        }
+    }
+}
+// impl<const R: &'static str> Debug for Unsupported<R> {
+//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+//         std::fmt::Display::fmt(&self, f)
+//     }
+// }
+// impl<const X: &'static str> std::error::Error for Unsupported<X> {
+//     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+//         None
+//     }
+// }
 
 fn none<T>() -> Option<T> {
     None

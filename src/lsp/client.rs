@@ -22,7 +22,7 @@ use tokio::sync::oneshot;
 use ttools::*;
 
 use crate::lsp::BehaviourAfter::{self, *};
-use crate::lsp::{RequestError, Rq, Void};
+use crate::lsp::{RequestError, Require, Requiring, Rq};
 use crate::text::cursor::ceach;
 use crate::text::{LOADER, RopeExt, SortTedits, TextArea};
 
@@ -118,12 +118,17 @@ impl Client {
         f: &Path,
         (x, y): (usize, usize),
         c: CompletionContext,
-    ) -> impl Future<
-        Output = Result<
-            Option<CompletionResponse>,
-            RequestError<Completion>,
-        >,
-    > + use<'me> {
+    ) -> Requiring<
+        "completion",
+        impl Future<
+            Output = Result<
+                Option<CompletionResponse>,
+                RequestError<Completion>,
+            >,
+        > + use<'me>,
+    > {
+        self.caps().completion_provider.require()?;
+
         let (rx, _) = self
             .request_::<Completion, { Redraw }>(&CompletionParams {
                 text_document_position: TextDocumentPositionParams {
@@ -135,35 +140,40 @@ impl Client {
                 context: Some(c),
             })
             .unwrap();
-        rx
+        Ok(rx)
     }
 
     pub fn request_sig_help<'me>(
         &'me self,
         f: &Path,
         (x, y): (usize, usize),
-    ) -> impl Future<
-        Output = Result<
-            Option<SignatureHelp>,
-            RequestError<SignatureHelpRequest>,
-        >,
-    > + use<'me> {
-        self.request_::<SignatureHelpRequest, { Redraw }>(
-            &SignatureHelpParams {
-                context: None,
-                text_document_position_params:
-                    TextDocumentPositionParams {
-                        text_document: f.tid(),
-                        position: Position {
-                            line: y as _,
-                            character: x as _,
+    ) -> Requiring<
+        "signature_help",
+        impl Future<
+            Output = Result<
+                Option<SignatureHelp>,
+                RequestError<SignatureHelpRequest>,
+            >,
+        > + use<'me>,
+    > {
+        self.caps().signature_help_provider.require()?;
+        Ok(self
+            .request_::<SignatureHelpRequest, { Redraw }>(
+                &SignatureHelpParams {
+                    context: None,
+                    text_document_position_params:
+                        TextDocumentPositionParams {
+                            text_document: f.tid(),
+                            position: Position {
+                                line: y as _,
+                                character: x as _,
+                            },
                         },
-                    },
-                work_done_progress_params: default(),
-            },
-        )
-        .unwrap()
-        .0
+                    work_done_progress_params: default(),
+                },
+            )
+            .unwrap()
+            .0)
     }
 
     pub fn _pull_all_diag(
@@ -301,12 +311,16 @@ impl Client {
         &'me self,
         f: &Path,
         cursor: Position,
-    ) -> impl Future<
-        Output = Result<
-            Vec<DocumentHighlight>,
-            RequestError<DocumentHighlightRequest>,
-        >,
-    > + use<'me> {
+    ) -> Requiring<
+        "document_highlights",
+        impl Future<
+            Output = Result<
+                Vec<DocumentHighlight>,
+                RequestError<DocumentHighlightRequest>,
+            >,
+        > + use<'me>,
+    > {
+        self.caps().document_highlight_provider.require()?;
         let p = DocumentHighlightParams {
             text_document_position_params: TextDocumentPositionParams {
                 text_document: f.tid(),
@@ -315,21 +329,25 @@ impl Client {
             work_done_progress_params: default(),
             partial_result_params: default(),
         };
-        self.request_::<lsp_request!("textDocument/documentHighlight"), {Redraw}>(&p)
+        Ok(self.request_::<lsp_request!("textDocument/documentHighlight"), {Redraw}>(&p)
             .unwrap()
             .0
-            .map(|x| x.map(|x| x.unwrap_or_default()))
+            .map(|x| x.map(|x| x.unwrap_or_default())))
     }
     pub fn document_symbols(
         &'static self,
         p: &Path,
-    ) -> impl Future<
-        Output = Result<
-            Option<DocumentSymbolResponse>,
-            RequestError<lsp_request!("textDocument/documentSymbol")>,
-        >,
+    ) -> Requiring<
+        "document_symbol",
+        impl Future<
+            Output = Result<
+                Option<DocumentSymbolResponse>,
+                RequestError<lsp_request!("textDocument/documentSymbol")>,
+            >,
+        > + use<>,
     > {
-        self.request_::<lsp_request!("textDocument/documentSymbol"), { Redraw }>(
+        self.caps().document_symbol_provider.require()?;
+        Ok(self.request_::<lsp_request!("textDocument/documentSymbol"), { Redraw }>(
             &DocumentSymbolParams {
                 text_document: p.tid(),
                 work_done_progress_params: default(),
@@ -337,31 +355,36 @@ impl Client {
             },
         )
         .unwrap()
-        .0
+        .0)
     }
     pub fn workspace_symbols(
         &'static self,
         f: String,
-    ) -> impl Future<
-        Output = Result<
-            Option<WorkspaceSymbolResponse>,
-            RequestError<lsp_request!("workspace/symbol")>,
+    ) -> Requiring<
+        "workspace_symbol",
+        impl Future<
+            Output = Result<
+                Option<WorkspaceSymbolResponse>,
+                RequestError<lsp_request!("workspace/symbol")>,
+            >,
         >,
     > {
-        self.request_::<lsp_request!("workspace/symbol"), { Redraw }>(
-            &lsp_types::WorkspaceSymbolParams {
-                query: f,
-                search_scope: Some(
-                    lsp_types::WorkspaceSymbolSearchScope::Workspace,
-                ),
-                search_kind: Some(
-                    lsp_types::WorkspaceSymbolSearchKind::AllSymbols,
-                ),
-                ..Default::default()
-            },
-        )
-        .unwrap()
-        .0
+        self.caps().workspace_symbol_provider.require()?;
+        Ok(self
+            .request_::<lsp_request!("workspace/symbol"), { Redraw }>(
+                &lsp_types::WorkspaceSymbolParams {
+                    query: f,
+                    search_scope: Some(
+                        lsp_types::WorkspaceSymbolSearchScope::Workspace,
+                    ),
+                    search_kind: Some(
+                        lsp_types::WorkspaceSymbolSearchKind::AllSymbols,
+                    ),
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+            .0)
     }
 
     pub fn matching_brace_at(
@@ -400,19 +423,23 @@ impl Client {
         &'static self,
         f: &Path,
         t: &TextArea,
-    ) -> impl Future<
-        Output = Result<
-            Vec<InlayHint>,
-            RequestError<lsp_request!("textDocument/inlayHint")>,
-        >,
-    > + use<> {
-        self.request_::<lsp_request!("textDocument/inlayHint"), { Redraw }>(&InlayHintParams {
+    ) -> Requiring<
+        "inlay_hint",
+        impl Future<
+            Output = Result<
+                Vec<InlayHint>,
+                RequestError<lsp_request!("textDocument/inlayHint")>,
+            >,
+        > + use<>,
+    > {
+        self.caps().inlay_hint_provider.require()?;
+        Ok(self.request_::<lsp_request!("textDocument/inlayHint"), { Redraw }>(&InlayHintParams {
             work_done_progress_params: default(),
             text_document: f.tid(),
             range: t.to_l_range(lower::saturating::math!{
                 t.rope.try_line_to_char(t.vo-t.r).unwrap_or(0)..t.rope.try_line_to_char(t.vo + t.r + t.r).unwrap_or(t.rope.len_chars())
             }).unwrap()
-        }).unwrap().0.map(|x| x.map(Option::unwrap_or_default))
+        }).unwrap().0.map(|x| x.map(Option::unwrap_or_default)))
         //     async {
         //     if let Ok(z) = z.await {
         //         let mut into = vec![];
@@ -431,25 +458,33 @@ impl Client {
     pub fn format(
         &'static self,
         f: &Path,
-    ) -> impl Future<
-        Output = Result<Option<Vec<TextEdit>>, RequestError<Formatting>>,
+    ) -> Requiring<
+        "document_formatting",
+        impl Future<
+            Output = Result<
+                Option<Vec<TextEdit>>,
+                RequestError<Formatting>,
+            >,
+        >,
     > {
-        self.request::<lsp_request!("textDocument/formatting")>(
-            &DocumentFormattingParams {
-                text_document: f.tid(),
-                options: FormattingOptions {
-                    tab_size: 4,
-                    insert_spaces: false,
-                    properties: default(),
-                    trim_trailing_whitespace: Some(true),
-                    insert_final_newline: Some(true),
-                    trim_final_newlines: Some(false),
+        self.caps().document_formatting_provider.require()?;
+        Ok(self
+            .request::<lsp_request!("textDocument/formatting")>(
+                &DocumentFormattingParams {
+                    text_document: f.tid(),
+                    options: FormattingOptions {
+                        tab_size: 4,
+                        insert_spaces: false,
+                        properties: default(),
+                        trim_trailing_whitespace: Some(true),
+                        insert_final_newline: Some(true),
+                        trim_final_newlines: Some(false),
+                    },
+                    work_done_progress_params: default(),
                 },
-                work_done_progress_params: default(),
-            },
-        )
-        .unwrap()
-        .0
+            )
+            .unwrap()
+            .0)
     }
     pub fn rq_semantic_tokens(
         &'static self,
@@ -460,38 +495,39 @@ impl Client {
             RequestError<SemanticTokensFullRequest>,
         >,
         f: &Path,
-    ) -> Result<(), RequestError<SemanticTokensFullRequest>> {
-        self.caps().semantic_tokens_provider.void().ok_or(
-            RequestError::<SemanticTokensFullRequest>::Unsupported,
-        )?;
+    ) -> Requiring<
+        "semantic_tokens",
+        Result<(), RequestError<SemanticTokensFullRequest>>,
+    > {
+        self.caps().semantic_tokens_provider.require()?;
         debug!("requested semantic tokens");
         // let Some(b"rs") = f.extension().map(|x| x.as_encoded_bytes())
         // else {
         // return Ok(());
         // };
-        let (rx, _) = self.request::<SemanticTokensFullRequest>(
-            &SemanticTokensParams {
-                work_done_progress_params: default(),
-                partial_result_params: default(),
-                text_document: f.tid(),
-            },
-        )?;
-        let x = self.runtime.spawn(async move {
-            let t = rx.await;
-            let y =
-                t?.ok_or(RequestError::Rx(std::marker::PhantomData))?;
-            debug!("received semantic tokens");
-            let r = match y {
-                SemanticTokensResult::Partial(_) =>
-                    panic!("i told the lsp i dont support this"),
-                SemanticTokensResult::Tokens(x) =>
-                    x.data.into_boxed_slice(),
-            };
-            Ok(r)
-        });
-        to.request(x);
-
-        Ok(())
+        Ok(try bikeshed Result<(), RequestError<_>> {
+            let (rx, _) = self.request::<SemanticTokensFullRequest>(
+                &SemanticTokensParams {
+                    work_done_progress_params: default(),
+                    partial_result_params: default(),
+                    text_document: f.tid(),
+                },
+            )?;
+            let x = self.runtime.spawn(async move {
+                let t = rx.await;
+                let y =
+                    t?.ok_or(RequestError::Rx(std::marker::PhantomData))?;
+                debug!("received semantic tokens");
+                let r = match y {
+                    SemanticTokensResult::Partial(_) =>
+                        panic!("i told the lsp i dont support this"),
+                    SemanticTokensResult::Tokens(x) =>
+                        x.data.into_boxed_slice(),
+                };
+                Ok(r)
+            });
+            to.request(x);
+        })
     }
 
     pub fn enter<'a>(

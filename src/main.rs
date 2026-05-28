@@ -1,4 +1,5 @@
 #![feature(
+unsized_const_params,
     exact_div,
     yeet_expr,
     const_array,
@@ -65,7 +66,6 @@ use fimg::Image;
 use libc::{atexit, signal};
 use lsp::Rq;
 use lsp_types::*;
-
 use rust_fsm::StateMachine;
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
@@ -100,7 +100,10 @@ fn main() {
     let _x = 4;
     // let x = HashMap::new();
     unsafe { std::env::set_var("CARGO_UNSTABLE_RUSTC_UNICODE", "true") };
-    env_logger::builder().filter_level(log::LevelFilter::Info).parse_env("GRA_LOG").init();
+    env_logger::builder()
+        .filter_level(log::LevelFilter::Info)
+        .parse_env("GRA_LOG")
+        .init();
     // lsp::x();
     entry(EventLoop::new().unwrap())
 }
@@ -119,7 +122,7 @@ extern "C" fn sigint(_: i32) {
     cleanup();
     std::process::exit(12);
 }
-type Freq =  FxHashMap<TypeId, FxHashMap<u64, u16>>;
+type Freq = FxHashMap<TypeId, FxHashMap<u64, u16>>;
 pub(crate) fn entry(event_loop: EventLoop) {
     unsafe {
         __ED.write(match Editor::new() {
@@ -134,7 +137,7 @@ pub(crate) fn entry(event_loop: EventLoop) {
     unsafe { signal(libc::SIGINT, sigint as *const () as usize) };
     let ed: &'static mut Editor = unsafe { __ED.assume_init_mut() };
 
-    let mut freq:Freq  = default();
+    let mut freq: Freq = default();
     let ppem = 18.0;
     let ls = 20.0;
     // let ed = Box::leak(Box::new(ed));

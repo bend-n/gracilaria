@@ -24,15 +24,12 @@ impl Editor {
                     text.mapped_index_at(cursor_position),
                     &text.rope,
                 );
-                if let Some((lsp, path)) = lsp!(self + p) {
-                    if self.requests.sig_help.result.is_some() {
-                        self.requests.sig_help.request(lsp.runtime.spawn(
-                            lsp.request_sig_help(
-                                path,
-                                text.primary_cursor(),
-                            ),
-                        ));
-                    }
+                if let Some((lsp, path)) = lsp!(self + p)
+                    && self.requests.sig_help.result.is_some()
+                    && let Ok(fut) =
+                        lsp.request_sig_help(path, text.primary_cursor())
+                {
+                    self.requests.sig_help.request(lsp.runtime.spawn(fut));
                 }
                 self.hist.lc = text.cursor.clone();
                 self.chist.push(text.primary_cursor());
@@ -68,7 +65,6 @@ impl Editor {
                         GotoDefinitionResponse::Link([x, ..]) => Some(x.clone()),
                     _ => None,
                    })
-                
                 })
                     && let Err(e) = self.go(&x, w.clone())
                 {
