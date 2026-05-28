@@ -30,6 +30,6 @@ impl CellBuffer {
         &self[self.vo * self.c..((self.vo + r) * self.c).min(self.len())]
     }
     pub fn l(&self) -> usize {
-        self.len() / self.c
+        self.len().checked_div(self.c).unwrap_or(0)
     }
 }

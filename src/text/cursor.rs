@@ -136,7 +136,7 @@ impl Cursor {
     }
     pub fn set_ho(&mut self) {}
     pub fn cursor(self, r: &Rope) -> (usize, usize) {
-        r.xy(*self).unwrap()
+        r.xy(*self).unwrap_or((0, 0))
     }
     pub fn indentation(self, r: &Rope) -> usize {
         r.indentation_of(self.cursor(r).1)

@@ -6,7 +6,9 @@ use std::sync::atomic::Ordering::Relaxed;
 use Default::default;
 use crossbeam::channel::{Receiver, SendError, Sender};
 use futures::FutureExt;
-use json_value_merge::Merge;
+use helix_core::syntax::config::{
+    LanguageServerConfiguration, LanguageServerFeatures,
+};
 use log::debug;
 use lsp_server::{
     Message, Notification as N, Request as LRq, Response as Re,
@@ -20,10 +22,9 @@ use tokio::sync::oneshot;
 use ttools::*;
 
 use crate::lsp::BehaviourAfter::{self, *};
-use crate::lsp::init_opts::ra_config;
-use crate::lsp::{RequestError, Rq};
+use crate::lsp::{RequestError, Rq, Void};
 use crate::text::cursor::ceach;
-use crate::text::{RopeExt, SortTedits, TextArea};
+use crate::text::{LOADER, RopeExt, SortTedits, TextArea};
 
 #[derive(Debug)]
 pub struct Client {
@@ -43,6 +44,11 @@ pub struct Client {
     // TODO: handle notifications from the server
     pub not_rx: Receiver<N>,
     pub req_rx: Receiver<LRq>,
+
+    pub lsp_data: (
+        &'static LanguageServerConfiguration,
+        &'static LanguageServerFeatures,
+    ),
 }
 
 impl Drop for Client {
@@ -52,15 +58,23 @@ impl Drop for Client {
 }
 
 impl Client {
+    pub fn caps(&self) -> &ServerCapabilities {
+        &self.initialized.as_ref().unwrap().capabilities
+    }
     pub fn open(
         &self,
         f: &Path,
         text: String,
+        l: helix_core::Language,
     ) -> Result<(), SendError<Message>> {
+        let l = LOADER.language(l).config();
         self.notify::<DidOpenTextDocument>(&DidOpenTextDocumentParams {
             text_document: TextDocumentItem {
                 uri: url::Url::from_file_path(f).unwrap(),
-                language_id: "rust".into(),
+                language_id: l
+                    .language_server_language_id
+                    .clone()
+                    .unwrap_or(l.language_id.clone()),
                 version: 0,
                 text,
             },
@@ -378,7 +392,9 @@ impl Client {
     }
 
     pub fn legend(&self) -> Option<&SemanticTokensLegend> {
-        match &self.initialized{Some(lsp_types::InitializeResult {capabilities: ServerCapabilities {semantic_tokens_provider:Some(SemanticTokensServerCapabilities::SemanticTokensOptions(SemanticTokensOptions{legend,..})),..}, ..})=> {Some(legend)},_ => None,}
+        match &self.caps(){
+            ServerCapabilities {semantic_tokens_provider:Some(SemanticTokensServerCapabilities::SemanticTokensOptions(SemanticTokensOptions{legend,..})), ..}=> {Some(legend)},_ => None,
+        }
     }
     pub fn inlay(
         &'static self,
@@ -445,12 +461,14 @@ impl Client {
         >,
         f: &Path,
     ) -> Result<(), RequestError<SemanticTokensFullRequest>> {
+        self.caps().semantic_tokens_provider.void().ok_or(
+            RequestError::<SemanticTokensFullRequest>::Unsupported,
+        )?;
         debug!("requested semantic tokens");
-
-        let Some(b"rs") = f.extension().map(|x| x.as_encoded_bytes())
-        else {
-            return Ok(());
-        };
+        // let Some(b"rs") = f.extension().map(|x| x.as_encoded_bytes())
+        // else {
+        // return Ok(());
+        // };
         let (rx, _) = self.request::<SemanticTokensFullRequest>(
             &SemanticTokensParams {
                 work_done_progress_params: default(),
@@ -460,7 +478,8 @@ impl Client {
         )?;
         let x = self.runtime.spawn(async move {
             let t = rx.await;
-            let y = t?.unwrap();
+            let y =
+                t?.ok_or(RequestError::Rx(std::marker::PhantomData))?;
             debug!("received semantic tokens");
             let r = match y {
                 SemanticTokensResult::Partial(_) =>
@@ -487,10 +506,10 @@ impl Client {
                         text_document: f.tid(),
                         position: t.to_l_position(*c).unwrap(),
                     },
-                )?;
+                );
             match r {
-                None => t.enter(),
-                Some(mut r) => {
+                Ok(None) | Err(_) => t.enter(),
+                Ok(Some(mut r)) => {
                     r.sort_tedits();
                     for f in r {
                         t.apply_snippet_tedit(&f)?;
@@ -576,14 +595,14 @@ impl Client {
         .map(fst)
     }
 
-    pub fn _update_config(&self, with: serde_json::Value) {
-        let mut x = ra_config();
-        x.merge(&with);
-        self.notify::<DidChangeConfiguration>(
-            &DidChangeConfigurationParams { settings: x },
-        )
-        .unwrap();
-    }
+    // pub fn _update_config(&self, with: serde_json::Value) {
+    //     let mut x = ra_config();
+    //     x.merge(&with);
+    //     self.notify::<DidChangeConfiguration>(
+    //         &DidChangeConfigurationParams { settings: x },
+    //     )
+    //     .unwrap();
+    // }
     pub fn find_function(
         &self,
         at: TextDocumentPositionParams,

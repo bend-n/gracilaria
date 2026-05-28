@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use crate::FG;
 use crate::edi::{Editor, change, lsp};
 use crate::lsp::Rq;
-use crate::menu::{Key, back, charc, filter, next, score, score_basic};
+use crate::menu::{Key, back, charc, filter, next, score_basic};
 use crate::text::{SortTedits, col, color_, set_a};
 
 #[derive(Serialize, Deserialize)]
@@ -123,7 +123,7 @@ fn r(
         )
     };
     let (bgt, col, ty) =
-        MAP[x.kind.unwrap_or(CompletionItemKind(50)).0 as usize];
+        MAP[x.kind.unwrap_or(CompletionItemKind(25)).0 as usize];
     b.iter_mut().zip(ty.chars()).for_each(|(x, c)| {
         *x = (Style::new(col, bgt) | Style::BOLD).basic(c)
     });

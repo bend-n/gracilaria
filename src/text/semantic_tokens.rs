@@ -44,9 +44,9 @@ impl TokenD {
             // });
         }
         // println!(
-        //     "{tty:?}: {}",
-        //     slice.iter().flat_map(|x| x.letter).collect::<String>()
-        // );
+        // "{tty:?}",
+        // .iter().flat_map(|x| x.letter).collect::<String>()
+        // );k
         let mut modi = self.modifiers;
         while modi != 0 {
             let bit = modi.trailing_zeros();

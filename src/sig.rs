@@ -12,14 +12,14 @@ use crate::rnd::CellBuffer;
 use crate::text::color_;
 pub fn active(
     sig: &SignatureHelp,
-) -> (&SignatureInformation, Option<&ParameterInformation>) {
-    let y = &sig.signatures[sig.active_signature.unwrap_or(0) as usize];
-    (
+) -> Option<(&SignatureInformation, Option<&ParameterInformation>)> {
+    let y = &sig.signatures.get(sig.active_signature? as usize)?;
+    Some((
         y,
         sig.active_parameter
             .zip(y.parameters.as_ref())
             .and_then(|(i, x)| x.get(i as usize)),
-    )
+    ))
 }
 
 pub fn sig(
@@ -44,7 +44,11 @@ pub fn sig(
     v.extend(repeat_n(d, c - (v.len() % c)));
     v
 }
-pub fn doc(sig: &SignatureInformation, c: usize) -> Option<CellBuffer> {
+pub fn doc(
+    sig: &SignatureInformation,
+    c: usize,
+    l: Option<helix_core::Language>,
+) -> Option<CellBuffer> {
     sig.documentation
         .as_ref()
         .map(|x| match x {
@@ -55,7 +59,8 @@ pub fn doc(sig: &SignatureInformation, c: usize) -> Option<CellBuffer> {
             }) => value,
         })
         .and_then(|x| {
-            crate::hov::p(&x).map(|node| crate::hov::markdown2(c, &node))
+            crate::hov::p(&x)
+                .map(|node| crate::hov::markdown2(c, &node, l))
         })
         .map(|cells| CellBuffer { c, vo: 0, cells: cells.into() })
 }

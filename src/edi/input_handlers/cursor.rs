@@ -161,7 +161,7 @@ impl Editor {
                             ]
                         };
                         // println!("{x:?}");
-                        DiagnosticHovr::new(span, x, w, r)
+                        DiagnosticHovr::new(span, x, w, r, text)
                     })
                     .map(Hoverable::Diagnostic)
                     .collect::<Vec<_>>()
@@ -265,6 +265,7 @@ impl Editor {
         // let (rx, _) =;
         // println!("rq hov of {hover:?} (cur {})", requests.hovering.request.is_some());
         let tdp = tdpp.clone();
+        let l = self.language;
         let window = w.clone();
         let handle: tokio::task::JoinHandle<Result<Option<Hovr>, _>> =
             lsp.runtime.spawn(async move {
@@ -281,7 +282,7 @@ impl Editor {
                     return Ok(None::<Hovr>);
                 };
                 let (width, cells) = spawn_blocking(move || {
-                    let x = match &x.contents {
+                    let mut x = match &x.contents {
                         lsp_types::HoverContents::Scalar(
                             marked_string,
                         ) => match marked_string {
@@ -305,14 +306,23 @@ impl Editor {
                             markup_content,
                         ) => Cow::Borrowed(&*markup_content.value),
                     };
-                    let x = hov::p(&x).unwrap();
+                    if l.is_some_and(|l| {
+                        matches!(
+                            &LOADER.language(l).config().language_id,
+                            "cpp"
+                        )
+                    }) {
+                        x = format!("```cpp\n{x}\n```").into();
+                    }
+                    println!("{x}");
+                    let x = hov::p(&x).expect("markdown parsing");
                     let m = hov::l(&x)
                         .into_iter()
                         .max()
                         .map(_ + 2)
                         .unwrap_or(usize::MAX)
                         .min(c - 10);
-                    (m, hov::markdown2(m, &x))
+                    (m, hov::markdown2(m, &x, l))
                 })
                 .await
                 .unwrap();
@@ -347,6 +357,7 @@ impl Editor {
                 ))
             });
         let diags = self.find_diags(cursor_position, &w);
+        println!("requesting hover");
         self.state
             .consume(Action::SetHovering(
                 diags.map(|of| Hovring { of, ..default() }),

@@ -100,8 +100,7 @@ fn main() {
     let _x = 4;
     // let x = HashMap::new();
     unsafe { std::env::set_var("CARGO_UNSTABLE_RUSTC_UNICODE", "true") };
-    env_logger::init();
-
+    env_logger::builder().filter_level(log::LevelFilter::Info).parse_env("GRA_LOG").init();
     // lsp::x();
     entry(EventLoop::new().unwrap())
 }

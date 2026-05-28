@@ -2,13 +2,12 @@ pub mod generic;
 use std::any::TypeId;
 use std::borrow::Cow;
 use std::cmp::Reverse;
-use std::hash::Hash;
 use std::sync::LazyLock;
 
 use itertools::Itertools;
 
 use crate::menu::generic::MenuData;
-use crate::{Freq, hash};
+use crate::Freq;
 
 #[lower::apply(saturating)]
 pub fn next<const N: usize>(n: usize, sel: &mut usize, vo: &mut usize) {

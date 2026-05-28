@@ -17,6 +17,7 @@ pub enum RequestError<X> {
     Failure(Re, #[serde(skip)] Option<Backtrace>),
     Cancelled(Re, DiagnosticServerCancellationData),
     Send(Message),
+    Unsupported,
 }
 pub type AQErr = RequestError<LSPError>;
 impl Request for LSPError {
@@ -36,6 +37,7 @@ impl<T, E> Anonymize<T> for Result<T, RequestError<E>> {
             RequestError::Rx(_) => RequestError::Rx(PhantomData),
             RequestError::Failure(r, b) => RequestError::Failure(r, b),
             RequestError::Cancelled(r, d) => RequestError::Cancelled(r, d),
+            RequestError::Unsupported => RequestError::Unsupported,
         })
     }
 }
@@ -63,6 +65,8 @@ impl<X: Request> std::fmt::Display for RequestError<X> {
                 write!(f, "{} failed; couldnt send {x:?}", X::METHOD),
             Self::Rx(_) =>
                 write!(f, "{} failed; couldnt get from thingy", X::METHOD),
+            RequestError::Unsupported =>
+                write!(f, "{} failed; detected as unsupported", X::METHOD),
             Self::Failure(x, bt) => write!(
                 f,
                 "{} failed; returned badge :( {x:?} ({bt:?})",

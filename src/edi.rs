@@ -1,12 +1,17 @@
 use std::collections::HashMap;
+use std::ffi::OsString;
 use std::fmt::Debug;
+use std::io::BufReader;
 use std::mem::take;
 use std::path::{Path, PathBuf};
+use std::process::Stdio;
 use std::sync::Arc;
 use std::time::SystemTime;
 
 use Default::default;
 use ftools::Bind;
+use helix_core::syntax::config::FileType;
+use log::info;
 use lsp_server::Connection;
 use lsp_types::*;
 use regex::Regex;
@@ -20,6 +25,7 @@ mod input_handlers;
 pub use input_handlers::handle2;
 
 mod lsp_impl;
+mod ra;
 pub mod st;
 mod wsedit;
 
@@ -39,7 +45,7 @@ use crate::meta::META;
 use crate::sym::{Symbols, SymbolsList, SymbolsType};
 use crate::text::cursor::{Ronge, ceach};
 use crate::text::hist::{ClickHistory, Hist};
-use crate::text::{Mapping, RopeExt, SortTedits, TextArea};
+use crate::text::{LOADER, Mapping, RopeExt, SortTedits, TextArea};
 use crate::{
     BoolRequest, CDo, CompletionAction, CompletionState, alt, ctrl,
     filter, hash, shift, sym, trm,
@@ -84,6 +90,8 @@ pub struct Editor {
     pub chist: ClickHistory,
     pub hist: Hist,
     pub mtime: Option<std::time::SystemTime>,
+    #[serde(skip)]
+    pub language: Option<helix_core::Language>,
     // #[serde(skip)]
     // pub git_diff:
     // Option<std::rc::Rc<std::cell::RefCell<imara_diff::Diff>>>,
@@ -162,9 +170,12 @@ macro_rules! change {
 }
 pub(crate) use change;
 
-fn rooter(x: &Path, search: &str) -> Option<PathBuf> {
+fn rooter(
+    x: &Path,
+    mut search: impl FnMut(OsString) -> bool + Clone,
+) -> Option<PathBuf> {
     for f in std::fs::read_dir(&x).ok()?.filter_map(Result::ok) {
-        if f.file_name() == search {
+        if search(f.file_name()) {
             return Some(f.path().with_file_name("").to_path_buf());
         }
     }
@@ -184,16 +195,24 @@ impl Editor {
             me.text.insert(&std::fs::read_to_string(x)?);
             me.text.cursor = default();
         };
+        let n = o.as_deref().and_then(|o| LOADER.language_for_filename(o));
+        me.language = n;
+
+        let l =
+            n.map(|n| LOADER.languages().nth(n.idx()).unwrap().1.config());
         me.workspace = o
             .as_ref()
             .and_then(|x| x.parent())
-            .and_then(|x| rooter(&x, "Cargo.toml"))
+            .and_then(|x| {
+                l.and_then(|l| rooter(&x, |f| l.roots.is_match(f)))
+            })
+            .or(std::env::current_dir().ok())
             .and_then(|x| x.canonicalize().ok());
 
         let vsc = o
             .as_ref()
             .and_then(|x| x.parent())
-            .and_then(|x| rooter(&x, ".vscode"))
+            .and_then(|x| rooter(&x, |x| x == ".vscode"))
             .map(|x| (x.clone(), x.join(".vscode").join("settings.json")))
             .filter(|x| x.1.exists())
             .and_then(|(ws, x)| (vsc_settings::load(&x, &ws)).ok());
@@ -210,10 +229,11 @@ impl Editor {
             loaded_state = true;
             assert!(me.workspace.is_some());
         }
+        me.language = n;
         me.git_dir = me
             .workspace
             .as_deref()
-            .and_then(|x| rooter(&x, ".git"))
+            .and_then(|x| rooter(&x, |x| x == ".git"))
             .and_then(|x| x.canonicalize().ok());
         me.origin = o;
         me.tree = me.workspace.as_ref().map(|x| {
@@ -221,52 +241,63 @@ impl Editor {
                 .into_iter()
                 .flatten()
                 .filter(|x| {
-                    x.path().extension().is_some_and(|x| x == "rs")
+                    let x = x.path();
+                    l.is_some_and(|l| {
+                        l.file_types.iter().any(|y| match y {
+                            FileType::Extension(e) =>
+                                x.extension().is_some_and(|x| x == &**e),
+                            FileType::Glob(glob) =>
+                                glob.compile_matcher().is_match(x),
+                        })
+                    })
                 })
                 .map(|x| x.path().to_owned())
                 .collect::<Vec<_>>()
         });
-        let l = me.workspace.as_ref().map(|workspace| {
-            let dh = std::panic::take_hook();
-            let main = std::thread::current_id();
-            // let mut c = Command::new("rust-analyzer")
-            //     .stdin(Stdio::piped())
-            //     .stdout(Stdio::piped())
-            //     .stderr(Stdio::inherit())
-            //     .spawn()
-            //     .unwrap();
-            let w = workspace.clone();
-            let (a, b) = Connection::memory();
-            std::thread::Builder::new()
-                .name("Rust Analyzer".into())
-                .stack_size(1024 * 1024 * 8)
-                .spawn(move || {
-                    let ra = std::thread::current_id();
-                    std::panic::set_hook(Box::new(move |info| {
-                        // iz
-                        if std::thread::current_id() == main {
-                            println!("{:x}", hash(&w));
-                            dh(info);
-                        } else if std::thread::current_id() == ra
-                            || std::thread::current()
-                                .name()
-                                .is_some_and(|x| x.starts_with("RA"))
-                        {
-                            println!(
-                                "RA panic @ {}",
-                                info.location().unwrap()
-                            );
-                        }
-                    }));
-                    rust_analyzer::bin::run_server(b)
-                })
-                .unwrap();
+        let l = me.workspace.as_ref().zip(l).map(|(workspace, l)| {
+            let (Connection { sender, receiver }, conf) = if l.language_id
+                == "rust"
+            {
+                super let (_jh, a) = ra::ra(workspace.clone());
+                (
+                    a,
+                    (
+                        &LOADER.language_server_configs()["rust-analyzer"],
+                        &l.language_servers[0],
+                    ),
+                )
+            } else {
+                let (mut c, conf) = l
+                    .language_servers
+                    .iter()
+                    .find_map(|l| {
+                        let lc = LOADER
+                            .language_server_configs()
+                            .get(&l.name)?;
+                        std::process::Command::new(&lc.command)
+                            .args(&lc.args)
+                            .stdin(Stdio::piped())
+                            .stdout(Stdio::piped())
+                            .stderr(Stdio::inherit())
+                            .spawn()
+                            .ok()
+                            .zip(Some((lc, l)))
+                    })
+                    .ok_or(report!(
+                        "no lsp for this language; install one of {:?}",
+                        l.language_servers
+                    ))
+                    .unwrap();
+                super let (x, _iot) =
+                    Connection::stdio(
+                        BufReader::new(c.stdout.take().unwrap()),
+                        c.stdin.take().unwrap(),
+                    );
+                (x, conf)
+            };
+            info!("spawned {conf:?}");
             let (c, t2, changed) = crate::lsp::run(
-                (a.sender, a.receiver),
-                //    lsp_server::stdio::stdio_transport(
-                //         BufReader::new(c.stdout.take().unwrap()),
-                //         c.stdin.take().unwrap(),
-                //     ),
+                (sender, receiver),
                 WorkspaceFolder {
                     uri: Url::from_file_path(&workspace).unwrap(),
                     name: workspace
@@ -276,7 +307,9 @@ impl Editor {
                         .into_owned(),
                 },
                 vsc,
-            );
+                conf,
+            )
+            .unwrap();
             (&*Box::leak(Box::new(c)), (t2), Some(changed))
         });
         let g = me.git_dir.clone();
@@ -284,12 +317,13 @@ impl Editor {
             && loaded_state
         {
             let w = me.workspace.clone();
-
+            let la = me.language;
             let t = me.tree.clone();
             assert!(me.files.len() != 0);
-            me.open_or_restore(&o, l, None, w)?;
+            me.open_or_restore(&o, l, la, None, w)?;
             me.git_dir = g;
             me.tree = t;
+            me.language = n;
         } else {
             me.lsp = l;
             me.hist.lc = me.text.cursor.clone();
@@ -297,7 +331,11 @@ impl Editor {
             if let Some(((c, ..), origin)) =
                 me.lsp.as_ref().zip(me.origin.as_deref())
             {
-                c.open(&origin, std::fs::read_to_string(&origin)?)?;
+                c.open(
+                    &origin,
+                    std::fs::read_to_string(&origin)?,
+                    me.language.unwrap(),
+                )?;
                 c.rq_semantic_tokens(
                     &mut me.requests.semantic_tokens,
                     origin,
@@ -344,8 +382,8 @@ impl Editor {
         // );
         self.bar.last_action = "saved".into();
         lsp!(self + p).map(|(l, o)| {
-            let v = l.runtime.block_on(l.format(o)).unwrap();
-            if let Some(v) = v {
+            let v = l.runtime.block_on(l.format(o));
+            if let Ok(Some(v)) = v {
                 if let Err(x) =
                     self.text.apply_tedits_adjusting(&mut { v })
                 {
@@ -474,8 +512,9 @@ impl Editor {
         let git_dir = self.workspace.clone();
         let tree = self.tree.clone();
         let lsp = self.lsp.take();
-
+        let l = self.language;
         let mut me = take(self);
+
         let f = take(&mut me.files);
 
         if let Some(x) = me.origin.clone() {
@@ -484,7 +523,7 @@ impl Editor {
             self.files.extend(f);
             // assert!(f.len() == 0);
         }
-        self.open_or_restore(&x, lsp, Some(w), ws)?;
+        self.open_or_restore(&x, lsp, l, Some(w), ws)?;
         self.text.r = r;
         self.tree = tree;
         self.git_dir = git_dir; // maybe it should change? you know. sometimes?
@@ -499,11 +538,13 @@ impl Editor {
             std::thread::JoinHandle<()>,
             Option<Sender<Arc<dyn Window>>>,
         )>,
+        l: Option<helix_core::Language>,
         w: Option<Arc<dyn Window>>,
         ws: Option<PathBuf>,
     ) -> rootcause::Result<()> {
         if let Some(x) = self.files.remove(x) {
             let f = take(&mut self.files);
+
             *self = x;
             assert!(self.files.len() == 0);
             self.files = f;
@@ -531,9 +572,13 @@ impl Editor {
                 self.hist.push(&mut self.text)
             }
             self.lsp = lsp;
-
+            self.language = l;
             if let Some((x, origin)) = lsp!(self + p) {
-                x.open(&origin, self.text.rope.to_string())?;
+                x.open(
+                    &origin,
+                    self.text.rope.to_string(),
+                    self.language.unwrap(),
+                )?;
             }
         } else {
             self.workspace = ws;
@@ -547,10 +592,11 @@ impl Editor {
             self.bar.last_action = "open".into();
             self.mtime = Self::modify(self.origin.as_deref());
             self.lsp = lsp;
+            self.language = l;
 
             if let Some((ls, origin)) = lsp!(self + p) {
                 take(&mut self.requests);
-                ls.open(&origin, new)?;
+                ls.open(&origin, new, self.language.unwrap())?;
                 ls.rq_semantic_tokens(
                     &mut self.requests.semantic_tokens,
                     origin,

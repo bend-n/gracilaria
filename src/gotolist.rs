@@ -9,7 +9,6 @@ use lsp_types::{
     CallHierarchyIncomingCall, CallHierarchyOutgoingCall, Location,
     LocationLink, Range,
 };
-use rustc_hash::FxHashMap;
 
 use crate::FG;
 use crate::lsp::{Rq, RqS};

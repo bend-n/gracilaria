@@ -6,11 +6,15 @@ use std::thread::spawn;
 use std::time::Instant;
 
 use crossbeam::channel::{Receiver, Sender, unbounded};
+use helix_core::syntax::config::{
+    LanguageServerConfiguration, LanguageServerFeatures,
+};
 use json_value_merge::Merge;
 use lsp_server::Message;
 use lsp_types::notification::*;
 use lsp_types::request::*;
 use lsp_types::*;
+use rootcause::report;
 use tokio::sync::oneshot;
 use winit::window::Window;
 mod client;
@@ -25,8 +29,16 @@ pub fn run(
     (tx, rx): (Sender<Message>, Receiver<Message>),
     workspace: WorkspaceFolder,
     vscode_conf: Option<serde_json::Value>,
-) -> (Client, std::thread::JoinHandle<()>, oneshot::Sender<Arc<dyn Window>>)
-{
+
+    data: (
+        &'static LanguageServerConfiguration,
+        &'static LanguageServerFeatures,
+    ),
+) -> rootcause::Result<(
+    Client,
+    std::thread::JoinHandle<()>,
+    oneshot::Sender<Arc<dyn Window>>,
+)> {
     let now = Instant::now();
     let (req_tx, req_rx) = unbounded();
     let (not_tx, not_rx) = unbounded();
@@ -40,37 +52,48 @@ pub fn run(
             .enable_io()
             .worker_threads(3)
             .thread_name("lsp runtime")
-            .build()
-            .unwrap(),
+            .build()?,
         id: AtomicI32::new(0),
         initialized: None,
         diagnostics: Box::leak(Box::new(papaya::HashMap::default())),
         send_to: req_tx,
         req_rx: _req_rx,
         not_rx,
+        lsp_data: data,
     };
-    let mut opts = init_opts::get(workspace);
-    if let Some(v) = vscode_conf {
-        opts.initialization_options.as_mut().unwrap().merge(&v);
-    };
-    _ = c.request::<Initialize>(&opts).unwrap();
-    let x = serde_json::from_value::<InitializeResult>(
-        rx.recv().unwrap().response().unwrap().result.unwrap(),
-    )
-    .unwrap();
-    assert_eq!(
-        x.capabilities.position_encoding,
-        Some(PositionEncodingKind::UTF8)
+    let mut opts = init_opts::get(
+        workspace,
+        &data.0.config,
+        data.1.name == "rust-analyzer",
     );
+    if let Some(v) = vscode_conf {
+        match opts.initialization_options {
+            Some(ref mut x) => x.merge(&v),
+            None => opts.initialization_options = Some(v),
+        }
+    };
+    _ = c.request::<Initialize>(&opts)?;
+    let x = rx
+        .iter()
+        .find_map(|x| {
+            serde_json::from_value::<InitializeResult>(
+                x.response()?.result?,
+            )
+            .ok()
+        })
+        .ok_or(report!("lsp {data:?} died?"))?;
+
+    // assert_eq!(
+    // x.capabilities.position_encoding,
+    // Some(PositionEncodingKind::UTF8)
+    // );
     c.initialized = Some(x);
     c.notify::<lsp_types::notification::Initialized>(
         &InitializedParams {},
-    )
-    .unwrap();
+    )?;
     c.notify::<SetTrace>(&SetTraceParams {
         value: lsp_types::TraceValue::Verbose,
-    })
-    .unwrap();
+    })?;
     let progress = c.progress;
     let d = c.diagnostics;
     log::info!("lsp took {:?} to initialize", now.elapsed());
@@ -80,7 +103,7 @@ pub fn run(
             window_rx, progress, _req_tx, d, not_tx, rx, req_rx,
         )
     });
-    (c, h, window_tx)
+    Ok((c, h, window_tx))
 }
 #[derive(Copy, Clone, PartialEq, Eq, std::marker::ConstParamTy, Debug)]
 pub enum BehaviourAfter {
@@ -108,15 +131,15 @@ pub enum BehaviourAfter {
 //         }
 //     }
 // }
-
 pub trait Void<T> {
-    fn void(self) -> Result<T, ()>;
+    fn void(&self) -> Option<()>;
 }
-impl<T, E> Void<T> for Result<T, E> {
-    fn void(self) -> Result<T, ()> {
-        self.map_err(|_| ())
+impl<T> Void<T> for Option<T> {
+    fn void(&self) -> Option<()> {
+        self.as_ref().map(|_| ())
     }
 }
+
 #[pin_project::pin_project]
 pub struct Map<T, U, F: FnMut(T) -> U, Fu: Future<Output = T>>(
     #[pin] Fu,

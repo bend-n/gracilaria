@@ -374,6 +374,7 @@ pub fn render(
             wt,
             ed.origin.as_deref(),
             lsp!(ed).and_then(|x| x.legend()),
+            ed.language,
         );
 
         ed.bar.write_to(
@@ -471,19 +472,13 @@ pub fn render(
             // std::fs::write("cells", Cell::store(c));
 
             if w >= size.width as usize
-                // if y + height > height, cant fit it anywhere
-                || ((py.checked_add(h)
-                    .is_none_or(|x| x >= size.height as usize))
-                    && !py.checked_sub(h).is_some())
                 || py >= size.height as usize
                 || px >= size.width as usize
+                || w >= window.surface_size().width as _
+                || h >= window.surface_size().height as _
             {
                 return Err(((px, py), size, (w, h)));
             }
-            assert!(
-                w < window.surface_size().width as _
-                    && h < window.surface_size().height as _
-            );
             let is_above = py.checked_sub(h).is_some();
             let top = py.checked_sub(h).unwrap_or(
                 ((((_y + add1_below as usize) as f32) * (fh + ls * fac))
@@ -496,7 +491,12 @@ pub fn render(
             } else {
                 px
             };
+            if top + h > size.height as usize {
+                return Err(((px, py), size, (w, h)));
+            }
+
             assert!(left + w <= size.width as usize);
+            assert!(top + h <= size.height as usize);
 
             // let (w, h) =
             // dsb::size(&fonts.regular, ppem, ls, (columns, r));
@@ -556,10 +556,8 @@ pub fn render(
                 )
             };
         if let Some(Some(x)) = &ed.requests.document_symbols.result
-            && let Some((_, y, z)) = text.sticky_context(
-                &x,
-                text.line_to_char(text.vo.saturating_sub(1)),
-            )
+            && let Ok(y) = text.try_line_to_char(text.vo.saturating_sub(1))
+            && let Some((_, y, z)) = text.sticky_context(&x, y)
             && let Ok(l) = text.try_line_to_char(text.vo + 4)
             && y.contains(&l)
         // && text.cursor.iter().any(|x| y.contains(&*x))
@@ -650,6 +648,8 @@ pub fn render(
             Rq { result: Some(Hovring { of, rndr }), .. },
             ..,
         ) = &mut ed.state
+            && !of.is_empty()
+            // && !dbg!(&of).is_empty()
             && let sized = of.iter().map(|hovr| {
                 (
                     match hovr {
@@ -673,6 +673,7 @@ pub fn render(
                 .clone()
                 .fold((0, 0), |(w_, h_), ((w, h), _)| (w_.max(w), h_ + h))
             && th != 0
+            && tw != 0
         // && pass
         {
             let hof = hash(&of);
@@ -690,6 +691,9 @@ pub fn render(
                             Hoverable::Diagnostic(x) => &x.t,
                             Hoverable::Lsp(x) => &x.item,
                         };
+                        if c.cells.is_empty() {
+                            continue;
+                        }
                         // TODO: reflow lsp documentation to fit wide diagnostics?
                         unsafe {
                             dsb::render(
@@ -740,18 +744,23 @@ pub fn render(
                 Hoverable::Diagnostic(DiagnosticHovr { span, .. })
                 | Hoverable::Lsp(Hovr { span, .. }),
             ) = of.iter().next()
-                && let Some([(_x, _y), (_x2, _)]) = *span
-                && (_x..=_x2).contains(
-                    &(cursor_position
-                        .0
-                        .wrapping_sub(text.line_number_offset() + 1)),
-                )
-                && let [_x, _x2] =
-                    [_x, _x2].add(text.line_number_offset() + 1)
-                && let Some(_y) = _y.checked_sub(text.vo)
-                && let Some(_x) = _x.checked_sub(text.ho)
-                && (cursor_position.1 == _y
-                    && (_x..=_x2).contains(&cursor_position.0))
+                && let (_x, _y) = if let Some([(_x, _y), (_x2, _)]) = *span
+                    && (_x..=_x2).contains(
+                        &(cursor_position
+                            .0
+                            .wrapping_sub(text.line_number_offset() + 1)),
+                    )
+                    && let [_x, _x2] =
+                        [_x, _x2].add(text.line_number_offset() + 1)
+                    && let Some(_y) = _y.checked_sub(text.vo)
+                    && let Some(_x) = _x.checked_sub(text.ho)
+                    && (cursor_position.1 == _y
+                        && (_x..=_x2).contains(&cursor_position.0))
+                {
+                    (_x, _y)
+                } else {
+                    cursor_position
+                }
                 && let Ok((_, x, y)) =
                     position((_x, _y), (tw, rh), 0.0, 0.0, 0.0, true)
             {
@@ -880,8 +889,8 @@ pub fn render(
         'out: {
             if let Rq { result: Some((ref x, vo, ref mut max)), .. } =
                 ed.requests.sig_help
+                && let Some((sig, p)) = sig::active(x)
             {
-                let (sig, p) = sig::active(x);
                 let c = sig::sig((sig, p), 40);
                 let (_x, _y) = (cx, cy);
                 let _x = _x + text.line_number_offset() + 1;
@@ -948,7 +957,7 @@ pub fn render(
                     let ls = 10.0;
                     let (fw, _) = dsb::dims(&FONT, ppem);
                     let cols = (w as f32 / fw).floor() as usize;
-                    sig::doc(sig, cols).map(|mut cells| {
+                    sig::doc(sig, cols, ed.language).map(|mut cells| {
                         *max = Some(cells.l());
                         cells.vo = vo;
                         let cells = cells.displayable(cells.l().min(15));

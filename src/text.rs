@@ -9,12 +9,12 @@ use std::pin::pin;
 use std::sync::LazyLock;
 use std::vec::Vec;
 
-use atools::prelude::*;
 use dsb::Cell;
 use dsb::cell::Style;
 use helix_core::Syntax;
 use helix_core::syntax::{HighlightEvent, Loader};
 use implicit_fn::implicit_fn;
+use itertools::Itertools;
 use lsp_types::{
     DocumentSymbol, Location, SemanticTokensLegend, SnippetTextEdit,
     TextEdit,
@@ -45,35 +45,8 @@ pub use rope_ext::RopeExt;
 
 use crate::sni::{Snippet, StopP};
 use crate::text::hist::Action;
-
-pub const fn color_(x: &str) -> [u8; 3] {
-    let x = x.as_bytes().as_array::<7>().unwrap();
-    color(&x)
-}
-
-pub const fn set_a(x: [u8; 3], to: f32) -> [u8; 3] {
-    x.map(const |x| (((x as f32 / 255.0) * to) * 255.0) as u8)
-}
-pub const fn color<const N: usize>(x: &[u8; N]) -> [u8; (N - 1) / 2]
-where
-    [(); N - 1]:,
-    [(); (N - 1) % 2 + usize::MAX]:,
-{
-    let x = x.tail();
-    let parse = x.map(const |b| (b & 0xF) + 9 * (b >> 6)).chunked::<2>();
-    parse.map(const |[a, b]| a * 16 + b)
-}
-
-macro_rules! col {
-    ($x:literal) => {{
-        const __N: usize = $x.len();
-        const { crate::text::color($x.as_bytes().as_array::<__N>().unwrap()) }
-    }};
-    ($($x:literal),+)=> {{
-        ($(crate::text::col!($x),)+)
-    }};
-}
-
+pub mod color;
+pub use color::*;
 pub fn deserialize_from_string<'de, D: serde::de::Deserializer<'de>>(
     de: D,
 ) -> Result<Rope, D::Error> {
@@ -284,6 +257,11 @@ impl TextArea {
             m.position -= r.len() as u32;
             self.inlays.insert(m);
         }
+        self.cursor.each(|x| {
+            if *x >= self.rope.len_chars() {
+                x.position = self.rope.len_chars();
+            }
+        });
         self.tokens.iter_mut().for_each(|d| d.manip(manip));
         Ok(())
     }
@@ -645,7 +623,7 @@ impl TextArea {
             .and_then(|x| LOADER.language_for_filename(x))
             .unwrap_or_else(|| LOADER.language_for_name("rust").unwrap());
 
-        let s = self.rope.line_to_char(self.vo);
+        let Ok(s) = self.rope.try_line_to_char(self.vo) else { return };
         let e = self
             .rope
             .try_line_to_char(self.vo + self.r * self.c)
@@ -653,7 +631,20 @@ impl TextArea {
         for ((x1, y1), (x2, y2), s, _) in std::iter::from_coroutine(pin!(
             hl(language, &self.rope, s as u32..e as u32, self.c)
         )) {
-            cell.get_range((x1, y1), (x2, y2)).for_each(|x| x.style |= s);
+            for (y, g) in cell
+                .range((x1, y1), (x2, y2))
+                .chunk_by(|x| x.1)
+                .into_iter()
+            {
+                let mut g = g.peekable();
+                let p = *g.peek().unwrap();
+                for (x, _) in
+                    self.reverse_source_map(y).unwrap().skip(p.0).zip(g)
+                {
+                    // println!("{x} {y} = {s:?}");
+                    cell.get((x, y)).map(|x| x.style |= s);
+                }
+            }
         }
 
         // let mut highlight_stack = Vec::with_capacity(8);
@@ -765,6 +756,7 @@ impl TextArea {
         apply: impl FnOnce((usize, usize), &Self, Output),
         path: Option<&Path>,
         leg: Option<&SemanticTokensLegend>,
+        l: Option<Language>,
     ) {
         let (c, r) = (self.c, self.r);
         let mut cells = Output {
@@ -786,11 +778,28 @@ impl TextArea {
         //     };
         //     (self.l().max(r) + r - 1) * c
         // ];
+
+        if leg.is_none()
+            || self.tokens.is_empty()
+            || l.is_some_and(|l| {
+                LOADER.language(l).config().language_servers.iter().any(
+                    |x| {
+                        LOADER
+                            .language_server_configs()
+                            .get(&x.name)
+                            .is_some_and(|x| x.requires_tree_sitting)
+                    },
+                )
+            })
+        {
+            println!("treesit");
+            self.tree_sit(path, &mut cells);
+        }
         let lns = self.vo..self.vo + r;
         let mut tokens = self.tokens.iter();
-        let mut curr: Option<&TokenD> = tokens.next();
+        let mut curr = tokens.next();
         for (l, y) in lns.clone().map(self.source_map(_)).zip(lns) {
-            for (e, x) in l
+            'out: for (e, x) in l
                 .coerce()
                 .skip(self.ho)
                 // .flat_map(|x| x.chars().skip(self.ho))
@@ -800,7 +809,10 @@ impl TextArea {
                 if e.c() != '\n' {
                     cells.get((x + self.ho, y)).unwrap().letter =
                         Some(e.c());
-                    cells.get((x + self.ho, y)).unwrap().style = match e {
+                    let s =
+                        &mut cells.get((x + self.ho, y)).unwrap().style;
+
+                    *s = match e {
                         Mapping::Char(_, _, abspos)
                             if let Some(leg) = leg =>
                         {
@@ -820,13 +832,19 @@ impl TextArea {
                                         .contains(&(abspos as _))
                                 {
                                     curr.style(leg)
+                                } else if *s
+                                    != Style::new(crate::BG, crate::BG)
+                                {
+                                    continue 'out;
                                 } else {
                                     Style::new(crate::FG, crate::BG)
                                 }
                             }
                         }
-                        Mapping::Char(..) =>
+                        Mapping::Char(..)
+                            if *s == Style::new(crate::BG, crate::BG) =>
                             Style::new(crate::FG, crate::BG),
+                        Mapping::Char(..) => continue,
                         Mapping::Fake(Marking { .. }, ..) => Style::new(
                             const { color_("#536172") },
                             crate::BG,
@@ -850,9 +868,6 @@ impl TextArea {
         //     arc_swap::Guard<Arc<Box<[SemanticToken]>>>,
         //     &SemanticTokensLegend,
         // )>;
-        if leg.is_none() || self.tokens.is_empty() {
-            self.tree_sit(path, &mut cells);
-        }
         if let Some(tabstops) = &self.tabstops {
             for [a, b] in
                 tabstops.stops.iter().skip(tabstops.index - 1).flat_map(
@@ -1058,7 +1073,10 @@ pub fn is_word(r: char) -> bool {
     matches!(r, 'a'..='z' | 'A'..='Z' | '0'..='9' | '_')
 }
 pub static LOADER: LazyLock<Loader> = LazyLock::new(|| {
-    let x = helix_core::config::default_lang_loader();
+    let default_config = include_str!("../languages.toml");
+    let default_config = toml::from_str(default_config)
+        .expect("Could not parse built-in languages.toml to valid toml");
+    let x = Loader::new(default_config).unwrap();
     x.set_scopes(theme_treesitter::NAMES.map(|x| x.to_string()).to_vec());
 
     // x.languages().for_each(|(_, x)| {

@@ -87,6 +87,31 @@ impl Mapper {
     //         y.checked_sub(self.oy)? + self.vo,
     //     ))
     // }
+    pub gen fn range(
+        self,
+        (x1, y1): (usize, usize),
+        (x2, y2): (usize, usize),
+    ) -> (usize, usize) {
+        let m = self;
+        let mut p = (x1, y1);
+        while p != (x2, y2) {
+            yield p;
+
+            p.0 += 1;
+            if p.0.checked_sub(m.ho) == Some(m.from_c) {
+                p.0 = 0;
+                p.1 += 1;
+                if p.1 > y2 {
+                    break;
+                }
+            }
+            if let Some(x) = p.0.checked_sub(m.ho)
+                && x > m.from_c
+            {
+                break;
+            }
+        }
+    }
 }
 impl<'a> Output<'a> {
     // /// get an index thats relative over the viewable area¹ of the global text area
@@ -103,6 +128,7 @@ impl<'a> Output<'a> {
     ) -> impl Iterator<Item = &mut Cell> {
         self.get_range_enumerated(a, b).map(|x| x.0)
     }
+
     // needs rope to work properly (see [xy])
     // pub fn get_char_range(
     //     &mut self,
@@ -130,26 +156,32 @@ impl<'a> Output<'a> {
         // let a = m.from_point_global(m.translate(m.to_point(a)).unwrap());
         // let b = m.from_point_global(m.translate(m.to_point(b)).unwrap());
         // dbg!(a, b);
-        let mut p = (x1, y1);
-        while p != (x2, y2) {
+        for p in self.range((x1, y1), (x2, y2)) {
             if let Some(x) = m.translate(p) {
                 // SAFETY: trust me very disjoint
                 yield (unsafe { &mut *c.add(m.from_point_global(x)) }, p)
             }
-            p.0 += 1;
-            if p.0.checked_sub(m.ho) == Some(m.from_c) {
-                p.0 = 0;
-                p.1 += 1;
-                if p.1 > y2 {
-                    break;
-                }
-            }
-            if let Some(x) = p.0.checked_sub(m.ho)
-                && x > m.from_c
-            {
-                break;
-            }
         }
+        // let mut p = (x1, y1);
+        // while p != (x2, y2) {
+        //     if let Some(x) = m.translate(p) {
+        // SAFETY: trust me very disjoint
+        //         yield (unsafe { &mut *c.add(m.from_point_global(x)) }, p)
+        //     }
+        //     p.0 += 1;
+        //     if p.0.checked_sub(m.ho) == Some(m.from_c) {
+        //         p.0 = 0;
+        //         p.1 += 1;
+        //         if p.1 > y2 {
+        //             break;
+        //         }
+        //     }
+        //     if let Some(x) = p.0.checked_sub(m.ho)
+        //         && x > m.from_c
+        //     {
+        //         break;
+        //     }
+        // }
 
         // (a..=b)
         //     .filter_map(move |x| {
