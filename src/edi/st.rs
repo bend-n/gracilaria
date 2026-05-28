@@ -92,7 +92,7 @@ Hovering(x) => {
         >, ((usize, usize), TextDocumentPositionParams)) => (v, h, d)) => Hovering({ let mut x = x; x.result = v; x.request_d(h, d); x }),
     C(_) => _ [Hover],
     MovedOut => Default,
-
+    Scrolled => Default,
     // reconsidering
     K(Key::Character("s") if ctrl()) => Save [Save],
     K(Key::Character("q") if ctrl()) => Dead [Quit],

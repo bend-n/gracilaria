@@ -17,6 +17,7 @@ use lsp_types::*;
 use regex::Regex;
 use rootcause::report;
 use ropey::Rope;
+use rust_fsm::StateMachine;
 use tokio::sync::oneshot::Sender;
 use winit::keyboard::NamedKey;
 use winit::window::Window;
@@ -467,6 +468,7 @@ impl Editor {
             let rows = rows.floor() as usize;
             *vo = vo.saturating_sub(rows);
         }
+        _ = self.state.consume(Action::Scrolled);
         inlay!(self);
     }
 

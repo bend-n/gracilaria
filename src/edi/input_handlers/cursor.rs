@@ -110,7 +110,7 @@ impl Editor {
             }
             Some(Do::Hover) => {
                 self.state.consume(Action::HOnNothing).unwrap();
-                // w.request_redraw();
+                w.request_redraw();
             }
             None => {}
             x => unreachable!("{x:?}"),
@@ -314,7 +314,7 @@ impl Editor {
                     }) {
                         x = format!("```cpp\n{x}\n```").into();
                     }
-                    println!("{x}");
+                    // println!("{x}");
                     let x = hov::p(&x).expect("markdown parsing");
                     let m = hov::l(&x)
                         .into_iter()

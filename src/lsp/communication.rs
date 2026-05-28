@@ -81,7 +81,7 @@ pub fn handler(
                         }
                     }
                     else if let Some((s, took, t)) = map.remove(&x.id.i32()) {
-                        log::info!("request {} took {:?}", x.id, took.elapsed());
+                        log::debug!("request {} took {:?}", x.id, took.elapsed());
                         match s.send(x) {
                             Ok(()) => {}
                             Err(e) => {
