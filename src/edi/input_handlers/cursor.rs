@@ -26,7 +26,7 @@ impl Editor {
         w: Arc<dyn Window>,
         c: usize,
     ) {
-        match self.state.consume(Action::C(cursor_position)).unwrap() {
+        match self.transition(Action::C(cursor_position)) {
             Some(Do::ExtendSelectionToMouse) => {
                 let p = self.text.mapped_index_at(cursor_position);
                 self.text
@@ -53,9 +53,7 @@ impl Editor {
                     && !e.is_whitespace() =>
             'out: {
                 match self
-                    .state
-                    .consume(Action::HOnSomething(cursor_position))
-                    .unwrap()
+                    .transition(Action::HOnSomething(cursor_position))
                 {
                     Some(Do::SetHovering) => {
                         let State::Hovering(l) = &mut self.state else {
@@ -358,13 +356,11 @@ impl Editor {
             });
         let diags = self.find_diags(cursor_position, &w);
         println!("requesting hover");
-        self.state
-            .consume(Action::SetHovering(
-                diags.map(|of| Hovring { of, ..default() }),
-                handle,
-                (cursor_position, tdpp),
-            ))
-            .unwrap();
+        self.transition(Action::SetHovering(
+            diags.map(|of| Hovring { of, ..default() }),
+            handle,
+            (cursor_position, tdpp),
+        ));
         // self.requests.hovering.request =
         // (DropH::new(handle), cursor_position).into();
         // requests.hovering.result = None;

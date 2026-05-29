@@ -58,3 +58,13 @@ pub fn handle2<'a>(
     };
     None
 }
+impl Editor {
+    #[track_caller]
+    pub fn transition(&mut self, a: Action) -> Option<Do> {
+        self.state
+            .consume(a)
+            .inspect_err(|e| log::error!("transition failed: {e}"))
+            .ok()
+            .flatten()
+    }
+}

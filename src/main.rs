@@ -322,6 +322,14 @@ pub(crate) fn entry(event_loop: EventLoop) {
                     ed.scroll(rows);
                     window.request_redraw();
                 }
+                WindowEvent::MouseWheel {
+                    device_id: _,
+                    delta: MouseScrollDelta::PixelDelta(PhysicalPosition {  x:_, y }),
+                    phase: _,
+                } => {
+                    ed.scroll(y as f32 *5.0);
+                    window.request_redraw();
+                }
                 WindowEvent::ModifiersChanged(modifiers) => {
                     unsafe { MODIFIERS = modifiers.state() };
                     window.request_redraw();

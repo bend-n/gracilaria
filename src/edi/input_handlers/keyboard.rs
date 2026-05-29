@@ -27,26 +27,27 @@ impl Editor {
         window: &mut Arc<dyn Window>,
         freq: &mut Freq,
     ) -> ControlFlow<()> {
-        let mut o: Option<Do> = self
-            .state
-            .consume(Action::K(event.logical_key.clone()))
-            .unwrap();
+        let Some(mut o) =
+            self.transition(Action::K(event.logical_key.clone()))
+        else {
+            return ControlFlow::Continue(());
+        };
+        if let Do::Reinsert = o {
+            let Some(o2) =
+                self.transition(Action::K(event.logical_key.clone()))
+            else {
+                return ControlFlow::Continue(());
+            };
+            o = o2;
+        };
 
         match o {
-            Some(Do::Reinsert) =>
-                o = self
-                    .state
-                    .consume(Action::K(event.logical_key.clone()))
-                    .unwrap(),
-            _ => {}
-        }
-        match o {
-            Some(Do::Escape) => {
+            Do::Escape => {
                 take(&mut self.requests.complete);
                 take(&mut self.requests.sig_help);
                 self.text.cursor.alone();
             }
-            Some(Do::Comment(p)) => {
+            Do::Comment(p) => {
                 ceach!(self.text.cursor, |cursor| {
                     Some(
                         if let Some(x) = cursor.sel
@@ -62,7 +63,7 @@ impl Editor {
                 self.text.cursor.clear_selections();
                 change!(self, window.clone());
             }
-            Some(Do::SpawnTerminal) => {
+            Do::SpawnTerminal => {
                 if let Err(e) = trm::toggle(
                     self.workspace
                         .as_deref()
@@ -71,12 +72,12 @@ impl Editor {
                     log::error!("opening terminal failed {e}");
                 }
             }
-            Some(Do::MatchingBrace) =>
+            Do::MatchingBrace =>
                 if let Some((l, f)) = lsp!(self + p) {
                     l.matching_brace(f, &mut self.text)
                 },
-            Some(Do::DeleteBracketPair) => self.delete_bracket_pair(),
-            Some(Do::Symbols) =>
+            Do::DeleteBracketPair => self.delete_bracket_pair(),
+            Do::Symbols =>
                 if let Some((lsp, o)) = lsp!(self + p)
                     && let Ok(syms) = lsp.workspace_symbols("".into())
                 {
@@ -92,7 +93,7 @@ impl Editor {
                     ));
                     self.state = State::Symbols(q);
                 },
-            Some(Do::SwitchType) =>
+            Do::SwitchType =>
                 if let Some((lsp, p)) = lsp!(self + p) {
                     let State::Symbols(Rq { result: Some(x), request }) =
                         &mut self.state
@@ -113,7 +114,7 @@ impl Editor {
                         ));
                     }
                 },
-            Some(Do::ProcessCommand(mut x, z)) =>
+            Do::ProcessCommand(mut x, z) =>
                 match Cmds::complete_or_accept(&z) {
                     crate::menu::generic::CorA::Complete => {
                         x.tedit.rope =
@@ -129,7 +130,7 @@ impl Editor {
                         }
                     }
                 },
-            Some(Do::CmdTyped) => {
+            Do::CmdTyped => {
                 let State::Command(x) = &self.state else {
                     unreachable!()
                 };
@@ -139,7 +140,7 @@ impl Editor {
                     self.text.scroll_to_ln_centering(x as _);
                 }
             }
-            Some(Do::SymbolsHandleKey) => {
+            Do::SymbolsHandleKey => {
                 if let Some(lsp) = lsp!(self) {
                     let State::Symbols(Rq { result: Some(x), request }) =
                         &mut self.state
@@ -183,7 +184,7 @@ impl Editor {
                     }
                 }
             }
-            Some(Do::SymbolsSelectNext) => {
+            Do::SymbolsSelectNext => {
                 let State::Symbols(Rq { result: Some(x), .. }) =
                     &mut self.state
                 else {
@@ -203,7 +204,7 @@ impl Editor {
                     }
                 }
             }
-            Some(Do::SymbolsSelectPrev) => {
+            Do::SymbolsSelectPrev => {
                 let State::Symbols(Rq { result: Some(x), .. }) =
                     &mut self.state
                 else {
@@ -223,15 +224,15 @@ impl Editor {
                     }
                 }
             }
-            Some(Do::SymbolsSelect(x)) =>
+            Do::SymbolsSelect(x) =>
                 if let Some(Ok(x)) = x.sel(Some(freq))
                     && let Err(e) = self.go(x.at, window.clone())
                 {
                     log::error!("alas! {e}")
                 },
-            Some(Do::RenameSymbol(to)) => self.rename_symbol(to),
-            Some(Do::CodeAction) => self.request_code_actions(),
-            Some(Do::CASelectLeft) => {
+            Do::RenameSymbol(to) => self.rename_symbol(to),
+            Do::CodeAction => self.request_code_actions(),
+            Do::CASelectLeft => {
                 let State::CodeAction(Rq { result: Some(c), .. }) =
                     &mut self.state
                 else {
@@ -239,7 +240,7 @@ impl Editor {
                 };
                 c.left();
             }
-            Some(Do::CASelectRight) => 'out: {
+            Do::CASelectRight => 'out: {
                 let Some(lsp) = lsp!(self) else { unreachable!() };
                 let State::CodeAction(Rq { result: Some(c), .. }) =
                     &mut self.state
@@ -260,7 +261,7 @@ impl Editor {
                     log::error!("{e}");
                 }
             }
-            Some(Do::CASelectNext) => {
+            Do::CASelectNext => {
                 let State::CodeAction(Rq { result: Some(c), .. }) =
                     &mut self.state
                 else {
@@ -268,7 +269,7 @@ impl Editor {
                 };
                 c.down();
             }
-            Some(Do::CASelectPrev) => {
+            Do::CASelectPrev => {
                 let State::CodeAction(Rq { result: Some(c), .. }) =
                     &mut self.state
                 else {
@@ -276,7 +277,7 @@ impl Editor {
                 };
                 c.up();
             }
-            Some(Do::GoToMatch)
+            Do::GoToMatch
                 if let Some(x) =
                     &self.requests.document_highlights.result =>
             'out: {
@@ -314,37 +315,36 @@ impl Editor {
                     }
                 }
             }
-            Some(Do::GoToMatch) =>
+            Do::GoToMatch =>
                 if self.requests.document_highlights.request.is_none() {
                     self.refresh_document_highlights();
                 },
-            Some(Do::NavBack) => self.nav_back(),
-            Some(Do::NavForward) => self.nav_forward(),
-            Some(
-                Do::Reinsert
-                | Do::GoToDefinition(_)
-                | Do::MoveCursor
-                | Do::ExtendSelectionToMouse
-                | Do::Hover
-                | Do::InsertCursorAtMouse
-                | Do::SetHovering
-                | Do::ClickedHover,
-            ) => panic!(),
-            Some(Do::Save) => match &self.origin {
+            Do::NavBack => self.nav_back(),
+            Do::NavForward => self.nav_forward(),
+
+            Do::Reinsert
+            | Do::GoToDefinition(_)
+            | Do::MoveCursor
+            | Do::ExtendSelectionToMouse
+            | Do::Hover
+            | Do::InsertCursorAtMouse
+            | Do::SetHovering
+            | Do::ClickedHover => panic!(),
+            Do::Save => match &self.origin {
                 Some(_) => {
-                    self.state.consume(Action::Saved).unwrap();
+                    self.transition(Action::Saved);
                     self.save();
                 }
                 None => {
-                    self.state.consume(Action::RequireFilename).unwrap();
+                    self.transition(Action::RequireFilename);
                 }
             },
-            Some(Do::SaveTo(x)) => {
+            Do::SaveTo(x) => {
                 self.origin = Some(PathBuf::try_from(x).unwrap());
                 self.save();
             }
-            Some(Do::Edit) => self.handle_edit(event),
-            Some(Do::Undo) => {
+            Do::Edit => self.handle_edit(event),
+            Do::Undo => {
                 self.hist.test_push(&mut self.text);
                 if let Err(e) = self.hist.undo(&mut self.text) {
                     eprintln!("undo failed: {e}");
@@ -353,14 +353,14 @@ impl Editor {
 
                 change!(self, window.clone());
             }
-            Some(Do::Redo) => {
+            Do::Redo => {
                 self.hist.test_push(&mut self.text);
                 self.hist.redo(&mut self.text).unwrap();
                 self.bar.last_action = "redid".to_string();
                 change!(self, window.clone());
             }
-            Some(Do::Quit) => return ControlFlow::Break(()),
-            Some(Do::SetCursor(x)) => {
+            Do::Quit => return ControlFlow::Break(()),
+            Do::SetCursor(x) => {
                 self.text.cursor.each(|c| {
                     let Some(r) = c.sel else { return };
                     match x {
@@ -370,7 +370,7 @@ impl Editor {
                 });
                 self.text.cursor.clear_selections();
             }
-            Some(Do::StartSelection) => {
+            Do::StartSelection => {
                 let Key::Named(y) = event.logical_key else { panic!() };
                 // let mut z = vec![];
                 self.text.cursor.each(|x| {
@@ -385,7 +385,7 @@ impl Editor {
                 });
                 // *self.state.sel() = z;
             }
-            Some(Do::UpdateSelection) => {
+            Do::UpdateSelection => {
                 let Key::Named(y) = event.logical_key else { panic!() };
                 self.text.cursor.each(|x| {
                     x.extend_selection(
@@ -400,7 +400,7 @@ impl Editor {
                 self.text.scroll_to_cursor();
                 inlay!(self);
             }
-            Some(Do::Insert(c)) => {
+            Do::Insert(c) => {
                 // self.text.cursor.inner.clear();
                 self.hist.push_if_changed(&mut self.text);
                 ceach!(self.text.cursor, |cursor| {
@@ -413,7 +413,7 @@ impl Editor {
                 self.hist.push_if_changed(&mut self.text);
                 change!(self, window.clone());
             }
-            Some(Do::Delete) => {
+            Do::Delete => {
                 self.hist.push_if_changed(&mut self.text);
                 ceach!(self.text.cursor, |cursor| {
                     let Some(r) = cursor.sel else { return };
@@ -424,7 +424,7 @@ impl Editor {
                 change!(self, window.clone());
             }
 
-            Some(Do::Copy) => {
+            Do::Copy => {
                 self.hist.push_if_changed(&mut self.text);
                 unsafe { take(&mut META) };
                 let mut clip = String::new();
@@ -446,7 +446,7 @@ impl Editor {
                 self.hist.push_if_changed(&mut self.text);
                 change!(self, window.clone());
             }
-            Some(Do::Cut) => {
+            Do::Cut => {
                 self.hist.push_if_changed(&mut self.text);
                 unsafe { take(&mut META) };
                 let mut clip = String::new();
@@ -473,7 +473,7 @@ impl Editor {
                 self.hist.push_if_changed(&mut self.text);
                 change!(self, window.clone());
             }
-            Some(Do::PasteOver) => {
+            Do::PasteOver => {
                 self.hist.push_if_changed(&mut self.text);
                 ceach!(self.text.cursor, |cursor| {
                     let Some(r) = cursor.sel else { return };
@@ -483,11 +483,11 @@ impl Editor {
                 self.paste();
                 // self.hist.push_if_changed(&mut self.text);
             }
-            Some(Do::Paste) => self.paste(),
-            Some(Do::OpenFile(x)) => {
+            Do::Paste => self.paste(),
+            Do::OpenFile(x) => {
                 _ = self.open(Path::new(&x), window.clone());
             }
-            Some(Do::StartSearch(x)) => {
+            Do::StartSearch(x) => {
                 let s = Regex::new(&x).unwrap();
                 let n = s
                     .find_iter(&self.text.rope.to_string())
@@ -510,7 +510,7 @@ impl Editor {
                         self.bar.last_action = "no matches".into()
                     });
             }
-            Some(Do::SearchChanged) => {
+            Do::SearchChanged => {
                 let (re, index, _) = self.state.search();
                 let s = self.text.rope.to_string();
                 let m = re.find_iter(&s).nth(*index).unwrap();
@@ -521,7 +521,7 @@ impl Editor {
                 self.text.scroll_to_cursor_centering();
                 inlay!(self);
             }
-            Some(Do::Boolean(BoolRequest::ReloadFile, true)) => {
+            Do::Boolean(BoolRequest::ReloadFile, true) => {
                 self.hist.push_if_changed(&mut self.text);
                 self.text.rope = Rope::from_str(
                     &std::fs::read_to_string(
@@ -540,8 +540,8 @@ impl Editor {
                 self.bar.last_action = "reloaded".into();
                 self.hist.push(&mut self.text)
             }
-            Some(Do::Boolean(BoolRequest::ReloadFile, false)) => {}
-            Some(Do::InsertCursor(dir)) => {
+            Do::Boolean(BoolRequest::ReloadFile, false) => {}
+            Do::InsertCursor(dir) => {
                 let (x, y) = match dir {
                     Direction::Above => self.text.cursor.min(),
                     Direction::Below => self.text.cursor.max(),
@@ -554,7 +554,7 @@ impl Editor {
                 let position = self.text.line_to_char(y);
                 self.text.cursor.add(position + x, &self.text.rope);
             }
-            Some(Do::Run(x)) =>
+            Do::Run(x) =>
                 if let Some((l, ws)) =
                     lsp!(self).zip(self.workspace.as_deref())
                 {
@@ -562,7 +562,7 @@ impl Editor {
                         .block_on(crate::runnables::run(x, ws))
                         .unwrap();
                 },
-            Some(Do::GoToImplementations) => {
+            Do::GoToImplementations => {
                 let State::GoToL(x) = &mut self.state else {
                     unreachable!()
                 };
@@ -574,13 +574,13 @@ impl Editor {
                     )));
                 }
             }
-            Some(Do::GTLSelect(x)) =>
+            Do::GTLSelect(x) =>
                 if let Some(Ok((g, _))) = x.sel(None)
                     && let Err(e) = self.go(g, window.clone())
                 {
                     eprintln!("go-to-list select fail: {e}");
                 },
-            Some(Do::GT) => {
+            Do::GT => {
                 let State::GoToL(x) = &mut self.state else {
                     unreachable!()
                 };
@@ -593,7 +593,6 @@ impl Editor {
                     // self.text.vo = self.text.char_to_line(x.start);
                 }
             }
-            None => {}
         }
         ControlFlow::Continue(())
     }
@@ -699,7 +698,11 @@ impl Editor {
             .requests
             .complete
             .consume(CompletionAction::K(event.logical_key.as_ref()))
-            .unwrap()
+            .inspect_err(|e| {
+                log::error!("failure: {e}");
+            })
+            .ok()
+            .flatten()
         {
             Some(CDo::Request(ctx)) => {
                 if let Ok(fut) = lsp.request_complete(

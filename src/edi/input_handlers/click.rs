@@ -12,13 +12,14 @@ impl Editor {
         cursor_position: (usize, usize),
         w: Arc<dyn Window>,
     ) {
-        let text = &mut self.text;
         _ = self
             .requests
             .complete
             .consume(CompletionAction::Click)
-            .unwrap();
-        match self.state.consume(Action::M(bt)).unwrap() {
+            .inspect_err(|x| log::error!("transition comact {x:?}"));
+        let r = self.transition(Action::M(bt));
+        let text = &mut self.text;
+        match r {
             Some(Do::ClickedHover | Do::MoveCursor) => {
                 text.cursor.just(
                     text.mapped_index_at(cursor_position),
