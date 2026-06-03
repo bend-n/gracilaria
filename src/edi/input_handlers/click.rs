@@ -17,10 +17,16 @@ impl Editor {
             .complete
             .consume(CompletionAction::Click)
             .inspect_err(|x| log::error!("transition comact {x:?}"));
-        let r = self.transition(Action::M(bt));
+
+        let Some(mut o) = self.transition(Action::M(bt)) else { return };
+        if let Do::Reinsert = o {
+            let Some(o2) = self.transition(Action::M(bt)) else { return };
+            o = o2;
+        };
+
         let text = &mut self.text;
-        match r {
-            Some(Do::ClickedHover | Do::MoveCursor) => {
+        match o {
+            Do::MoveCursor => {
                 text.cursor.just(
                     text.mapped_index_at(cursor_position),
                     &text.rope,
@@ -37,13 +43,13 @@ impl Editor {
                 text.cursor.first().setc(&text.rope);
                 self.refresh_document_highlights();
             }
-            Some(Do::NavForward) => self.nav_forward(),
-            Some(Do::NavBack) => self.nav_back(),
-            Some(Do::ExtendSelectionToMouse) => {
+            Do::NavForward => self.nav_forward(),
+            Do::NavBack => self.nav_back(),
+            Do::ExtendSelectionToMouse => {
                 let p = text.mapped_index_at(cursor_position);
                 text.cursor.first_mut().extend_selection_to(p, &text.rope);
             }
-            Some(Do::StartSelection) => {
+            Do::StartSelection => {
                 let p = text.mapped_index_at(cursor_position);
 
                 let x = *text.cursor.first();
@@ -51,7 +57,7 @@ impl Editor {
                 text.cursor.first_mut().extend_selection_to(p, &text.rope);
                 self.hist.lc = text.cursor.clone();
             }
-            Some(Do::GoToDefinition(tdpp)) => {
+            Do::GoToDefinition(tdpp) => {
                 dbg!(&tdpp);
                 if let Some(x) = self.requests.def.result.clone().or_else(|| {
                    tdpp.zip(lsp!(self)).and_then(|(tdpp, lsp)| {
@@ -72,7 +78,7 @@ impl Editor {
                     log::error!("gtd: {e}");
                 }
             }
-            Some(Do::InsertCursorAtMouse) => {
+            Do::InsertCursorAtMouse => {
                 text.cursor.add(
                     text.mapped_index_at(cursor_position),
                     &text.rope,
@@ -81,7 +87,7 @@ impl Editor {
                 self.chist.push(text.primary_cursor());
                 text.cursor.first().setc(&text.rope);
             }
-            None => {}
+
             _ => unreachable!(),
         }
     }

@@ -38,6 +38,7 @@ impl Editor {
             else {
                 return ControlFlow::Continue(());
             };
+            dbg!(&o2);
             o = o2;
         };
 
@@ -141,12 +142,10 @@ impl Editor {
                 }
             }
             Do::SymbolsHandleKey => {
-                if let Some(lsp) = lsp!(self) {
-                    let State::Symbols(Rq { result: Some(x), request }) =
+                if let Some(lsp) = lsp!(self)
+                    && let State::Symbols(Rq { result: Some(x), request }) =
                         &mut self.state
-                    else {
-                        unreachable!()
-                    };
+                {
                     let ptedit = x.tedit.rope.clone();
                     if handle2(
                         &event.logical_key,
@@ -328,8 +327,7 @@ impl Editor {
             | Do::ExtendSelectionToMouse
             | Do::Hover
             | Do::InsertCursorAtMouse
-            | Do::SetHovering
-            | Do::ClickedHover => panic!(),
+            | Do::SetHovering => panic!(),
             Do::Save => match &self.origin {
                 Some(_) => {
                     self.transition(Action::Saved);

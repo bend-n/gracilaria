@@ -49,7 +49,7 @@ use crate::text::cursor::{Ronge, ceach};
 use crate::text::hist::{ClickHistory, Hist};
 use crate::text::{LOADER, Mapping, RopeExt, SortTedits, TextArea};
 use crate::{
-    BoolRequest, CDo, CompletionAction, CompletionState, alt, ctrl,
+    BoolRequest, CDo, CompletionAction, CompletionState, Freq, alt, ctrl,
     filter, hash, shift, sym, trm,
 };
 
@@ -184,7 +184,7 @@ fn rooter(
 }
 
 impl Editor {
-    pub fn new() -> rootcause::Result<Self> {
+    pub fn new() -> rootcause::Result<(Self, Freq)> {
         let mut me = Self::default();
 
         let o = std::env::args()
@@ -219,16 +219,24 @@ impl Editor {
             .and_then(|(ws, x)| (vsc_settings::load(&x, &ws)).ok());
 
         let mut loaded_state = false;
+        let mut freq = default();
         if let Some(ws) = me.workspace.as_deref()
             && let h = hash(&ws)
-            && let at = cfgdir().join(format!("{h:x}")).join(STORE)
+            && let cf = cfgdir().join(format!("{h:x}"))
+            && let at = cf.join(SSTORE)
             && at.exists()
         {
             let x = std::fs::read(at)?;
-            let x = bendy::serde::from_bytes::<Editor>(&x)?;
+            let x = bendncode::from_bytes::<Editor>(&x)?;
             me = x;
             loaded_state = true;
             assert!(me.workspace.is_some());
+            if let at = cf.join(FSTORE)
+                && at.exists()
+            {
+                let x = std::fs::read(at)?;
+                freq = bendncode::from_bytes::<Freq>(&x)?;
+            }
         }
         me.language = n;
         me.git_dir = me
@@ -358,7 +366,7 @@ impl Editor {
             //     },
             // );
         }
-        Ok(me)
+        Ok((me, freq))
     }
 
     #[must_use = "please apply this"]
@@ -625,7 +633,7 @@ impl Editor {
             .map(|[wo, or]| format!("gracilaria - {wo} - {or}"))
     }
 
-    pub fn store(&mut self) -> rootcause::Result<()> {
+    pub fn store(&mut self, fq: &Freq) -> rootcause::Result<()> {
         let ws = self.workspace.clone();
         let tree = self.tree.clone();
         let mtime = self.mtime.clone();
@@ -647,9 +655,11 @@ impl Editor {
             let cfgdir = cfgdir();
             let p = cfgdir.join(format!("{hash:x}"));
             std::fs::create_dir_all(&p)?;
-            let b = bendy::serde::to_bytes(&self).unwrap();
-            bendy::serde::from_bytes::<Editor>(&b)?;
-            std::fs::write(p.join(STORE), &b)?;
+            let b = bendncode::to_bytes(&self)?;
+            bendncode::from_bytes::<Editor>(&b)?;
+            std::fs::write(p.join(SSTORE), &b)?;
+            let b = bendncode::to_bytes(fq)?;
+            std::fs::write(p.join(FSTORE), &b)?;
         }
         Ok(())
     }
@@ -701,13 +711,5 @@ fn cfgdir() -> PathBuf {
         .unwrap_or("/tmp/".into())
         .join("gracilaria")
 }
-const STORE: &str = "state.torrent";
-#[track_caller]
-#[allow(dead_code)]
-fn rtt<T: serde::Serialize + serde::Deserialize<'static>>(
-    x: &T,
-) -> Result<T, bendy::serde::Error> {
-    bendy::serde::from_bytes::<T>(
-        bendy::serde::to_bytes(x).unwrap().leak(),
-    )
-}
+const SSTORE: &str = "state.bendn";
+const FSTORE: &str = "freq.bendn";

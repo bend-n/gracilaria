@@ -38,6 +38,7 @@ impl<'a> Key<'a> for (GoTo<'a>, Option<&'a str>) {
 }
 
 impl MenuData for GTL {
+    const NAME: &'static str = "!";
     type Data = (Vec<(GoTo<'static>, Option<String>)>, Option<O>);
 
     type Element<'a> = (GoTo<'a>, Option<&'a str>);

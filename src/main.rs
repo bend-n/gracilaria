@@ -51,7 +51,6 @@ mod runnables;
 mod sym;
 mod trm;
 
-use std::any::TypeId;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 use std::mem::MaybeUninit;
@@ -115,33 +114,44 @@ const FG: [u8; 3] = [204, 202, 194];
 const BORDER: [u8; 3] = col!("#ffffff");
 
 static mut __ED: MaybeUninit<Editor> = MaybeUninit::uninit();
+static mut __FREQ: MaybeUninit<Freq> = MaybeUninit::uninit();
+static mut __CLEAN: bool = false;
 extern "C" fn cleanup() {
-    unsafe { __ED.assume_init_mut().store().unwrap() };
+    unsafe {
+        if __CLEAN == false {
+            __CLEAN = true;
+            match __ED.assume_init_mut().store(__FREQ.assume_init_mut()) {
+                Ok(_) => {}
+                Err(e) => eprintln!("{e}"),
+            };
+        }
+    }
 }
 extern "C" fn sigint(_: i32) {
     cleanup();
     std::process::exit(12);
 }
-type Freq = FxHashMap<TypeId, FxHashMap<u64, u16>>;
+type FID = u8;
+type Freq = FxHashMap<FID, FxHashMap<u64, u16>>;
 pub(crate) fn entry(event_loop: EventLoop) {
     unsafe {
-        __ED.write(match Editor::new() {
+        let (ed, freq) = match Editor::new() {
             Err(e) => {
                 eprintln!("failure to launch: {e}");
                 return;
             }
             Ok(x) => x,
-        })
+        };
+        __ED.write(ed);
+        __FREQ.write(freq);
     };
     assert_eq!(unsafe { atexit(cleanup) }, 0);
     unsafe { signal(libc::SIGINT, sigint as *const () as usize) };
     let ed: &'static mut Editor = unsafe { __ED.assume_init_mut() };
-
-    let mut freq: Freq = default();
+    let freq = unsafe { __FREQ.assume_init_mut() };
     let ppem = 18.0;
     let ls = 20.0;
     // let ed = Box::leak(Box::new(ed));
-
     let mut fonts = dsb::Fonts::new(
         F::FontRef(*FONT, &[]),
         F::FontRef(*BFONT, &[]),
@@ -313,7 +323,7 @@ pub(crate) fn entry(event_loop: EventLoop) {
                 WindowEvent::PointerButton {
                     button: ButtonSource::Mouse(MouseButton::Left),
                     ..
-                } => unsafe { CLICKING = false },                
+                } => unsafe { CLICKING = false },
                 WindowEvent::MouseWheel {
                     device_id: _,
                     delta: MouseScrollDelta::LineDelta(_, rows),
@@ -350,7 +360,7 @@ pub(crate) fn entry(event_loop: EventLoop) {
                     ) {
                         return;
                     }
-                    if ed.keyboard(event, window,&mut freq).is_break() {
+                    if ed.keyboard(event, window, freq).is_break() {
                         elwt.exit();
                     }
                     window.request_redraw();

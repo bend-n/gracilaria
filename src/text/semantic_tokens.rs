@@ -14,8 +14,11 @@ use crate::text::manipulations::Manip;
     Copy, Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize,
 )]
 pub struct TokenD {
+    #[serde(rename = "0")]
     pub range: (u32, u32),
+    #[serde(rename = "1")]
     pub ty: u32,
+    #[serde(rename = "2")]
     pub modifiers: u32,
 }
 impl TokenD {

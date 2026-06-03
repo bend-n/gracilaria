@@ -164,6 +164,12 @@ impl Bar {
                         x.letter = Some(c);
                     });
             }
+            State::GoToL(x) => format!("list of {}", x.name())
+                .chars()
+                .zip(row)
+                .for_each(|(c, x)| {
+                    x.letter = Some(c);
+                }),
             State::Save => unreachable!(),
             _ => {}
         }

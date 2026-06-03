@@ -310,7 +310,7 @@ fn t() {
     let (w, h) = (400, 8000);
     let (c, r) = dsb::fit(&crate::FONT, ppem, lh, (w, h));
 
-    let cells = markdown2(c, &p(include_str!("vec.md")).unwrap());
+    let cells = markdown2(c, &p(include_str!("vec.md")).unwrap(), None);
     dbg!(l(&p(include_str!("vec.md")).unwrap()));
     dbg!(cells.len() / c);
     dbg!(w, h);

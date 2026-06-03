@@ -16,6 +16,7 @@ use crate::trm;
 
 pub enum Runb {}
 impl MenuData for Runb {
+    const NAME: &'static str = "runnables";
     type Data = Vec<Runnable>;
 
     type Element<'a> = &'a Runnable;

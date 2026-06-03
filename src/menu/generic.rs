@@ -1,4 +1,3 @@
-use std::any::TypeId;
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::path::Path;
@@ -6,9 +5,9 @@ use std::path::Path;
 use Default::default;
 use dsb::Cell;
 
-use crate::Freq;
 use crate::menu::{Key, back, filter, next, score};
 use crate::text::TextArea;
+use crate::{FID, Freq};
 
 pub struct GenericMenu<T: MenuData> {
     pub data: T::Data,
@@ -53,7 +52,24 @@ pub enum CorA {
     Complete,
     Accept,
 }
-pub trait MenuData: Sized + 'static {
+
+pub trait ID {
+    const ID: FID;
+}
+impl ID for crate::commands::Cmds {
+    const ID: u8 = 0;
+}
+impl ID for crate::gotolist::GTL {
+    const ID: u8 = 1;
+}
+impl ID for crate::runnables::Runb {
+    const ID: u8 = 2;
+}
+impl ID for crate::sym::Symb {
+    const ID: u8 = 3;
+}
+pub trait MenuData: Sized + 'static + ID {
+    const NAME: &'static str;
     const HEIGHT: usize = 30;
     type Data;
     type Element<'a>: Key<'a>;
@@ -127,6 +143,9 @@ impl<T: MenuData + 'static> GenericMenu<T> {
         // coz its bottom up
         back::<{ T::HEIGHT }>(n, &mut self.selection, &mut self.vo);
     }
+    pub fn name(&self) -> &'static str {
+        T::NAME
+    }
 
     pub fn sel(
         &self,
@@ -144,7 +163,7 @@ impl<T: MenuData + 'static> GenericMenu<T> {
                             "if calling with freq, please impl hash",
                         );
 
-                        *fq.entry(TypeId::of::<T>())
+                        *fq.entry(T::ID)
                             .or_default()
                             .entry(x)
                             .or_default() += 1;

@@ -39,9 +39,9 @@ rust-analyzer = { git = "https://git.bendn.org/rust-analyzer" }
 serde_json = "1.0.150"
 serde = { version = "1.0.228", features = ["unstable"] }
 serde_derive = "1.0.228"
-log = "0.4.30"
+log = "0.4.31"
 crossbeam = { version = "0.8.4", features = ["nightly", "crossbeam-channel"] }
-test-log = "0.2.20"
+test-log = "0.2.21"
 env_logger = "0.11.10"
 url = "2.5.8"
 tokio = { version = "1.52.3", features = ["rt-multi-thread", "sync", "time"] }
@@ -61,7 +61,6 @@ walkdir = "2.5.0"
 niri = { package = "niri-ipc", version = "25.11.0" }
 libc = "0.2.186"
 rustc-hash = "=2.1.1"
-bendy = { version = "0.6.1", features = ["serde"] }
 git2 = "0.20.4"
 imara-diff = "0.2.0"
 vecto = "0.1.1"
@@ -77,6 +76,7 @@ ftools = { git = "https://git.bendn.org/ftools" }
 json_value_merge = "2.0.1"
 annotate-snippets = "0.12.16"
 toml = "1.1.2"
+bendncode = { git = "https://git.bendn.org/bendncode" }
 [profile.dev.package]
 rust-analyzer.opt-level = 3
 fimg.opt-level = 3
@@ -89,7 +89,6 @@ debug-assertions = false
 [profile.release.package]
 fimg.debug-assertions = true
 rust-analyzer.debug-assertions = false
-hir-ty.debug-assertions = false
 
 [profile.release]
 debug = 2

@@ -1353,7 +1353,7 @@ fn apply() {
 }
 "#,
     );
-
+    use lsp_types::*;
     t.apply_snippet(&TextEdit {
         range: lsp_types::Range {
             start: Position { line: 0, character: 8 },
@@ -1386,7 +1386,7 @@ fn apply2() {
 }",
     );
 
-    use lsp_types::Range;
+    use lsp_types::*;
     let mut th = [
         TextEdit {
             range: Range {
@@ -1468,7 +1468,7 @@ fn inlays() {
     let mut t = TextArea::default();
     _ = t.insert("let x = 4;");
     t.set_inlay(&[InlayHint {
-        position: Position { line: 0, character: 4 },
+        position: lsp_types::Position { line: 0, character: 4 },
         label: InlayHintLabel::String("u".into()),
         kind: Some(lsp_types::InlayHintKind::TYPE),
         text_edits: None,
@@ -1486,7 +1486,10 @@ fn inlays() {
             Char('t', 2, 2),
             Char(' ', 3, 3),
             Fake(
-                &Marking { position: 4, data: Box::new([('u', None)]) },
+                Cow::Owned(Marking {
+                    position: 4,
+                    data: vec![('u', None)].into_boxed_slice(),
+                }),
                 0,
                 4,
                 'u'

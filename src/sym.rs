@@ -17,6 +17,7 @@ use crate::rnd::simplify_path;
 use crate::text::{Bookmarks, col, color_, set_a};
 pub enum Symb {}
 impl MenuData for Symb {
+    const NAME: &'static str = "symbols";
     type Data = (
         SymbolsList,
         Vec<SymbolInformation>,

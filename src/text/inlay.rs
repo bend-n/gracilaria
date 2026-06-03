@@ -37,7 +37,7 @@ impl TextArea {
     pub fn set_inlay(&mut self, inlay: &[InlayHint]) {
         self.inlays = inlay
             .iter()
-            .map(|i| {
+            .filter_map(|i| {
                 let mut label = match &i.label {
                     InlayHintLabel::String(x) =>
                         x.chars().map(|x| (x, None)).collect::<Vec<_>>(),
@@ -56,8 +56,8 @@ impl TextArea {
                 if i.padding_right == Some(true) {
                     label.push((' ', None));
                 }
-                let position = self.l_position(i.position).unwrap() as _;
-                Marking { position, data: label.into() }
+                let position = self.l_position(i.position)? as _;
+                Some(Marking { position, data: label.into() })
             })
             .collect();
     }

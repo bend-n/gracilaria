@@ -1,5 +1,4 @@
 pub mod generic;
-use std::any::TypeId;
 use std::borrow::Cow;
 use std::cmp::Reverse;
 use std::sync::LazyLock;
@@ -51,7 +50,7 @@ pub fn score<'a, T: Key<'a>, D: MenuData<Element<'a> = T> + 'static>(
         .map(move |y| {
             if let Some(f) = freq
                 && filter == ""
-                && let Some(f) = f.get(&TypeId::of::<D>())
+                && let Some(f) = f.get(&D::ID)
             {
                 return (
                     f.get(&D::hashed(&y).unwrap())

@@ -129,6 +129,7 @@ commands!(
 
 pub enum Cmds {}
 impl MenuData for Cmds {
+    const NAME: &'static str = "commands";
     const HEIGHT: usize = 30;
     type Data = ();
     type Element<'a> = Cmd;

@@ -96,7 +96,7 @@ Hovering(x) => {
     K(_) => Default [Reinsert],
 
     M(MouseButton::Left if ctrl()) => Default [GoToDefinition(x.request.map(|x| x.1.1).or(x.result.and_then(|x| x.of.iter().find_map(|x| x.tdpp()))))],
-    M(_) => _ [ClickedHover],
+    M(_) => Default [Reinsert],
 },
 Command(_) => K(Key::Named(Escape)) => Default,
 Command(t) => K(Key::Named(Enter) if let Some(Ok(x)) = t.sel(None)) => Default [ProcessCommand((Commands, crate::commands::Cmd) => (t, x))],
