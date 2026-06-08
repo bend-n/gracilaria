@@ -79,13 +79,22 @@ impl Editor {
                 }
             }
             Do::InsertCursorAtMouse => {
-                text.cursor.add(
-                    text.mapped_index_at(cursor_position),
-                    &text.rope,
-                );
-                self.hist.lc = text.cursor.clone();
-                self.chist.push(text.primary_cursor());
-                text.cursor.first().setc(&text.rope);
+                let p = text.mapped_index_at(cursor_position);
+
+                let v = (text.cursor.inner.len() != 1)
+                    .then(|| {
+                        text.cursor
+                            .inner
+                            .extract_if(.., |x| *x == p)
+                            .next()
+                    })
+                    .flatten();
+                if let None = v {
+                    text.cursor.add(p, &text.rope);
+                    self.hist.lc = text.cursor.clone();
+                    self.chist.push(text.primary_cursor());
+                    text.cursor.first().setc(&text.rope);
+                }
             }
 
             _ => unreachable!(),

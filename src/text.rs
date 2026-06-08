@@ -275,16 +275,14 @@ impl TextArea {
         self.changes
             .inner
             .push(Action::Inserted { at: c, insert: with.to_string() });
+        let cc = with.chars().count();
         let manip = |x| {
-            if x < c {
-                Manip::Unmoved(x)
-            } else {
-                Manip::Moved(x + with.chars().count())
-            }
+            if x < c { Manip::Unmoved(x) } else { Manip::Moved(x + cc) }
         };
         self.tabstops.as_mut().map(|x| x.manipulate(manip));
         self.cursor.manipulate(manip);
         self.bookmarks.manipulate(manip);
+
         for m in self
             .inlays
             .range(Marking::idx(c as _)..)
@@ -297,7 +295,7 @@ impl TextArea {
                 std::collections::btree_set::Entry::Vacant(_) =>
                     unreachable!(),
             };
-            m.position += with.chars().count() as u32;
+            m.position += cc as u32;
             self.inlays.insert(m);
         }
         self.tokens.iter_mut().for_each(|d| d.manip(manip));

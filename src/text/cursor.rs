@@ -93,8 +93,11 @@ pub fn caster<T, U>(x: impl FnMut(T) -> U) -> impl FnMut(T) -> U {
 }
 pub macro ceach($cursor: expr, $f:expr $( => $q:tt)?) {
     for i in (0..$cursor.inner.len()) {
-        let c = *$cursor.inner.get(i).expect("aw dangit");
-        caster::<Cursor, _>($f)(c) $($q)?;
+        if let Some(&c) = $cursor.inner.get(i) {
+            caster::<Cursor, _>($f)(c) $($q)?;
+        } else {
+            log::error!("for some reason the number of cursors has changed.");
+        }
     }
     $cursor.coalesce();
 }

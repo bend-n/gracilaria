@@ -14,6 +14,7 @@ use lsp_types::notification::*;
 use lsp_types::request::*;
 use lsp_types::*;
 use tokio::sync::oneshot;
+use tokio::time::error::Elapsed;
 use winit::window::Window;
 
 use crate::lsp::BehaviourAfter::{self, *};
@@ -147,6 +148,20 @@ impl super::Client {
         y: &X::Params,
     ) -> Result<X::Result, RequestError<X>> {
         self.runtime.block_on(self.request_::<X, { Nil }>(y)?.0)
+    }
+    pub fn request_by<'me, X: Request>(
+        &'me self,
+        y: &X::Params,
+        d: tokio::time::Duration,
+    ) -> Result<Result<X::Result, RequestError<X>>, Elapsed> {
+        let _guard = self.runtime.enter();
+        self.runtime.block_on(tokio::time::timeout(
+            d,
+            match self.request_::<X, { Nil }>(y) {
+                Err(e) => return Ok(Err(e.into())),
+                Ok((x, _)) => x,
+            },
+        ))
     }
 
     pub fn request<'me, X: Request>(

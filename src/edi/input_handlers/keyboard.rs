@@ -19,6 +19,7 @@ use winit::window::Window;
 
 use crate::Freq;
 use crate::edi::*;
+use crate::lsp::acceptable_duration;
 
 impl Editor {
     pub fn keyboard(
@@ -295,8 +296,10 @@ impl Editor {
                     }))
                     .max_by_key(|x| x.0.start)
                 else {
-                    self.bar.last_action =
-                        "couldnt get symbol here".into();
+                    self.requests.document_highlights.result = None;
+                    self.refresh_document_highlights();
+                    // self.bar.last_action =
+                    // "couldnt get symbol here".into();
                     break 'out;
                 };
                 if self.text.cursor.inner.len() == 1
@@ -540,17 +543,25 @@ impl Editor {
             }
             Do::Boolean(BoolRequest::ReloadFile, false) => {}
             Do::InsertCursor(dir) => {
-                let (x, y) = match dir {
-                    Direction::Above => self.text.cursor.min(),
-                    Direction::Below => self.text.cursor.max(),
-                }
-                .cursor(&self.text.rope);
-                let y = match dir {
-                    Direction::Above => y - 1,
-                    Direction::Below => y + 1,
-                };
-                let position = self.text.line_to_char(y);
-                self.text.cursor.add(position + x, &self.text.rope);
+                self.text
+                    .cursor
+                    .inner
+                    .iter()
+                    .map(|cursor| {
+                        let (x, y) = cursor.cursor(&self.text.rope);
+                        let y = match dir {
+                            Direction::Above => y - 1,
+                            Direction::Below => y + 1,
+                        };
+                        let position = self.text.line_to_char(y) + x;
+                        position
+                    })
+                    .filter(|&p| self.text.cursor.iter().all(|x| x != p))
+                    .collect::<Vec<_>>()
+                    .into_iter()
+                    .for_each(|x| {
+                        self.text.cursor.add(x, &self.text.rope);
+                    });
             }
             Do::Run(x) =>
                 if let Some((l, ws)) =
@@ -625,26 +636,23 @@ impl Editor {
                 || t.iter().any(|y| y == x))
             && self.text.cursor.inner.len() == 1
             && change!(just self).is_some()
-            && let Ok(Some(mut x)) = l
-                .request_immediate::<OnTypeFormatting>(
-                    &DocumentOnTypeFormattingParams {
-                        text_document_position:
-                            TextDocumentPositionParams {
-                                text_document: p.tid(),
-                                position: self
-                                    .text
-                                    .to_l_position(
-                                        *self.text.cursor.first(),
-                                    )
-                                    .unwrap(),
-                            },
-                        ch: x.into(),
-                        options: FormattingOptions {
-                            tab_size: 4,
-                            ..default()
-                        },
+            && let Ok(Ok(Some(mut x))) = l.request_by::<OnTypeFormatting>(
+                &DocumentOnTypeFormattingParams {
+                    text_document_position: TextDocumentPositionParams {
+                        text_document: p.tid(),
+                        position: self
+                            .text
+                            .to_l_position(*self.text.cursor.first())
+                            .unwrap(),
                     },
-                )
+                    ch: x.into(),
+                    options: FormattingOptions {
+                        tab_size: 4,
+                        ..default()
+                    },
+                },
+                acceptable_duration(),
+            )
         {
             x.sort_tedits();
             for x in x {

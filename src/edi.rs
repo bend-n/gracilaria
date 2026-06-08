@@ -98,6 +98,7 @@ pub struct Editor {
     // pub git_diff:
     // Option<std::rc::Rc<std::cell::RefCell<imara_diff::Diff>>>,
 }
+
 macro_rules! lsp {
     ($self:ident) => {
         $self.lsp.as_ref().map(|(x, ..)| *x)
@@ -490,7 +491,7 @@ impl Editor {
             });
             if unsafe { META.count } == self.text.cursor.iter().len() {
                 for (piece, cursor) in
-                    pieces.zip(0..self.text.cursor.iter().count())
+                    pieces.rev().zip(0..self.text.cursor.iter().count())
                 {
                     let c = self.text.cursor.iter().nth(cursor).unwrap();
                     self.text.insert_at(*c, piece).unwrap();

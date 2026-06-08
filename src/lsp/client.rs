@@ -537,15 +537,17 @@ impl Client {
     ) -> rootcause::Result<()> {
         ceach!(t.cursor, |c| try bikeshed rootcause::Result<()> {
             let r = self
-                .request_immediate::<OnEnter>(
+                .request_by::<OnEnter>(
                     &TextDocumentPositionParams {
                         text_document: f.tid(),
                         position: t.to_l_position(*c).unwrap(),
                     },
+                   acceptable_duration(),
                 );
             match r {
-                Ok(None) | Err(_) => t.enter(),
-                Ok(Some(mut r)) => {
+                Ok(Ok(None)) | Err(_) | Ok(Err(_)) => { println!("hmm") ;t.enter() },
+                Ok(Ok(Some(mut r))) => {
+                    println!("applying");
                     r.sort_tedits();
                     for f in r {
                         t.apply_snippet_tedit(&f)?;
@@ -715,4 +717,8 @@ pub macro tdpp($e:expr) {
         text_document: $e.origin.as_ref().unwrap().tid(),
         position: $e.text.to_l_position(*$e.text.cursor.first()).unwrap(),
     }
+}
+
+pub fn acceptable_duration() -> tokio::time::Duration {
+    tokio::time::Duration::from_millis(50)
 }

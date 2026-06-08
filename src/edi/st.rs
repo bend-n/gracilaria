@@ -78,6 +78,12 @@ Default => {
     K(_) => _ [Edit],
     M(_) => _,
 },
+// Matches(x) => {
+    // K(Key::Character("d") if ctrl()) => _ [GoToMatch],
+    // C(_) => Default [Reinsert],
+    // K(_) => Default [Reinsert],
+    // K(_) => Default [Reinsert],
+// },
 Hovered => {
     HOnSomething(((usize, usize)) => pos) => Hovering(Rq<Hovring, Option<Hovr>, ((usize, usize), TextDocumentPositionParams), RequestError<HoverRequest>> => default()) [SetHovering],
     HOnNothing => Default,

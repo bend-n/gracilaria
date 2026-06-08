@@ -197,7 +197,7 @@ impl Hist {
         let c = take(&mut x.changes);
         self.history.push(Diff(c, [take(&mut self.lc), x.cursor.clone()]));
         self.lc = x.cursor.clone();
-        println!("push {}", self.history.last().unwrap());
+        // println!("push {}", self.history.last().unwrap());
         self.redo_history.clear();
         take(&mut self.last);
         self.last_edit = Instant::now();
