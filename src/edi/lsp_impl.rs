@@ -32,9 +32,10 @@ pub struct Requests {
         (),
         RequestError<SignatureHelpRequest>,
     >, // vo, lines
-    // #[serde(serialize_with = "serialize_tokens")]
-    // #[serde(deserialize_with = "deserialize_tokens")]
-    #[serde(skip)]
+    #[serde(serialize_with = "serialize_tokens")]
+    #[serde(deserialize_with = "deserialize_tokens")]
+    #[serde(default)]
+    // #[serde(skip)]
     pub semantic_tokens: Rq<
         Box<[SemanticToken]>,
         Box<[SemanticToken]>,
@@ -47,7 +48,7 @@ pub struct Requests {
         (),
         RequestError<DocumentDiagnosticRequest>,
     >,
-    #[serde(skip)]
+    #[serde(default)]
     pub inlay: Rq<
         Vec<InlayHint>,
         Vec<InlayHint>,
@@ -69,6 +70,34 @@ pub struct Requests {
     >,
     #[serde(skip)]
     pub git_diff: Rq<imara_diff::Diff, imara_diff::Diff, (), ()>,
+}
+pub fn deserialize_tokens<'de, D: serde::Deserializer<'de>>(
+    ser: D,
+) -> Result<
+    Rq<
+        Box<[SemanticToken]>,
+        Box<[SemanticToken]>,
+        (),
+        RequestError<SemanticTokensFullRequest>,
+    >,
+    D::Error,
+> {
+    SemanticToken::deserialize_tokens_opt(ser)
+        .map(|x| Rq { result: x.map(Into::into), request: None })
+}
+pub fn serialize_tokens<S: serde::Serializer>(
+    s: &Rq<
+        Box<[SemanticToken]>,
+        Box<[SemanticToken]>,
+        (),
+        RequestError<SemanticTokensFullRequest>,
+    >,
+    ser: S,
+) -> Result<S::Ok, S::Error> {
+    SemanticToken::serialize_tokens_opt(
+        &s.result.clone().map(|x| x.to_vec()),
+        ser,
+    )
 }
 impl crate::edi::Editor {
     pub fn poll(&mut self) {

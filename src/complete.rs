@@ -230,7 +230,7 @@ impl Editor {
             ..
         } = sel.clone()
         else {
-            panic!()
+            return;
         };
         match insert_text_format {
             Some(InsertTextFormat::SNIPPET) => {

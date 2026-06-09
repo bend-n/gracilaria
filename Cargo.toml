@@ -89,6 +89,7 @@ debug-assertions = false
 [profile.release.package]
 fimg.debug-assertions = true
 rust-analyzer.debug-assertions = false
+hir-ty.debug-assertions = false
 
 [profile.release]
 debug = 2

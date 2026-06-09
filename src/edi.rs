@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::ffi::OsString;
 use std::fmt::Debug;
-use std::io::BufReader;
+use std::io::{BufReader, ErrorKind};
 use std::mem::take;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -67,7 +67,13 @@ impl Debug for Editor {
             .finish()
     }
 }
-
+#[derive(
+    Default, serde_derive::Serialize, serde_derive::Deserialize, Debug,
+)]
+pub struct Edithin {
+    pub files: HashMap<PathBuf, Edithin>,
+    pub mtime: Option<std::time::SystemTime>,
+}
 #[derive(Default, serde_derive::Serialize, serde_derive::Deserialize)]
 pub struct Editor {
     pub files: HashMap<PathBuf, Editor>,
@@ -175,38 +181,82 @@ pub(crate) use change;
 fn rooter(
     x: &Path,
     mut search: impl FnMut(OsString) -> bool + Clone,
+    whilst: impl for<'a> FnMut(&&'a Path) -> bool + Clone,
 ) -> Option<PathBuf> {
     for f in std::fs::read_dir(&x).ok()?.filter_map(Result::ok) {
+        println!("{f:?}");
         if search(f.file_name()) {
             return Some(f.path().with_file_name("").to_path_buf());
         }
     }
-    x.parent().and_then(rooter.rbind(search))
+    x.parent()
+        .filter(whilst.clone())
+        .and_then(rooter.rbind(whilst).rbind(search))
 }
 
 impl Editor {
     pub fn new() -> rootcause::Result<(Self, Freq)> {
         let mut me = Self::default();
 
-        let o = std::env::args()
+        let mut o = std::env::args()
             .nth(1)
             .and_then(|x| PathBuf::try_from(x).ok())
             .and_then(|x| x.canonicalize().ok());
 
-        if let Some(x) = std::env::args().nth(1) {
-            me.text.insert(&std::fs::read_to_string(x)?);
-            me.text.cursor = default();
+        if let Some(x) = &o {
+            match std::fs::read_to_string(x) {
+                Ok(x) => {
+                    me.text.insert(&x);
+                    me.text.cursor = default();
+                }
+                Err(e)
+                    if e.kind() == ErrorKind::IsADirectory
+                        && let h = hash(&x)
+                        && let cf = cfgdir().join(format!("{h:x}"))
+                        && let at = cf.join(SSTORE)
+                        && at.exists() =>
+                {
+                    let x = std::fs::read(at)?;
+                    let x = bendncode::from_bytes::<Edithin>(&x)?;
+                    o = Some(
+                        x.files
+                            .iter()
+                            .max_by_key(|(_, x)| x.mtime)
+                            .map(ttools::fst)
+                            .expect("file")
+                            .clone(),
+                    );
+                }
+                Err(e) => {
+                    eprintln!("path could not be opened: {e}");
+                    std::process::exit(5);
+                }
+            }
         };
         let n = o.as_deref().and_then(|o| LOADER.language_for_filename(o));
         me.language = n;
 
         let l =
             n.map(|n| LOADER.languages().nth(n.idx()).unwrap().1.config());
+        me.git_dir = o
+            .as_deref()
+            .and_then(|x| {
+                x.ancestors()
+                    .find(|x| x.join(".git").exists())
+                    .map(PathBuf::from)
+            })
+            .and_then(|x| x.canonicalize().ok());
+        let upto = me
+            .git_dir
+            .clone()
+            .or(std::env::current_dir().ok())
+            .unwrap_or(PathBuf::from("/home/"));
+        let upto = |x: &&Path| x.starts_with(&upto);
         me.workspace = o
             .as_ref()
             .and_then(|x| x.parent())
             .and_then(|x| {
-                l.and_then(|l| rooter(&x, |f| l.roots.is_match(f)))
+                l.and_then(|l| rooter(&x, |f| l.roots.is_match(f), upto))
             })
             .or(std::env::current_dir().ok())
             .and_then(|x| x.canonicalize().ok());
@@ -214,7 +264,7 @@ impl Editor {
         let vsc = o
             .as_ref()
             .and_then(|x| x.parent())
-            .and_then(|x| rooter(&x, |x| x == ".vscode"))
+            .and_then(|x| rooter(&x, |x| x == ".vscode", upto))
             .map(|x| (x.clone(), x.join(".vscode").join("settings.json")))
             .filter(|x| x.1.exists())
             .and_then(|(ws, x)| (vsc_settings::load(&x, &ws)).ok());
@@ -240,11 +290,6 @@ impl Editor {
             }
         }
         me.language = n;
-        me.git_dir = me
-            .workspace
-            .as_deref()
-            .and_then(|x| rooter(&x, |x| x == ".git"))
-            .and_then(|x| x.canonicalize().ok());
         me.origin = o;
         me.tree = me.workspace.as_ref().map(|x| {
             walkdir::WalkDir::new(x)
@@ -542,6 +587,56 @@ impl Editor {
 
         Ok(())
     }
+    fn restore(
+        &mut self,
+
+        lsp: Option<(
+            &'static Client,
+            std::thread::JoinHandle<()>,
+            Option<Sender<Arc<dyn Window>>>,
+        )>,
+        l: Option<helix_core::Language>,
+        with: Editor,
+    ) -> rootcause::Result<()> {
+        let f = take(&mut self.files);
+
+        *self = with;
+        assert!(self.files.len() == 0);
+        self.files = f;
+        self.bar.last_action = "restored".into();
+        if self.mtime != Self::modify(self.origin.as_deref()) {
+            self.hist.push_if_changed(&mut self.text);
+            self.text.rope = Rope::from_str(
+                &std::fs::read_to_string(
+                    self.origin
+                        .as_ref()
+                        .ok_or(report!("origin missing"))?,
+                )
+                .unwrap(),
+            );
+
+            self.text.cursor.first_mut().position = self
+                .text
+                .cursor
+                .first()
+                .position
+                .min(self.text.rope.len_chars());
+            self.mtime = Self::modify(self.origin.as_deref());
+            self.bar.last_action = "restored -> reloaded".into();
+            take(&mut self.requests);
+            self.hist.push(&mut self.text)
+        }
+        self.lsp = lsp;
+        self.language = l;
+        if let Some((x, origin)) = lsp!(self + p) {
+            x.open(
+                &origin,
+                self.text.rope.to_string(),
+                self.language.unwrap(),
+            )?;
+        }
+        Ok(())
+    }
     fn open_or_restore(
         &mut self,
         x: &Path,
@@ -555,43 +650,7 @@ impl Editor {
         ws: Option<PathBuf>,
     ) -> rootcause::Result<()> {
         if let Some(x) = self.files.remove(x) {
-            let f = take(&mut self.files);
-
-            *self = x;
-            assert!(self.files.len() == 0);
-            self.files = f;
-            self.bar.last_action = "restored".into();
-            if self.mtime != Self::modify(self.origin.as_deref()) {
-                self.hist.push_if_changed(&mut self.text);
-                self.text.rope = Rope::from_str(
-                    &std::fs::read_to_string(
-                        self.origin
-                            .as_ref()
-                            .ok_or(report!("origin missing"))?,
-                    )
-                    .unwrap(),
-                );
-
-                self.text.cursor.first_mut().position = self
-                    .text
-                    .cursor
-                    .first()
-                    .position
-                    .min(self.text.rope.len_chars());
-                self.mtime = Self::modify(self.origin.as_deref());
-                self.bar.last_action = "restored -> reloaded".into();
-                take(&mut self.requests);
-                self.hist.push(&mut self.text)
-            }
-            self.lsp = lsp;
-            self.language = l;
-            if let Some((x, origin)) = lsp!(self + p) {
-                x.open(
-                    &origin,
-                    self.text.rope.to_string(),
-                    self.language.unwrap(),
-                )?;
-            }
+            self.restore(lsp, l, x)?
         } else {
             self.workspace = ws;
             self.origin = Some(x.to_path_buf());
