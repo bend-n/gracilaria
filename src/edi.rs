@@ -201,7 +201,15 @@ impl Editor {
         let mut o = std::env::args()
             .nth(1)
             .and_then(|x| PathBuf::try_from(x).ok())
-            .and_then(|x| x.canonicalize().ok())
+            .and_then(|x| {
+                x.canonicalize()
+                    .inspect_err(|_| {
+                        _ = std::fs::File::create(&x);
+                    })
+                    .ok()
+                    .or_else(|| x.canonicalize().ok())
+                    .or(Some(x))
+            })
             .or_else(|| {
                 rfd::FileDialog::new()
                     .set_can_create_directories(true)
