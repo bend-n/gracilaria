@@ -77,6 +77,7 @@ json_value_merge = "2.0.1"
 annotate-snippets = "0.12.16"
 toml = "1.1.2"
 bendncode = { git = "https://git.bendn.org/bendncode" }
+rfd = "0.17.2"
 [profile.dev.package]
 rust-analyzer.opt-level = 3
 fimg.opt-level = 3

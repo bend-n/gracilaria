@@ -201,14 +201,17 @@ impl Editor {
         let mut o = std::env::args()
             .nth(1)
             .and_then(|x| PathBuf::try_from(x).ok())
-            .and_then(|x| x.canonicalize().ok());
+            .and_then(|x| x.canonicalize().ok())
+            .or_else(|| {
+                rfd::FileDialog::new()
+                    .set_can_create_directories(true)
+                    .set_title("pick dir to open")
+                    .pick_folder()
+            });
 
         if let Some(x) = &o {
             match std::fs::read_to_string(x) {
-                Ok(x) => {
-                    me.text.insert(&x);
-                    me.text.cursor = default();
-                }
+                Ok(_) => {}
                 Err(e)
                     if e.kind() == ErrorKind::IsADirectory
                         && let h = hash(&x)
@@ -227,12 +230,24 @@ impl Editor {
                             .clone(),
                     );
                 }
+                Err(e) if e.kind() == ErrorKind::IsADirectory =>
+                    o = rfd::FileDialog::new()
+                        .set_directory(x)
+                        .set_can_create_directories(true)
+                        .set_title("pick file in project to open")
+                        .pick_file(),
                 Err(e) => {
                     eprintln!("path could not be opened: {e}");
                     std::process::exit(5);
                 }
             }
         };
+        if let Some(o) = o.as_deref()
+            && let o = std::fs::read_to_string(o).unwrap()
+        {
+            me.text.insert(&o);
+            me.text.cursor = default();
+        }
         let n = o.as_deref().and_then(|o| LOADER.language_for_filename(o));
         me.language = n;
 
@@ -309,7 +324,7 @@ impl Editor {
                 .map(|x| x.path().to_owned())
                 .collect::<Vec<_>>()
         });
-        let l = me.workspace.as_ref().zip(l).map(|(workspace, l)| {
+        let l = me.workspace.as_ref().zip(l).and_then(|(workspace, l)| {
             let (Connection { sender, receiver }, conf) = if l.language_id
                 == "rust"
             {
@@ -338,11 +353,14 @@ impl Editor {
                             .ok()
                             .zip(Some((lc, l)))
                     })
-                    .ok_or(report!(
-                        "no lsp for this language; install one of {:?}",
-                        l.language_servers
-                    ))
-                    .unwrap();
+                    .ok_or_else(|| {
+                        log::error!(
+                            "no lsp for this language; install one of \
+                             {:?}",
+                            l.language_servers
+                        )
+                    })
+                    .ok()?;
                 super let (x, _iot) =
                     Connection::stdio(
                         BufReader::new(c.stdout.take().unwrap()),
@@ -365,7 +383,7 @@ impl Editor {
                 conf,
             )
             .unwrap();
-            (&*Box::leak(Box::new(c)), (t2), Some(changed))
+            Some((&*Box::leak(Box::new(c)), (t2), Some(changed)))
         });
         let g = me.git_dir.clone();
         if let Some(o) = me.origin.clone()
@@ -374,7 +392,12 @@ impl Editor {
             let w = me.workspace.clone();
             let la = me.language;
             let t = me.tree.clone();
-            assert!(me.files.len() != 0);
+            if me.files.len() != 0 {
+                log::error!(
+                    "too many files? {:?}",
+                    me.files.keys().collect::<Vec<_>>()
+                );
+            }
             me.open_or_restore(&o, l, la, None, w)?;
             me.git_dir = g;
             me.tree = t;

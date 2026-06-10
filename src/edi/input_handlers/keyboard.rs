@@ -522,25 +522,7 @@ impl Editor {
                 self.text.scroll_to_cursor_centering();
                 inlay!(self);
             }
-            Do::Boolean(BoolRequest::ReloadFile, true) => {
-                self.hist.push_if_changed(&mut self.text);
-                self.text.rope = Rope::from_str(
-                    &std::fs::read_to_string(
-                        self.origin.as_ref().unwrap(),
-                    )
-                    .unwrap(),
-                );
-
-                self.text.cursor.first_mut().position = self
-                    .text
-                    .cursor
-                    .first()
-                    .position
-                    .min(self.text.rope.len_chars());
-                self.mtime = Self::modify(self.origin.as_deref());
-                self.bar.last_action = "reloaded".into();
-                self.hist.push(&mut self.text)
-            }
+            Do::Boolean(BoolRequest::ReloadFile, true) => self.reload(),
             Do::Boolean(BoolRequest::ReloadFile, false) => {}
             Do::InsertCursor(dir) => {
                 self.text
@@ -862,5 +844,22 @@ impl Editor {
                 .document_highlights
                 .request(lsp.runtime.spawn(fut));
         }
+    }
+    pub fn reload(&mut self) {
+        self.hist.push_if_changed(&mut self.text);
+        self.text.rope = Rope::from_str(
+            &std::fs::read_to_string(self.origin.as_ref().unwrap())
+                .unwrap(),
+        );
+
+        self.text.cursor.first_mut().position = self
+            .text
+            .cursor
+            .first()
+            .position
+            .min(self.text.rope.len_chars());
+        self.mtime = Self::modify(self.origin.as_deref());
+        self.bar.last_action = "reloaded".into();
+        self.hist.push(&mut self.text)
     }
 }

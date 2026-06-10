@@ -115,6 +115,8 @@ commands!(
     @ Incoming: "callers-of",
     /// Functions this function calls
     @ Outgoing: "calling",
+    /// Reloads the file from disk.
+    | Reload: "reload",
     // /// View child modules
     // @ ViewChildModules: "child-modules",
     /// GoTo line,
@@ -272,6 +274,7 @@ impl Editor {
                     ..default()
                 });
             }
+            Cmd::Reload => self.reload(),
             z if z.needs_lsp() => return self.handle_lsp_command(z, w),
             x => unimplemented!("{x:?}"),
         }
