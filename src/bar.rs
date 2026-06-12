@@ -4,6 +4,7 @@ use dsb::Cell;
 use dsb::cell::Style;
 use lsp_types::WorkDoneProgress;
 
+use crate::killring::KillRM;
 use crate::lsp::{Client, Rq};
 use crate::rnd::simplify_path;
 use crate::sym::Symbols;
@@ -127,6 +128,19 @@ impl Bar {
                         style: Style { flags: z, ..y.style },
                     }
                 });
+            }
+            State::KillRing(KillRM { tedit, .. }) => {
+                "filter: "
+                    .chars()
+                    .zip(repeat(Style::BOLD | Style::ITALIC))
+                    .chain(s(&tedit.rope.to_string()))
+                    .zip(row)
+                    .for_each(|((x, z), y)| {
+                        *y = Cell {
+                            letter: Some(x),
+                            style: Style { flags: z, ..y.style },
+                        }
+                    });
             }
             State::RequestBoolean(x) => {
                 x.prompt()

@@ -49,8 +49,8 @@ use crate::text::cursor::{Ronge, ceach};
 use crate::text::hist::{ClickHistory, Hist};
 use crate::text::{LOADER, Mapping, RopeExt, SortTedits, TextArea};
 use crate::{
-    BoolRequest, CDo, CompletionAction, CompletionState, Freq, alt, ctrl,
-    filter, hash, shift, sym, trm,
+    BoolRequest, CDo, CompletionAction, CompletionState, Freq, KillRing,
+    alt, ctrl, filter, hash, shift, sym, trm,
 };
 
 impl Debug for Editor {
@@ -195,7 +195,7 @@ fn rooter(
 }
 
 impl Editor {
-    pub fn new() -> rootcause::Result<(Self, Freq)> {
+    pub fn new() -> rootcause::Result<(Self, Freq, KillRing)> {
         let mut me = Self::default();
 
         let mut o = std::env::args()
@@ -294,6 +294,7 @@ impl Editor {
 
         let mut loaded_state = false;
         let mut freq = default();
+        let mut kr = default();
         if let Some(ws) = me.workspace.as_deref()
             && let h = hash(&ws)
             && let cf = cfgdir().join(format!("{h:x}"))
@@ -310,6 +311,12 @@ impl Editor {
             {
                 let x = std::fs::read(at)?;
                 freq = bendncode::from_bytes::<Freq>(&x)?;
+            }
+            if let at = cf.join(KSTORE)
+                && at.exists()
+            {
+                let x = std::fs::read(at)?;
+                kr = bendncode::from_bytes::<KillRing>(&x)?;
             }
         }
         me.language = n;
@@ -443,7 +450,7 @@ impl Editor {
             //     },
             // );
         }
-        Ok((me, freq))
+        Ok((me, freq, kr))
     }
 
     #[must_use = "please apply this"]
@@ -557,6 +564,30 @@ impl Editor {
         inlay!(self);
     }
 
+    pub fn paste_m<T: AsRef<str>>(
+        &mut self,
+        r: impl Iterator<Item = T> + DoubleEndedIterator + ExactSizeIterator,
+    ) {
+        // let bounds = unsafe { &*META.splits };
+        // let pieces = bounds.windows(2).map(|w| unsafe {
+        // std::str::from_utf8_unchecked(&r.as_bytes()[w[0]..w[1]])
+        // });
+        if r.len() == self.text.cursor.iter().len() {
+            for (piece, cursor) in
+                r.rev().zip(0..self.text.cursor.iter().count())
+            {
+                let c = self.text.cursor.iter().nth(cursor).unwrap();
+                self.text.insert_at(*c, piece.as_ref()).unwrap();
+            }
+        } else {
+            let new = r
+                .fold(String::default(), |acc, x| acc + x.as_ref() + "\n");
+
+            // vscode behaviour: insane?
+            self.text.insert(&new);
+            eprintln!("hrmst");
+        }
+    }
     pub fn paste(&mut self) {
         self.hist.push_if_changed(&mut self.text);
         let r = clipp::paste();
@@ -565,19 +596,7 @@ impl Editor {
             let pieces = bounds.windows(2).map(|w| unsafe {
                 std::str::from_utf8_unchecked(&r.as_bytes()[w[0]..w[1]])
             });
-            if unsafe { META.count } == self.text.cursor.iter().len() {
-                for (piece, cursor) in
-                    pieces.rev().zip(0..self.text.cursor.iter().count())
-                {
-                    let c = self.text.cursor.iter().nth(cursor).unwrap();
-                    self.text.insert_at(*c, piece).unwrap();
-                }
-            } else {
-                let new = pieces.intersperse("\n").collect::<String>();
-                // vscode behaviour: insane?
-                self.text.insert(&new);
-                eprintln!("hrmst");
-            }
+            self.paste_m(pieces);
         } else {
             self.text.insert(&clipp::paste());
         }
@@ -724,7 +743,11 @@ impl Editor {
             .map(|[wo, or]| format!("gracilaria - {wo} - {or}"))
     }
 
-    pub fn store(&mut self, fq: &Freq) -> rootcause::Result<()> {
+    pub fn store(
+        &mut self,
+        fq: &Freq,
+        kr: &KillRing,
+    ) -> rootcause::Result<()> {
         let ws = self.workspace.clone();
         let tree = self.tree.clone();
         let mtime = self.mtime.clone();
@@ -751,6 +774,8 @@ impl Editor {
             std::fs::write(p.join(SSTORE), &b)?;
             let b = bendncode::to_bytes(fq)?;
             std::fs::write(p.join(FSTORE), &b)?;
+            let b = bendncode::to_bytes(kr)?;
+            std::fs::write(p.join(KSTORE), &b)?;
         }
         Ok(())
     }
@@ -804,3 +829,4 @@ fn cfgdir() -> PathBuf {
 }
 const SSTORE: &str = "state.bendn";
 const FSTORE: &str = "freq.bendn";
+const KSTORE: &str = "killring.bendn";

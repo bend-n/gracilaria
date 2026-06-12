@@ -509,4 +509,14 @@ impl Cursors {
     // ) -> Vec<std::ops::Range<usize>> {
     //     panic!();
     // }
+
+    pub fn sels<'a>(
+        &self,
+        text: &'a Rope,
+    ) -> std::iter::FilterMap<
+        impl Iterator<Item = Cursor> + ExactSizeIterator,
+        impl FnMut(Cursor) -> Option<RopeSlice<'a>>,
+    > {
+        self.iter().filter_map(|x| Some(text.get_slice(x.sel?)?))
+    }
 }

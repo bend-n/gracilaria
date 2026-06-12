@@ -19,6 +19,7 @@ use winit::window::Window;
 
 use crate::Freq;
 use crate::edi::*;
+use crate::killring::KillRM;
 use crate::lsp::acceptable_duration;
 
 impl Editor {
@@ -27,6 +28,7 @@ impl Editor {
         event: KeyEvent,
         window: &mut Arc<dyn Window>,
         freq: &mut Freq,
+        kr: &mut KillRing,
     ) -> ControlFlow<()> {
         let Some(mut o) =
             self.transition(Action::K(event.logical_key.clone()))
@@ -126,7 +128,7 @@ impl Editor {
                     }
                     crate::menu::generic::CorA::Accept => {
                         if let Err(e) =
-                            self.handle_command(z, window.clone())
+                            self.handle_command(z, window.clone(), kr)
                         {
                             self.bar.last_action = format!("{e}");
                         }
@@ -404,6 +406,7 @@ impl Editor {
             Do::Insert(c) => {
                 // self.text.cursor.inner.clear();
                 self.hist.push_if_changed(&mut self.text);
+                self.kill(kr);
                 ceach!(self.text.cursor, |cursor| {
                     let Some(r) = cursor.sel else { return };
                     _ = self.text.remove(r.into());
@@ -416,12 +419,12 @@ impl Editor {
             }
             Do::Delete => {
                 self.hist.push_if_changed(&mut self.text);
+                self.kill(kr);
                 ceach!(self.text.cursor, |cursor| {
                     let Some(r) = cursor.sel else { return };
                     _ = self.text.remove(r.into());
                 });
                 self.text.cursor.clear_selections();
-                self.hist.push_if_changed(&mut self.text);
                 change!(self, window.clone());
             }
 
@@ -429,15 +432,14 @@ impl Editor {
                 self.hist.push_if_changed(&mut self.text);
                 unsafe { take(&mut META) };
                 let mut clip = String::new();
-                self.text.cursor.each_ref(|x| {
-                    if let Some(x) = x.sel {
-                        unsafe {
-                            META.count += 1;
-                            META.splits.push(clip.len());
-                        }
-                        clip.extend(self.text.rope.slice(x).chars());
+                self.kill(kr);
+                for sel in self.text.cursor.sels(&self.text) {
+                    unsafe {
+                        META.count += 1;
+                        META.splits.push(clip.len());
                     }
-                });
+                    clip.extend(sel.chars());
+                }
                 unsafe {
                     META.splits.push(clip.len());
                     META.hash = hash(&clip)
@@ -451,15 +453,14 @@ impl Editor {
                 self.hist.push_if_changed(&mut self.text);
                 unsafe { take(&mut META) };
                 let mut clip = String::new();
-                self.text.cursor.each_ref(|x| {
-                    if let Some(x) = x.sel {
-                        unsafe {
-                            META.count += 1;
-                            META.splits.push(clip.len());
-                        }
-                        clip.extend(self.text.rope.slice(x).chars());
+                self.kill(kr);
+                for sel in self.text.cursor.sels(&self.text) {
+                    unsafe {
+                        META.count += 1;
+                        META.splits.push(clip.len());
                     }
-                });
+                    clip.extend(sel.chars());
+                }
                 unsafe {
                     META.splits.push(clip.len());
                     META.hash = hash(&clip)
@@ -476,6 +477,7 @@ impl Editor {
             }
             Do::PasteOver => {
                 self.hist.push_if_changed(&mut self.text);
+                self.kill(kr);
                 ceach!(self.text.cursor, |cursor| {
                     let Some(r) = cursor.sel else { return };
                     _ = self.text.remove(r.into());
@@ -584,6 +586,27 @@ impl Editor {
                     // self.text.vo = self.text.char_to_line(x.start);
                 }
             }
+            // Do::KillRing => {
+            //     self.state = State::KillRing(KillRM {
+            //         data: kr.clone(),
+            //         tedit: default(),
+            //         selection: 0,
+            //         vo: 0,
+            //     });
+            // }
+            Do::KillRMHandleKey => {
+                if let State::KillRing(x) = &mut self.state {
+                    handle2(
+                        &event.logical_key,
+                        &mut x.tedit,
+                        lsp!(self + p),
+                    );
+                }
+            }
+            Do::Revive(x) =>
+                if let Some(Ok(x)) = x.sel(Some(freq)) {
+                    self.paste_m(x.iter())
+                },
         }
         ControlFlow::Continue(())
     }
@@ -861,5 +884,18 @@ impl Editor {
         self.mtime = Self::modify(self.origin.as_deref());
         self.bar.last_action = "reloaded".into();
         self.hist.push(&mut self.text)
+    }
+    pub fn kill(&mut self, kr: &mut KillRing) {
+        if let x = self
+            .text
+            .cursor
+            .sels(&self.text)
+            .map(String::from)
+            .collect::<Box<[_]>>()
+            && !x.is_empty()
+        {
+            println!("kill {x:?}");
+            kr.push(x);
+        }
     }
 }

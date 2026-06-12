@@ -11,7 +11,6 @@ use lsp_types::*;
 use rootcause::{bail, report};
 use rust_analyzer::lsp::ext::*;
 
-use crate::FG;
 use crate::edi::{Editor, lsp};
 use crate::gotolist::{At, GoToList};
 use crate::lsp::{PathURI, Rq, tdpp};
@@ -19,6 +18,7 @@ use crate::menu::charc;
 use crate::menu::generic::{CorA, GenericMenu, MenuData};
 use crate::sym::GoTo;
 use crate::text::{Bookmark, RopeExt, SortTedits, TextArea, col, color_};
+use crate::{FG, KillRing};
 
 macro_rules! repl {
     ($x:ty, $($with:tt)+) => {
@@ -115,6 +115,8 @@ commands!(
     @ Incoming: "callers-of",
     /// Functions this function calls
     @ Outgoing: "calling",
+    /// loads up the kill ring
+    | KillRing: "killring",
     /// Reloads the file from disk.
     | Reload: "reload",
     // /// View child modules
@@ -225,6 +227,7 @@ impl Editor {
         &mut self,
         z: Cmd,
         w: Arc<dyn winit::window::Window>,
+        kr: &mut KillRing,
     ) -> rootcause::Result<()> {
         match z {
             Cmd::GoTo(Some(x)) =>
@@ -273,6 +276,16 @@ impl Editor {
                     data: (src, Some(crate::gotolist::O::Bmk)),
                     ..default()
                 });
+            }
+            Cmd::KillRing => {
+                self.state = crate::edi::st::State::KillRing(
+                    crate::killring::KillRM {
+                        data: kr.clone(),
+                        tedit: default(),
+                        selection: 0,
+                        vo: 0,
+                    },
+                );
             }
             Cmd::Reload => self.reload(),
             z if z.needs_lsp() => return self.handle_lsp_command(z, w),

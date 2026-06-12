@@ -45,6 +45,7 @@ mod edi;
 mod error;
 mod git;
 mod gotolist;
+mod killring;
 mod meta;
 mod rnd;
 mod runnables;
@@ -112,7 +113,8 @@ static mut CLICKING: bool = false;
 const BG: [u8; 3] = col!("#1f2430");
 const FG: [u8; 3] = [204, 202, 194];
 const BORDER: [u8; 3] = col!("#ffffff");
-
+type KillRing = Vec<Box<[String]>>;
+static mut __KR: MaybeUninit<KillRing> = MaybeUninit::uninit();
 static mut __ED: MaybeUninit<Editor> = MaybeUninit::uninit();
 static mut __FREQ: MaybeUninit<Freq> = MaybeUninit::uninit();
 static mut __CLEAN: bool = false;
@@ -120,7 +122,10 @@ extern "C" fn cleanup() {
     unsafe {
         if __CLEAN == false {
             __CLEAN = true;
-            match __ED.assume_init_mut().store(__FREQ.assume_init_mut()) {
+            match __ED
+                .assume_init_mut()
+                .store(__FREQ.assume_init_mut(), __KR.assume_init_mut())
+            {
                 Ok(_) => {}
                 Err(e) => eprintln!("{e}"),
             };
@@ -135,7 +140,7 @@ type FID = u8;
 type Freq = FxHashMap<FID, FxHashMap<u64, u16>>;
 pub(crate) fn entry(event_loop: EventLoop) {
     unsafe {
-        let (ed, freq) = match Editor::new() {
+        let (ed, freq, kr) = match Editor::new() {
             Err(e) => {
                 eprintln!("failure to launch: {e}");
                 return;
@@ -144,11 +149,13 @@ pub(crate) fn entry(event_loop: EventLoop) {
         };
         __ED.write(ed);
         __FREQ.write(freq);
+        __KR.write(kr);
     };
     assert_eq!(unsafe { atexit(cleanup) }, 0);
     unsafe { signal(libc::SIGINT, sigint as *const () as usize) };
     let ed: &'static mut Editor = unsafe { __ED.assume_init_mut() };
     let freq = unsafe { __FREQ.assume_init_mut() };
+    let kr = unsafe { __KR.assume_init_mut() };
     let ppem = 18.0;
     let ls = 20.0;
     // let ed = Box::leak(Box::new(ed));
@@ -360,7 +367,7 @@ pub(crate) fn entry(event_loop: EventLoop) {
                     ) {
                         return;
                     }
-                    if ed.keyboard(event, window, freq).is_break() {
+                    if ed.keyboard(event, window, freq, kr).is_break() {
                         elwt.exit();
                     }
                     window.request_redraw();

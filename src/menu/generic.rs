@@ -68,6 +68,9 @@ impl ID for crate::runnables::Runb {
 impl ID for crate::sym::Symb {
     const ID: u8 = 3;
 }
+impl ID for crate::killring::KillR {
+    const ID: u8 = 4;
+}
 pub trait MenuData: Sized + 'static + ID {
     const NAME: &'static str;
     const HEIGHT: usize = 30;

@@ -866,6 +866,13 @@ pub fn render(
                 let c = y.cells(50, ws, None);
                 drawb(&c, 50);
             }
+            State::KillRing(y) => {
+                dbg!(y);
+                let ws = ed.workspace.as_deref().unwrap();
+                let c = y.cells(50, ws, None);
+                println!("???? {c:?}");
+                drawb(&c, 50);
+            }
             _ => {}
         }
         let com = match ed.requests.complete {

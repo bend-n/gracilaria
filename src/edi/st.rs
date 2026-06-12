@@ -156,6 +156,20 @@ Symbols(Rq::<Symbols, Option<SymbolsList>, (), AQErr> => _rq) => {
     C(_) => _,
     M(_) => _,
 },
+
+
+KillRing(crate::killring::KillRM => x) => {
+    K(Key::Named(Tab) if shift()) => KillRing({ let mut x = x; x.next(); x }),
+    K(Key::Named(ArrowDown)) => KillRing({ let mut x = x; x.next(); x }),
+    K(Key::Named(ArrowUp | Tab)) => KillRing({ let mut x = x; x.back(); x }),
+    K(Key::Named(Enter)) => Default [Revive(crate::killring::KillRM => x)],
+    K(Key::Named(Escape)) => Default,
+    K(_) => _ [KillRMHandleKey],
+    // K(_) => _ [GTLHandleKey],
+    C(_) => _,
+    M(_) => _,
+},
+
 CodeAction(Rq { result : Some(_x), request }) => {
     K(Key::Named(Tab) if shift()) => _ [CASelectPrev],
     K(Key::Named(ArrowDown | Tab)) => _ [CASelectNext],
