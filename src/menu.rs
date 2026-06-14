@@ -48,7 +48,6 @@ pub fn score<'a, T: Key<'a>, D: MenuData<Element<'a> = T> + 'static>(
     );
     let mut v = x
         .map(move |y| {
-            println!("holy hell");
             if let Some(f) = freq
                 && filter == ""
                 && let Some(f) = f.get(&D::ID)
@@ -125,18 +124,13 @@ pub fn filter<'a, T: Key<'a>>(
     i: impl Iterator<Item = T>,
     filter: &'_ str,
 ) -> impl Iterator<Item = T> {
-    println!("omega");
     i.filter(move |y| {
-        println!("waow?");
         filter.is_empty()
             || y.k().chars().any(|x| filter.chars().contains(&x))
         // .collect::<HashSet<_>>()
         // .intersection(&filter.chars().collect())
         // .count()
         // > 0
-    })
-    .inspect(|x| {
-        dbg!(x.k());
     })
 }
 
