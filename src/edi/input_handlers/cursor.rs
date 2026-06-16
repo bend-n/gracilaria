@@ -107,8 +107,10 @@ impl Editor {
                 // let l = &mut self.requests.hovering.result;
             }
             Some(Do::Hover) => {
-                self.state.consume(Action::HOnNothing).unwrap();
-                w.request_redraw();
+                match self.state.consume(Action::HOnNothing).unwrap() {
+                    Some(st::Do::R(false)) => {}
+                    _ => w.request_redraw(),
+                }
             }
             None => {}
             x => unreachable!("{x:?}"),

@@ -86,7 +86,7 @@ Default => {
 // },
 Hovered => {
     HOnSomething(((usize, usize)) => pos) => Hovering(Rq<Hovring, Option<Hovr>, ((usize, usize), TextDocumentPositionParams), RequestError<HoverRequest>> => default()) [SetHovering],
-    HOnNothing => Default,
+    HOnNothing => Default [R(bool => false)],
 },
 Hovering(x) => {
     // now hovering over something else, cancel existing hover

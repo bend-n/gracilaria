@@ -159,20 +159,30 @@ fn r(
             }))
             .for_each(|(a, b)| *a = b);
     }
+    let s = if let Some(ref ft) = x.filter_text
+        && &x.label != ft
+        // l = &x
+        // ft = x
+        && let Some(e) = x.label.find(ft)
+    {
+        -(e as i32)
+    } else {
+        0
+    };
     i.iter_mut()
         .zip(
-            x.label.chars().map(|x| ds.basic(x)).zip(0..).chain(
+            x.label.chars().map(|x| ds.basic(x)).zip(s..).chain(
                 label_details
                     .map(|x| {
                         Style { bg, fg: color_("#858685"), ..default() }
                             .basic(x)
                     })
-                    .zip(repeat(u32::MAX)),
+                    .zip(repeat(i32::MAX)),
             ),
         )
         .for_each(|(a, (b, i))| {
             *a = b;
-            if indices.contains(&i) {
+            if indices.contains(&(i as u32)) {
                 a.style |= (Style::BOLD, color_("#ffcc66"));
             }
         });

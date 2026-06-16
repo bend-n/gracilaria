@@ -607,6 +607,7 @@ impl Editor {
                 if let Some(Ok(x)) = x.sel(Some(freq)) {
                     self.paste_m(x.iter())
                 },
+            Do::R(_) => {}
         }
         ControlFlow::Continue(())
     }
