@@ -45,7 +45,7 @@ pub fn run(
     let (_req_tx, _req_rx) = unbounded();
     let (window_tx, window_rx) = oneshot::channel::<Arc<dyn Window>>();
     let mut c = Client {
-        tx,
+        tx: Tx(tx),
         progress: Box::leak(Box::new(papaya::HashMap::new())),
         runtime: tokio::runtime::Builder::new_multi_thread()
             .enable_time()

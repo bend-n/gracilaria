@@ -1,5 +1,6 @@
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::sync::atomic::AtomicI32;
 use std::sync::atomic::Ordering::Relaxed;
 
@@ -25,12 +26,27 @@ use crate::lsp::BehaviourAfter::{self, *};
 use crate::lsp::{RequestError, Require, Requiring, Rq};
 use crate::text::cursor::ceach;
 use crate::text::{LOADER, RopeExt, SortTedits, TextArea};
+#[derive(Debug, Clone)]
+pub struct Tx(pub Sender<Message>);
+impl std::ops::Deref for Client {
+    type Target = Tx;
 
+    fn deref(&self) -> &Self::Target {
+        &self.tx
+    }
+}
+impl std::ops::Deref for Tx {
+    type Target = Sender<Message>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 #[derive(Debug)]
 pub struct Client {
     pub runtime: tokio::runtime::Runtime,
 
-    pub tx: Sender<Message>,
+    pub tx: Tx,
     pub id: AtomicI32,
     pub initialized: Option<InitializeResult>,
     // pub pending: HashMap<i32, oneshot::Sender<Re>>,
@@ -53,7 +69,8 @@ pub struct Client {
 
 impl Drop for Client {
     fn drop(&mut self) {
-        panic!("please dont");
+        println!("dropped lsp");
+        // panic!("please dont");
     }
 }
 
@@ -125,7 +142,7 @@ impl Client {
                 Option<CompletionResponse>,
                 RequestError<Completion>,
             >,
-        > + use<'me>,
+        > + use<>,
     > {
         self.caps().completion_provider.require()?;
 
@@ -154,7 +171,7 @@ impl Client {
                 Option<SignatureHelp>,
                 RequestError<SignatureHelpRequest>,
             >,
-        > + use<'me>,
+        > + use<>,
     > {
         self.caps().signature_help_provider.require()?;
         Ok(self
@@ -318,7 +335,7 @@ impl Client {
                 Vec<DocumentHighlight>,
                 RequestError<DocumentHighlightRequest>,
             >,
-        > + use<'me>,
+        > + use<>,
     > {
         self.caps().document_highlight_provider.require()?;
         let p = DocumentHighlightParams {
@@ -335,7 +352,7 @@ impl Client {
             .map(|x| x.map(|x| x.unwrap_or_default())))
     }
     pub fn document_symbols(
-        &'static self,
+        &self,
         p: &Path,
     ) -> Requiring<
         "document_symbol",
@@ -358,7 +375,7 @@ impl Client {
         .0)
     }
     pub fn workspace_symbols(
-        &'static self,
+        &self,
         f: String,
     ) -> Requiring<
         "workspace_symbol",
@@ -367,7 +384,7 @@ impl Client {
                 Option<WorkspaceSymbolResponse>,
                 RequestError<lsp_request!("workspace/symbol")>,
             >,
-        >,
+        > + use<>,
     > {
         self.caps().workspace_symbol_provider.require()?;
         Ok(self
@@ -398,11 +415,7 @@ impl Client {
         })
     }
 
-    pub fn matching_brace<'a>(
-        &'static self,
-        f: &Path,
-        t: &'a mut TextArea,
-    ) {
+    pub fn matching_brace<'a>(&self, f: &Path, t: &'a mut TextArea) {
         if let Ok(x) =
             self.matching_brace_at(f, t.cursor.positions(&t.rope))
         {
@@ -420,7 +433,7 @@ impl Client {
         }
     }
     pub fn inlay(
-        &'static self,
+        &self,
         f: &Path,
         t: &TextArea,
     ) -> Requiring<
@@ -456,7 +469,7 @@ impl Client {
         // }
     }
     pub fn format(
-        &'static self,
+        &self,
         f: &Path,
     ) -> Requiring<
         "document_formatting",
@@ -487,7 +500,7 @@ impl Client {
             .0)
     }
     pub fn rq_semantic_tokens(
-        &'static self,
+        &self,
         to: &mut Rq<
             Box<[SemanticToken]>,
             Box<[SemanticToken]>,
@@ -558,7 +571,7 @@ impl Client {
         Ok(())
     }
     pub fn runnables(
-        &'static self,
+        &self,
         t: &Path,
         c: Option<Position>,
     ) -> Result<
@@ -574,7 +587,7 @@ impl Client {
     }
 
     pub fn _child_modules(
-        &'static self,
+        &self,
         p: Position,
         t: &Path,
     ) -> Result<
@@ -601,7 +614,7 @@ impl Client {
                 <GotoImplementation as Request>::Result,
                 RequestError<GotoImplementation>,
             >,
-        >,
+        > + use<>,
         SendError<Message>,
     > {
         self.request::<GotoImplementation>(&GotoImplementationParams {
@@ -621,7 +634,7 @@ impl Client {
                 Option<Vec<Location>>,
                 RequestError<References>,
             >,
-        >,
+        > + use<>,
         SendError<Message>,
     > {
         self.request::<References>(&ReferenceParams {
@@ -650,7 +663,7 @@ impl Client {
                 Option<CallHierarchyItem>,
                 RequestError<CallHierarchyPrepare>,
             >,
-        >,
+        > + use<>,
         SendError<Message>,
     > {
         self.request::<CallHierarchyPrepare>(&CallHierarchyPrepareParams {
@@ -661,7 +674,7 @@ impl Client {
         .map(|x| x.map(|x| x.map(|x| x.and_then(|mut x| x.try_remove(0)))))
     }
     pub async fn callers(
-        &self,
+        self: Arc<Self>,
         at: TextDocumentPositionParams,
     ) -> rootcause::Result<Vec<CallHierarchyIncomingCall>> {
         let calls = self
@@ -681,7 +694,7 @@ impl Client {
         Ok(calls)
     }
     pub async fn calling(
-        &self,
+        self: Arc<Self>,
         at: TextDocumentPositionParams,
     ) -> rootcause::Result<Vec<CallHierarchyOutgoingCall>> {
         let calls = self

@@ -19,7 +19,6 @@ use winit::window::Window;
 
 use crate::Freq;
 use crate::edi::*;
-use crate::killring::KillRM;
 use crate::lsp::acceptable_duration;
 
 impl Editor {

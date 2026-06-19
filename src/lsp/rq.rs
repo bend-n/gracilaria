@@ -99,14 +99,15 @@ impl<const R: &'static str> Display for Unsupported<R> {
         write!(f, "request {} isnt supported by this LSP", R)
     }
 }
-pub trait Peel<E> {
-    fn peel(self) -> Result<(), E>;
+pub trait Peel<E, T> {
+    fn peel(self) -> Result<Option<T>, E>;
 }
-impl<E, N> Peel<E> for Result<Result<(), E>, N> {
-    fn peel(self) -> Result<(), E> {
+impl<E, N, T> Peel<E, T> for Result<Result<T, E>, N> {
+    fn peel(self) -> Result<Option<T>, E> {
         match self {
             Ok(Err(e)) => Err(e),
-            Ok(Ok(_)) | Err(_) => Ok(()),
+            Ok(Ok(x)) => Ok(Some(x)),
+            Err(_) => Ok(None),
         }
     }
 }

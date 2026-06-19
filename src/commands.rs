@@ -432,7 +432,8 @@ impl Editor {
                     ..default()
                 }),
             Cmd::Incoming => {
-                let x = l.runtime.spawn(l.callers(tdpp!(self)));
+                let l2 = l.clone();
+                let x = l.runtime.spawn(l2.callers(tdpp!(self)));
                 self.state = crate::edi::st::State::GoToL(GoToList {
                     data: (
                         vec![],
@@ -442,7 +443,8 @@ impl Editor {
                 });
             }
             Cmd::Outgoing => {
-                let x = l.runtime.spawn(l.calling(tdpp!(self)));
+                let l2 = l.clone();
+                let x = l.runtime.spawn(l2.calling(tdpp!(self)));
                 self.state = crate::edi::st::State::GoToL(GoToList {
                     data: (
                         vec![],

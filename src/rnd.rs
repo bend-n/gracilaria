@@ -373,7 +373,7 @@ pub fn render(
             z,
             wt,
             ed.origin.as_deref(),
-            lsp!(ed).and_then(|x| x.legend()),
+            lsp!(&ed).and_then(|x| x.legend()),
             ed.language,
         );
 
@@ -592,7 +592,7 @@ pub fn render(
                 // chain([Cell::default()], x.to_string().chars().map(Cell::basic)).chain([Cell::default()]).collect();
 
                 for (x, rel, mut cell) in text
-                    .colored_lines(r, lsp!(ed).and_then(|x| x.legend()))
+                    .colored_lines(r, lsp!(&ed).and_then(|x| x.legend()))
                 {
                     if rel == 0 {
                         let rem = cells.len() % c;
@@ -867,10 +867,8 @@ pub fn render(
                 drawb(&c, 50);
             }
             State::KillRing(y) => {
-                dbg!(y);
                 let ws = ed.workspace.as_deref().unwrap();
                 let c = y.cells(50, ws, None);
-                println!("???? {c:?}");
                 drawb(&c, 50);
             }
             _ => {}

@@ -8,7 +8,7 @@ use crate::edi::*;
 pub fn handle2<'a>(
     key: &'a Key,
     text: &mut TextArea,
-    l: Option<(&Client, &Path)>,
+    l: Option<(Arc<Client>, &Path)>,
 ) -> Option<&'a str> {
     use Key::*;
 

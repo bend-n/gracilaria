@@ -1,18 +1,15 @@
 use std::collections::HashMap;
 use std::ffi::OsString;
 use std::fmt::Debug;
-use std::io::{BufReader, ErrorKind};
+use std::io::ErrorKind;
 use std::mem::take;
 use std::path::{Path, PathBuf};
-use std::process::Stdio;
 use std::sync::Arc;
 use std::time::SystemTime;
 
 use Default::default;
 use ftools::Bind;
 use helix_core::syntax::config::FileType;
-use log::info;
-use lsp_server::Connection;
 use lsp_types::*;
 use regex::Regex;
 use rootcause::report;
@@ -26,6 +23,7 @@ mod input_handlers;
 pub use input_handlers::handle2;
 
 mod lsp_impl;
+mod lsp_mn;
 mod ra;
 pub mod st;
 mod wsedit;
@@ -87,7 +85,7 @@ pub struct Editor {
     pub git_dir: Option<PathBuf>,
     #[serde(skip)]
     pub lsp: Option<(
-        &'static Client,
+        Arc<Client>,
         std::thread::JoinHandle<()>,
         Option<Sender<Arc<dyn Window>>>,
     )>,
@@ -106,8 +104,11 @@ pub struct Editor {
 }
 
 macro_rules! lsp {
+    (&$self:ident) => {
+        $self.lsp.as_ref().map(|(x,..)| x)
+    };
     ($self:ident) => {
-        $self.lsp.as_ref().map(|(x, ..)| *x)
+        $self.lsp.as_ref().map(|(x, ..)| x.clone())
     };
     ($self:ident + p) => {
         $crate::edi::lsp!($self).zip($self.origin.as_deref())
@@ -115,6 +116,13 @@ macro_rules! lsp {
     (let $lsp:ident, $path:ident = $self:ident $(else $else:expr)?) => {
         let Some(($lsp, $path)) =
             $crate::edi::lsp!($self).zip($self.origin.as_deref())
+        else {
+            return $($else)?;
+        };
+    };
+    (let $lsp:ident = $self:ident $(else $else:expr)?) => {
+        let Some($lsp) =
+            $crate::edi::lsp!($self)
         else {
             return $($else)?;
         };
@@ -290,7 +298,7 @@ impl Editor {
             .and_then(|x| rooter(&x, |x| x == ".vscode", upto))
             .map(|x| (x.clone(), x.join(".vscode").join("settings.json")))
             .filter(|x| x.1.exists())
-            .and_then(|(ws, x)| (vsc_settings::load(&x, &ws)).ok());
+            .and_then(|(ws, x)| vsc_settings::load(&x, &ws).ok());
 
         let mut loaded_state = false;
         let mut freq = default();
@@ -339,67 +347,12 @@ impl Editor {
                 .map(|x| x.path().to_owned())
                 .collect::<Vec<_>>()
         });
-        let l = me.workspace.as_ref().zip(l).and_then(|(workspace, l)| {
-            let (Connection { sender, receiver }, conf) = if l.language_id
-                == "rust"
-            {
-                super let (_jh, a) = ra::ra(workspace.clone());
-                (
-                    a,
-                    (
-                        &LOADER.language_server_configs()["rust-analyzer"],
-                        &l.language_servers[0],
-                    ),
-                )
-            } else {
-                let (mut c, conf) = l
-                    .language_servers
-                    .iter()
-                    .find_map(|l| {
-                        let lc = LOADER
-                            .language_server_configs()
-                            .get(&l.name)?;
-                        std::process::Command::new(&lc.command)
-                            .args(&lc.args)
-                            .stdin(Stdio::piped())
-                            .stdout(Stdio::piped())
-                            .stderr(Stdio::inherit())
-                            .spawn()
-                            .ok()
-                            .zip(Some((lc, l)))
-                    })
-                    .ok_or_else(|| {
-                        log::error!(
-                            "no lsp for this language; install one of \
-                             {:?}",
-                            l.language_servers
-                        )
-                    })
-                    .ok()?;
-                super let (x, _iot) =
-                    Connection::stdio(
-                        BufReader::new(c.stdout.take().unwrap()),
-                        c.stdin.take().unwrap(),
-                    );
-                (x, conf)
-            };
-            info!("spawned {conf:?}");
-            let (c, t2, changed) = crate::lsp::run(
-                (sender, receiver),
-                WorkspaceFolder {
-                    uri: Url::from_file_path(&workspace).unwrap(),
-                    name: workspace
-                        .file_name()
-                        .unwrap()
-                        .to_string_lossy()
-                        .into_owned(),
-                },
-                vsc,
-                conf,
-            )
-            .unwrap();
-            Some((&*Box::leak(Box::new(c)), (t2), Some(changed)))
-        });
+
+        let l = me
+            .workspace
+            .as_ref()
+            .zip(n)
+            .and_then(|(w, ln)| lsp_mn::load(w, ln, vsc));
         let g = me.git_dir.clone();
         if let Some(o) = me.origin.clone()
             && loaded_state
@@ -421,9 +374,7 @@ impl Editor {
             me.lsp = l;
             me.hist.lc = me.text.cursor.clone();
             me.hist.last = me.text.changes.clone();
-            if let Some(((c, ..), origin)) =
-                me.lsp.as_ref().zip(me.origin.as_deref())
-            {
+            if let Some((c, origin)) = lsp!(me + p) {
                 c.open(
                     &origin,
                     std::fs::read_to_string(&origin)?,
@@ -641,7 +592,7 @@ impl Editor {
         &mut self,
 
         lsp: Option<(
-            &'static Client,
+            Arc<Client>,
             std::thread::JoinHandle<()>,
             Option<Sender<Arc<dyn Window>>>,
         )>,
@@ -691,7 +642,7 @@ impl Editor {
         &mut self,
         x: &Path,
         lsp: Option<(
-            &'static Client,
+            Arc<Client>,
             std::thread::JoinHandle<()>,
             Option<Sender<Arc<dyn Window>>>,
         )>,

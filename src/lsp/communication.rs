@@ -130,12 +130,12 @@ pub fn handler(
         }
     }
 }
-impl super::Client {
+impl super::Tx {
     pub fn notify<X: Notification>(
         &self,
         y: &X::Params,
     ) -> Result<(), SendError<Message>> {
-        self.tx.send(Message::Notification(N {
+        self.send(Message::Notification(N {
             method: X::METHOD.into(),
             params: serde_json::to_value(y).unwrap(),
         }))
@@ -143,6 +143,8 @@ impl super::Client {
     pub fn cancel(&self, rid: i32) {
         _ = self.notify::<Cancel>(&CancelParams { id: rid.into() });
     }
+}
+impl super::Client {
     pub fn request_immediate<'me, X: Request>(
         &'me self,
         y: &X::Params,
@@ -169,8 +171,7 @@ impl super::Client {
         y: &X::Params,
     ) -> Result<
         (
-            impl Future<Output = Result<X::Result, RequestError<X>>>
-            + use<'me, X>,
+            impl Future<Output = Result<X::Result, RequestError<X>>> + use<X>,
             i32,
         ),
         SendError<Message>,
@@ -184,7 +185,7 @@ impl super::Client {
     ) -> Result<
         (
             impl Future<Output = Result<X::Result, RequestError<X>>>
-            + use<'me, X, THEN>,
+            + use<X, THEN>,
             i32,
         ),
         SendError<Message>,
@@ -202,10 +203,11 @@ impl super::Client {
                 .send((id, tx, THEN))
                 .expect("oughtnt really fail");
         }
+        let tx = self.tx.clone();
         Ok((
             async move {
                 let g = scopeguard::guard((), |()| {
-                    self.cancel(id);
+                    tx.cancel(id);
                 });
 
                 let mut x = rx.await?;

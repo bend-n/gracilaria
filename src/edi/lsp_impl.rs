@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use ttools::{Tupl, With};
 
 use crate::complete::Complete;
+use crate::edi::lsp;
 use crate::edi::st::*;
 use crate::hov::{Hoverable, Hovring};
 use crate::lsp::{RequestError, Rq};
@@ -101,7 +102,7 @@ pub fn serialize_tokens<S: serde::Serializer>(
 }
 impl crate::edi::Editor {
     pub fn poll(&mut self) {
-        let Some((l, ..)) = self.lsp else { return };
+        lsp!(let l = self);
         for rq in l.req_rx.try_iter() {
             match rq {
                 LRq { method: "workspace/diagnostic/refresh", .. } => {

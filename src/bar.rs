@@ -1,4 +1,5 @@
 use std::iter::{chain, repeat};
+use std::sync::Arc;
 
 use dsb::Cell;
 use dsb::cell::Style;
@@ -24,7 +25,7 @@ impl Bar {
         fname: &str,
         state: &super::State,
         _t: &TextArea,
-        lsp: Option<&Client>,
+        lsp: Option<Arc<Client>>,
     ) {
         let fname = simplify_path(fname);
         let row = &mut into[oy * w..oy * w + w];

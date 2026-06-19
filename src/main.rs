@@ -8,7 +8,6 @@ unsized_const_params,
     inherent_associated_types,
     never_type,
     random,
-    substr_range,
     btree_set_entry,
     associated_type_defaults,
     array_try_map,
@@ -123,8 +122,9 @@ extern "C" fn cleanup() {
     unsafe {
         if __CLEAN == false {
             __CLEAN = true;
+
             match __ED
-                .assume_init_mut()
+                .assume_init_read()
                 .store(__FREQ.assume_init_mut(), __KR.assume_init_mut())
             {
                 Ok(_) => {}

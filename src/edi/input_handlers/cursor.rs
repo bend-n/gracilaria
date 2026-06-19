@@ -267,18 +267,15 @@ impl Editor {
         let tdp = tdpp.clone();
         let l = self.language;
         let window = w.clone();
+        let x = lsp.request_::<HoverRequest, { BehaviourAfter::Nil }>(
+            &HoverParams {
+                text_document_position_params: tdp.clone(),
+                work_done_progress_params: default(),
+            },
+        );
         let handle: tokio::task::JoinHandle<Result<Option<Hovr>, _>> =
             lsp.runtime.spawn(async move {
-                let Some(x) = lsp
-                    .request_::<HoverRequest, { BehaviourAfter::Nil }>(
-                        &HoverParams {
-                            text_document_position_params: tdp.clone(),
-                            work_done_progress_params: default(),
-                        },
-                    )?
-                    .0
-                    .await?
-                else {
+                let Some(x) = x?.0.await? else {
                     return Ok(None::<Hovr>);
                 };
                 let (width, cells) = spawn_blocking(move || {
