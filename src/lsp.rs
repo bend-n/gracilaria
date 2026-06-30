@@ -60,6 +60,7 @@ pub fn run(
         req_rx: _req_rx,
         not_rx,
         lsp_data: data,
+        workspace: workspace.clone(),
     };
     let mut opts = init_opts::get(
         workspace,

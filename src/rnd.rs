@@ -385,7 +385,7 @@ pub fn render(
             ed.origin
                 .as_ref()
                 .map(|x| {
-                    ed.workspace
+                    ed.git_dir
                         .as_ref()
                         .and_then(|w| x.strip_prefix(w).ok())
                         .unwrap_or(&x)
@@ -847,27 +847,27 @@ pub fn render(
                 );
             }
             State::Command(x) if x.should_render() => {
-                let ws = ed.workspace.as_deref().unwrap();
+                let ws = ed.git_dir.as_deref().unwrap();
                 let c = x.cells(50, ws, None);
                 drawb(&c, 50);
             }
             State::Symbols(Rq { result: Some(x), .. }) => {
-                let ws = ed.workspace.as_deref().unwrap();
+                let ws = ed.git_dir.as_deref().unwrap();
                 let c = x.cells(50, ws, Some(freq));
                 drawb(&c, 50);
             }
             State::Runnables(Rq { result: Some(x), .. }) => {
-                let ws = ed.workspace.as_deref().unwrap();
+                let ws = ed.git_dir.as_deref().unwrap();
                 let c = x.cells(50, ws, None);
                 drawb(&c, 50);
             }
             State::GoToL(y) => {
-                let ws = ed.workspace.as_deref().unwrap();
+                let ws = ed.git_dir.as_deref().unwrap();
                 let c = y.cells(50, ws, None);
                 drawb(&c, 50);
             }
             State::KillRing(y) => {
-                let ws = ed.workspace.as_deref().unwrap();
+                let ws = ed.git_dir.as_deref().unwrap();
                 let c = y.cells(50, ws, None);
                 drawb(&c, 50);
             }

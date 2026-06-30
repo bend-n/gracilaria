@@ -11,6 +11,7 @@ impl Editor {
         bt: MouseButton,
         cursor_position: (usize, usize),
         w: Arc<dyn Window>,
+        lsp_mn: &mut LSPM,
     ) {
         _ = self
             .requests
@@ -73,7 +74,7 @@ impl Editor {
                     _ => None,
                    })
                 })
-                    && let Err(e) = self.go(&x, w.clone())
+                    && let Err(e) = self.go(&x, w.clone(),lsp_mn)
                 {
                     log::error!("gtd: {e}");
                 }

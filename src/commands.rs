@@ -11,6 +11,7 @@ use lsp_types::*;
 use rootcause::{bail, report};
 use rust_analyzer::lsp::ext::*;
 
+use crate::edi::lsp_mn::LSPM;
 use crate::edi::{Editor, lsp};
 use crate::gotolist::{At, GoToList};
 use crate::lsp::{PathURI, Rq, tdpp};
@@ -228,6 +229,7 @@ impl Editor {
         z: Cmd,
         w: Arc<dyn winit::window::Window>,
         kr: &mut KillRing,
+        lsp_mn: &mut LSPM,
     ) -> rootcause::Result<()> {
         match z {
             Cmd::GoTo(Some(x)) =>
@@ -288,7 +290,8 @@ impl Editor {
                 );
             }
             Cmd::Reload => self.reload(),
-            z if z.needs_lsp() => return self.handle_lsp_command(z, w),
+            z if z.needs_lsp() =>
+                return self.handle_lsp_command(z, w, lsp_mn),
             x => unimplemented!("{x:?}"),
         }
 
@@ -298,6 +301,7 @@ impl Editor {
         &mut self,
         z: Cmd,
         w: Arc<dyn winit::window::Window>,
+        lsp_mn: &mut LSPM,
     ) -> rootcause::Result<()> {
         let Some((l, o)) = lsp!(self + p) else {
             bail!("no lsp");
@@ -337,7 +341,7 @@ impl Editor {
                     self.bar.last_action = "no such parent".into();
                     return Ok(());
                 };
-                self.go(x, w)?;
+                self.go(x, w, lsp_mn)?;
             }
             Cmd::RAJoinLines => {
                 let teds =
@@ -412,7 +416,7 @@ impl Editor {
                 else {
                     bail!("wtf?");
                 };
-                self.go(x, w)?;
+                self.go(x, w, lsp_mn)?;
             }
             Cmd::RARunnables => {
                 let p = self.text.to_l_position(*self.text.cursor.first());

@@ -16,6 +16,7 @@ use rootcause::report;
 use ropey::Rope;
 use rust_fsm::StateMachine;
 use tokio::sync::oneshot::Sender;
+use tree_house::Language;
 use winit::keyboard::NamedKey;
 use winit::window::Window;
 
@@ -23,7 +24,7 @@ mod input_handlers;
 pub use input_handlers::handle2;
 
 mod lsp_impl;
-mod lsp_mn;
+pub mod lsp_mn;
 mod ra;
 pub mod st;
 mod wsedit;
@@ -33,6 +34,7 @@ use st::*;
 
 use crate::bar::Bar;
 use crate::commands::Cmds;
+use crate::edi::lsp_mn::{LSPM, LoadedLSP};
 use crate::error::WDebug;
 use crate::gotolist::{At, GoTo};
 use crate::hov::{self, HOV_HEIGHT, Hovr, Hovring, Rendered};
@@ -59,7 +61,6 @@ impl Debug for Editor {
             .field("origin", &self.origin)
             .field("state", &self.state.name())
             .field("bar", &self.bar)
-            .field("workspace", &self.workspace)
             .field("hist", &self.hist)
             .field("mtime", &self.mtime)
             .finish()
@@ -81,14 +82,11 @@ pub struct Editor {
     pub state: State,
     #[serde(skip)]
     pub bar: Bar,
-    pub workspace: Option<PathBuf>,
+    // pub workspace: Option<PathBuf>,
+    #[serde(skip)]
     pub git_dir: Option<PathBuf>,
     #[serde(skip)]
-    pub lsp: Option<(
-        Arc<Client>,
-        std::thread::JoinHandle<()>,
-        Option<Sender<Arc<dyn Window>>>,
-    )>,
+    pub lsp: Option<(Arc<Client>, Option<Sender<Arc<dyn Window>>>)>,
     // #[serde(skip)]
     pub requests: Requests,
     #[serde(skip)]
@@ -203,9 +201,9 @@ fn rooter(
 }
 
 impl Editor {
-    pub fn new() -> rootcause::Result<(Self, Freq, KillRing)> {
-        let mut me = Self::default();
-
+    pub fn new(
+        lsp_mn: &mut LSPM,
+    ) -> rootcause::Result<(Self, Freq, KillRing)> {
         let mut o = std::env::args()
             .nth(1)
             .and_then(|x| PathBuf::try_from(x).ok())
@@ -224,7 +222,6 @@ impl Editor {
                     .set_title("pick dir to open")
                     .pick_folder()
             });
-
         if let Some(x) = &o {
             match std::fs::read_to_string(x) {
                 Ok(_) => {}
@@ -258,6 +255,56 @@ impl Editor {
                 }
             }
         };
+        Editor::new_for(o, lsp_mn)
+    }
+
+    pub fn upto(&self) -> impl std::ops::Fn(&&Path) -> bool + Clone {
+        let upto = self
+            .git_dir
+            .clone()
+            .or(std::env::current_dir().ok())
+            .unwrap_or(PathBuf::from("/home/"));
+        move |x: &&Path| x.starts_with(&upto)
+    }
+
+    pub fn root_for(&self, o: &Path, l: Language) -> Option<PathBuf> {
+        let l = LOADER.language(l).config();
+
+        o.parent()
+            .and_then(|x| rooter(&x, |f| l.roots.is_match(f), self.upto()))
+            .or(std::env::current_dir().ok())
+            .and_then(|x| x.canonicalize().ok())
+    }
+    pub fn vsc(&self) -> Option<serde_json::Value> {
+        self.origin
+            .as_ref()
+            .and_then(|x| x.parent())
+            .and_then(|x| rooter(&x, |x| x == ".vscode", self.upto()))
+            .map(|x| (x.clone(), x.join(".vscode").join("settings.json")))
+            .filter(|x| x.1.exists())
+            .and_then(|(ws, x)| vsc_settings::load(&x, &ws).ok())
+    }
+    pub fn load_lsp(&mut self, lsp_mn: &mut LSPM) {
+        self.language = self
+            .origin
+            .as_deref()
+            .and_then(|o| LOADER.language_for_filename(o));
+        let ws = self
+            .origin
+            .as_deref()
+            .zip(self.language)
+            .and_then(|(p, l)| self.root_for(p, l));
+        let l = ws
+            .as_ref()
+            .zip(self.language)
+            .and_then(|(w, ln)| lsp_mn.load(w, ln, self.vsc()));
+        self.lsp = l;
+    }
+    pub fn new_for(
+        o: Option<PathBuf>,
+        lsp_mn: &mut LSPM,
+    ) -> rootcause::Result<(Self, Freq, KillRing)> {
+        let mut me = Self::default();
         if let Some(o) = o.as_deref()
             && let o = std::fs::read_to_string(o).unwrap()
         {
@@ -267,8 +314,7 @@ impl Editor {
         let n = o.as_deref().and_then(|o| LOADER.language_for_filename(o));
         me.language = n;
 
-        let l =
-            n.map(|n| LOADER.languages().nth(n.idx()).unwrap().1.config());
+        let l = n.map(|n| LOADER.language(n).config());
         me.git_dir = o
             .as_deref()
             .and_then(|x| {
@@ -277,43 +323,26 @@ impl Editor {
                     .map(PathBuf::from)
             })
             .and_then(|x| x.canonicalize().ok());
-        let upto = me
-            .git_dir
-            .clone()
-            .or(std::env::current_dir().ok())
-            .unwrap_or(PathBuf::from("/home/"));
-        let upto = |x: &&Path| x.starts_with(&upto);
-        me.workspace = o
-            .as_ref()
-            .and_then(|x| x.parent())
-            .and_then(|x| {
-                l.and_then(|l| rooter(&x, |f| l.roots.is_match(f), upto))
-            })
-            .or(std::env::current_dir().ok())
-            .and_then(|x| x.canonicalize().ok());
 
-        let vsc = o
-            .as_ref()
-            .and_then(|x| x.parent())
-            .and_then(|x| rooter(&x, |x| x == ".vscode", upto))
-            .map(|x| (x.clone(), x.join(".vscode").join("settings.json")))
-            .filter(|x| x.1.exists())
-            .and_then(|(ws, x)| vsc_settings::load(&x, &ws).ok());
+        let ws = o.as_deref().zip(n).and_then(|(p, l)| me.root_for(p, l));
 
         let mut loaded_state = false;
         let mut freq = default();
         let mut kr = default();
-        if let Some(ws) = me.workspace.as_deref()
+        if let Some(ws) = ws.as_deref()
             && let h = hash(&ws)
             && let cf = cfgdir().join(format!("{h:x}"))
             && let at = cf.join(SSTORE)
             && at.exists()
         {
+            println!("loaded ");
             let x = std::fs::read(at)?;
             let x = bendncode::from_bytes::<Editor>(&x)?;
+            let gd = me.git_dir.take();
             me = x;
+            me.git_dir = gd;
             loaded_state = true;
-            assert!(me.workspace.is_some());
+            // assert!(me.workspace.is_some());
             if let at = cf.join(FSTORE)
                 && at.exists()
             {
@@ -327,9 +356,10 @@ impl Editor {
                 kr = bendncode::from_bytes::<KillRing>(&x)?;
             }
         }
+        println!("set git dir {:?}", &me.git_dir);
         me.language = n;
         me.origin = o;
-        me.tree = me.workspace.as_ref().map(|x| {
+        me.tree = ws.as_ref().map(|x| {
             walkdir::WalkDir::new(x)
                 .into_iter()
                 .flatten()
@@ -348,30 +378,20 @@ impl Editor {
                 .collect::<Vec<_>>()
         });
 
-        let l = me
-            .workspace
-            .as_ref()
-            .zip(n)
-            .and_then(|(w, ln)| lsp_mn::load(w, ln, vsc));
         let g = me.git_dir.clone();
         if let Some(o) = me.origin.clone()
             && loaded_state
         {
-            let w = me.workspace.clone();
-            let la = me.language;
-            let t = me.tree.clone();
             if me.files.len() != 0 {
                 log::error!(
                     "too many files? {:?}",
                     me.files.keys().collect::<Vec<_>>()
                 );
             }
-            me.open_or_restore(&o, l, la, None, w)?;
-            me.git_dir = g;
-            me.tree = t;
+            me.open_or_restore(&o, g, None, lsp_mn)?;
             me.language = n;
         } else {
-            me.lsp = l;
+            me.load_lsp(lsp_mn);
             me.hist.lc = me.text.cursor.clone();
             me.hist.last = me.text.changes.clone();
             if let Some((c, origin)) = lsp!(me + p) {
@@ -428,7 +448,8 @@ impl Editor {
         self.bar.last_action = "saved".into();
         lsp!(self + p).map(|(l, o)| {
             if let Ok(fut) = l.format(o)
-                && let Ok(Some(v)) = l.runtime.block_on(fut)
+                && let Ok(Ok(Some(v))) =
+                    l.by(fut, tokio::time::Duration::from_millis(500))
                 && let Err(x) =
                     self.text.apply_tedits_adjusting(&mut { v })
             {
@@ -559,6 +580,7 @@ impl Editor {
         &mut self,
         x: &Path,
         w: Arc<dyn Window>,
+        lsp_mn: &mut LSPM,
     ) -> rootcause::Result<()> {
         let x = x.canonicalize()?.to_path_buf();
         if Some(&*x) == self.origin.as_deref() {
@@ -566,38 +588,33 @@ impl Editor {
             return Ok(());
         }
         let r = self.text.r;
-        let ws = self.workspace.clone();
-        let git_dir = self.workspace.clone();
+        // let ws = self.workspace.clone();
+        let git_dir = self.git_dir.clone();
         let tree = self.tree.clone();
-        let lsp = self.lsp.take();
-        let l = self.language;
+        // let lsp = self.lsp.take();
         let mut me = take(self);
 
         let f = take(&mut me.files);
 
         if let Some(x) = me.origin.clone() {
-            lsp.as_ref().map(|l| l.0.close(&x));
+            lsp!(me).as_ref().map(|l| l.close(&x));
             self.files.insert(x, me);
             self.files.extend(f);
             // assert!(f.len() == 0);
         }
-        self.open_or_restore(&x, lsp, l, Some(w), ws)?;
+        self.open_or_restore(&x, git_dir, Some(w), lsp_mn)?;
         self.text.r = r;
         self.tree = tree;
-        self.git_dir = git_dir; // maybe it should change? you know. sometimes?
 
         Ok(())
     }
     fn restore(
         &mut self,
-
-        lsp: Option<(
-            Arc<Client>,
-            std::thread::JoinHandle<()>,
-            Option<Sender<Arc<dyn Window>>>,
-        )>,
-        l: Option<helix_core::Language>,
+        git_dir: Option<PathBuf>,
+        // lsp: Option<(Arc<Client>, Option<Sender<Arc<dyn Window>>>)>,
+        // l: Option<helix_core::Language>,
         with: Editor,
+        lsp_mn: &mut LSPM,
     ) -> rootcause::Result<()> {
         let f = take(&mut self.files);
 
@@ -627,8 +644,9 @@ impl Editor {
             take(&mut self.requests);
             self.hist.push(&mut self.text)
         }
-        self.lsp = lsp;
-        self.language = l;
+        self.git_dir = git_dir;
+        self.load_lsp(lsp_mn);
+
         if let Some((x, origin)) = lsp!(self + p) {
             x.open(
                 &origin,
@@ -641,19 +659,17 @@ impl Editor {
     fn open_or_restore(
         &mut self,
         x: &Path,
-        lsp: Option<(
-            Arc<Client>,
-            std::thread::JoinHandle<()>,
-            Option<Sender<Arc<dyn Window>>>,
-        )>,
-        l: Option<helix_core::Language>,
+        git_dir: Option<PathBuf>,
+        // lsp: Option<(Arc<Client>, Option<Sender<Arc<dyn Window>>>)>,
+        // l: Option<helix_core::Language>,
         w: Option<Arc<dyn Window>>,
-        ws: Option<PathBuf>,
+        lsp_mn: &mut LSPM,
+        // ws: Option<PathBuf>,
     ) -> rootcause::Result<()> {
         if let Some(x) = self.files.remove(x) {
-            self.restore(lsp, l, x)?
+            self.restore(git_dir, x, lsp_mn)?
         } else {
-            self.workspace = ws;
+            // self.workspace = ws;
             self.origin = Some(x.to_path_buf());
 
             let new = std::fs::read_to_string(&x)?;
@@ -663,8 +679,8 @@ impl Editor {
             self.text.cursor.just(0, &self.text.rope);
             self.bar.last_action = "open".into();
             self.mtime = Self::modify(self.origin.as_deref());
-            self.lsp = lsp;
-            self.language = l;
+            self.git_dir = git_dir;
+            self.load_lsp(lsp_mn);
 
             if let Some((ls, origin)) = lsp!(self + p) {
                 take(&mut self.requests);
@@ -676,6 +692,24 @@ impl Editor {
                 .peel()?;
             }
         }
+
+        fn is_hidden(entry: &walkdir::DirEntry) -> bool {
+            entry
+                .file_name()
+                .to_str()
+                .map(|s| s.starts_with("."))
+                .unwrap_or(false)
+        }
+
+        self.tree = self.git_dir.as_ref().map(|x| {
+            walkdir::WalkDir::new(x)
+                .into_iter()
+                .filter_entry(|e| !is_hidden(e))
+                .flatten()
+                .filter(|x| !x.path().starts_with("."))
+                .map(|x| x.path().to_owned())
+                .collect::<Vec<_>>()
+        });
         self.set_title(w);
         Ok(())
     }
@@ -687,7 +721,7 @@ impl Editor {
         }
     }
     pub fn title(&self) -> Option<String> {
-        [self.workspace.as_deref(), self.origin.as_deref()]
+        [self.git_dir.as_deref(), self.origin.as_deref()]
             .try_map(|x| {
                 x.and_then(Path::file_name).and_then(|x| x.to_str())
             })
@@ -699,14 +733,14 @@ impl Editor {
         fq: &Freq,
         kr: &KillRing,
     ) -> rootcause::Result<()> {
-        let ws = self.workspace.clone();
+        // let ws = self.workspace.clone();
         let tree = self.tree.clone();
         let mtime = self.mtime.clone();
         let origin = self.origin.clone();
 
-        if let Some(w) = self.workspace.clone() {
+        if let Some(w) = self.git_dir.clone() {
             let mut me = take(self);
-            self.workspace = ws;
+            // self.workspace = ws;
             self.tree = tree;
             self.mtime = mtime;
             self.origin = origin;
@@ -735,10 +769,11 @@ impl Editor {
         &mut self,
         g: impl Into<GoTo<'_>>,
         w: Arc<dyn Window>,
+        lsp_mn: &mut LSPM,
     ) -> rootcause::Result<()> {
         let g = g.into();
         let f = g.path.canonicalize()?;
-        self.open(&f, w.clone())?;
+        self.open(&f, w.clone(), lsp_mn)?;
 
         match g.at {
             At::R(r) => {

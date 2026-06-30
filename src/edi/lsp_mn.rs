@@ -11,26 +11,44 @@ use tokio::sync::oneshot::Sender;
 use tree_house::Language;
 use winit::window::Window;
 
-struct LSP4 {
-    four: HashMap<(Language, PathBuf), &'static Client>,
+pub struct LSPM {
+    pub four: HashMap<(Language, PathBuf), LoadedLSP>,
 }
 
-struct Loaded {
-    iot: Option<IoThreads>,
-    
+pub struct LoadedLSP {
+    pub c: Arc<Client>,
+    pub iot: Option<IoThreads>,
+    pub comms: std::thread::JoinHandle<()>,
+}
+
+impl LSPM {
+    pub fn load(
+        &mut self,
+        workspace: &PathBuf,
+        l: Language,
+        vsc: Option<serde_json::Value>,
+    ) -> Option<(Arc<Client>, Option<Sender<Arc<dyn Window + 'static>>>)>
+    {
+        let e = match self.four.entry((l, workspace.to_owned())) {
+            std::collections::hash_map::Entry::Occupied(x) => {
+                let x = x.get();
+                return Some((x.c.clone(), None));
+            }
+            std::collections::hash_map::Entry::Vacant(e) => e,
+        };
+        let (l, w) = load(workspace, l, vsc)?;
+        let v = e.insert(l);
+        Some((v.c.clone(), Some(w)))
+    }
 }
 use crate::lsp::Client;
 pub fn load(
     workspace: &PathBuf,
     l: Language,
     vsc: Option<serde_json::Value>,
-) -> Option<(
-    Arc<Client>,
-    std::thread::JoinHandle<()>,
-    Option<Sender<Arc<dyn Window + 'static>>>,
-)> {
+) -> Option<(LoadedLSP, Sender<Arc<dyn Window>>)> {
     let l = super::LOADER.language(l).config();
-    let (Connection { sender, receiver }, conf,iot) = if l.language_id
+    let (Connection { sender, receiver }, conf, iot) = if l.language_id
         == "rust"
     {
         let (_jh, a) = super::ra::ra(workspace.clone());
@@ -40,7 +58,7 @@ pub fn load(
                 &super::LOADER.language_server_configs()["rust-analyzer"],
                 &l.language_servers[0],
             ),
-            None
+            None,
         )
     } else {
         let (mut c, conf) = l
@@ -88,13 +106,5 @@ pub fn load(
         conf,
     )
     .unwrap();
-    Some((Arc::new(c), (t2), Some(changed)))
-}
-
-fn rah() {
-let stdout = 4;
-super let x =(
-        &stdout,
-            
-        );
+    Some((LoadedLSP { iot, c: Arc::new(c), comms: t2 }, changed))
 }

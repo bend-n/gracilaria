@@ -18,7 +18,7 @@ use tokio::time::error::Elapsed;
 use winit::window::Window;
 
 use crate::lsp::BehaviourAfter::{self, *};
-use crate::lsp::RequestError;
+use crate::lsp::{RequestError, RqSendError};
 pub fn handler(
     window_rx: oneshot::Receiver<Arc<dyn Window + 'static>>,
     progress: &papaya::HashMap<
@@ -33,6 +33,7 @@ pub fn handler(
 ) {
     let mut map = HashMap::new();
     let w = window_rx.blocking_recv().unwrap();
+    println!("got w");
     loop {
         crossbeam::select! {
             recv(req_rx) -> x => match x {
@@ -149,7 +150,12 @@ impl super::Client {
         &'me self,
         y: &X::Params,
     ) -> Result<X::Result, RequestError<X>> {
-        self.runtime.block_on(self.request_::<X, { Nil }>(y)?.0)
+        self.runtime
+            .block_on(tokio::time::timeout(
+                tokio::time::Duration::from_secs(20),
+                self.request_::<X, { Nil }>(y)?.0,
+            ))
+            .unwrap()
     }
     pub fn request_by<'me, X: Request>(
         &'me self,
@@ -166,6 +172,14 @@ impl super::Client {
         ))
     }
 
+    pub fn by<T>(
+        &self,
+        x: impl Future<Output = T>,
+        d: tokio::time::Duration,
+    ) -> Result<T, Elapsed> {
+        let _guard = self.runtime.enter();
+        self.runtime.block_on(tokio::time::timeout(d, x))
+    }
     pub fn request<'me, X: Request>(
         &'me self,
         y: &X::Params,
@@ -174,7 +188,7 @@ impl super::Client {
             impl Future<Output = Result<X::Result, RequestError<X>>> + use<X>,
             i32,
         ),
-        SendError<Message>,
+        RqSendError<X>,
     > {
         self.request_::<X, { Redraw }>(y)
     }
@@ -188,7 +202,7 @@ impl super::Client {
             + use<X, THEN>,
             i32,
         ),
-        SendError<Message>,
+        RqSendError<X>,
     > {
         let id = self.id.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
         self.tx.send(Message::Request(LRq {

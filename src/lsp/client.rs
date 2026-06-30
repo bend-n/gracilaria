@@ -23,7 +23,7 @@ use tokio::sync::oneshot;
 use ttools::*;
 
 use crate::lsp::BehaviourAfter::{self, *};
-use crate::lsp::{RequestError, Require, Requiring, Rq};
+use crate::lsp::{RequestError, Require, Requiring, Rq, RqSendError};
 use crate::text::cursor::ceach;
 use crate::text::{LOADER, RopeExt, SortTedits, TextArea};
 #[derive(Debug, Clone)]
@@ -65,11 +65,16 @@ pub struct Client {
         &'static LanguageServerConfiguration,
         &'static LanguageServerFeatures,
     ),
+    pub workspace: WorkspaceFolder,
 }
 
 impl Drop for Client {
     fn drop(&mut self) {
-        println!("dropped lsp");
+        _ = self.notify::<Exit>(&());
+        println!(
+            "dropped lsp({}) @ {}",
+            self.lsp_data.1.name, self.workspace.uri
+        );
         // panic!("please dont");
     }
 }
@@ -577,7 +582,7 @@ impl Client {
     ) -> Result<
         impl Future<Output = Result<Vec<Runnable>, RequestError<Runnables>>>
         + use<>,
-        SendError<Message>,
+        RqSendError<Runnables>,
     > {
         self.request::<Runnables>(&RunnablesParams {
             text_document: t.tid(),
@@ -597,7 +602,7 @@ impl Client {
                 RequestError<ChildModules>,
             >,
         >,
-        SendError<Message>,
+        RqSendError<ChildModules>,
     > {
         self.request::<ChildModules>(&TextDocumentPositionParams {
             position: p,
@@ -615,7 +620,7 @@ impl Client {
                 RequestError<GotoImplementation>,
             >,
         > + use<>,
-        SendError<Message>,
+        RqSendError<GotoImplementation>,
     > {
         self.request::<GotoImplementation>(&GotoImplementationParams {
             text_document_position_params: tdpp,
@@ -635,7 +640,7 @@ impl Client {
                 RequestError<References>,
             >,
         > + use<>,
-        SendError<Message>,
+        RqSendError<References>,
     > {
         self.request::<References>(&ReferenceParams {
             text_document_position: tdpp,
@@ -664,7 +669,7 @@ impl Client {
                 RequestError<CallHierarchyPrepare>,
             >,
         > + use<>,
-        SendError<Message>,
+        RqSendError<CallHierarchyPrepare>,
     > {
         self.request::<CallHierarchyPrepare>(&CallHierarchyPrepareParams {
             text_document_position_params: at,

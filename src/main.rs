@@ -83,6 +83,7 @@ use winit::window::{
 };
 
 use crate::edi::Editor;
+use crate::edi::lsp_mn::LSPM;
 use crate::edi::st::*;
 use crate::lsp::RqS;
 use crate::text::{TextArea, col, is_word};
@@ -140,8 +141,10 @@ extern "C" fn sigint(_: i32) {
 type FID = u8;
 type Freq = FxHashMap<FID, FxHashMap<u64, u16>>;
 pub(crate) fn entry(event_loop: EventLoop) {
+    let mut lsp_mn = LSPM { four: default() };
+
     unsafe {
-        let (ed, freq, kr) = match Editor::new() {
+        let (ed, freq, kr) = match Editor::new(&mut lsp_mn) {
             Err(e) => {
                 eprintln!("failure to launch: {e}");
                 return;
@@ -225,6 +228,10 @@ pub(crate) fn entry(event_loop: EventLoop) {
     .with_event_handler(
         move |(window, _context), surface, window_id, event, elwt| {
             elwt.set_control_flow(ControlFlow::Wait);
+            if let Some((.., c)) = &mut ed.lsp && let Some(c) = c.take() {
+                c.send(window.clone()).unwrap();
+            }
+            let lsp_mn = &mut lsp_mn;
             let (fw, fh) = dsb::dims(&FONT, ppem);
             let (c, r) = dsb::fit(
                 &FONT,
@@ -325,7 +332,7 @@ pub(crate) fn entry(event_loop: EventLoop) {
                     if button == MouseButton::Left {
                         unsafe { CLICKING = true };
                     }
-                    ed.click(button, cursor_position, window.clone());
+                    ed.click(button, cursor_position, window.clone(), lsp_mn);
                     window.request_redraw();
                 }
                 WindowEvent::PointerButton {
@@ -368,7 +375,7 @@ pub(crate) fn entry(event_loop: EventLoop) {
                     ) {
                         return;
                     }
-                    if ed.keyboard(event, window, freq, kr).is_break() {
+                    if ed.keyboard(event, window, freq, kr, lsp_mn).is_break() {
                         elwt.exit();
                     }
                     window.request_redraw();

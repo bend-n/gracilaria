@@ -12,7 +12,8 @@ use tokio::task;
 use tokio_util::task::AbortOnDropHandle;
 
 use crate::lsp::Void;
-
+#[derive(Serialize, Deserialize)]
+pub struct RqSendError<X>(Message, PhantomData<X>);
 #[derive(Serialize, Deserialize)]
 pub enum RequestError<X> {
     Rx(PhantomData<X>),
@@ -50,14 +51,40 @@ impl<X> From<oneshot::error::RecvError> for RequestError<X> {
         Self::Rx(PhantomData)
     }
 }
+impl<X: Request> std::error::Error for RqSendError<X> {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        None
+    }
+}
 impl<X: Request> std::error::Error for RequestError<X> {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         None
     }
 }
+impl<X> From<SendError<Message>> for RqSendError<X> {
+    fn from(x: SendError<Message>) -> Self {
+        Self(x.into_inner(), PhantomData)
+    }
+}
 impl<X> From<SendError<Message>> for RequestError<X> {
     fn from(x: SendError<Message>) -> Self {
         Self::Send(x.into_inner())
+    }
+}
+impl<X> From<RqSendError<X>> for RequestError<X> {
+    fn from(x: RqSendError<X>) -> Self {
+        Self::Send(x.0)
+    }
+}
+
+impl<X: Request> std::fmt::Display for RqSendError<X> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} failed; couldnt send {:?}", X::METHOD, self.0)
+    }
+}
+impl<X: Request> std::fmt::Debug for RqSendError<X> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(self, f)
     }
 }
 impl<X: Request> std::fmt::Display for RequestError<X> {

@@ -19,7 +19,7 @@ use winit::window::Window;
 
 use crate::Freq;
 use crate::edi::*;
-use crate::lsp::acceptable_duration;
+use crate::lsp::{Require, acceptable_duration};
 
 impl Editor {
     pub fn keyboard(
@@ -28,6 +28,7 @@ impl Editor {
         window: &mut Arc<dyn Window>,
         freq: &mut Freq,
         kr: &mut KillRing,
+        lsp_mn: &mut LSPM,
     ) -> ControlFlow<()> {
         let Some(mut o) =
             self.transition(Action::K(event.logical_key.clone()))
@@ -68,9 +69,11 @@ impl Editor {
             }
             Do::SpawnTerminal => {
                 if let Err(e) = trm::toggle(
-                    self.workspace
+                    &lsp!(self)
                         .as_deref()
-                        .unwrap_or(Path::new("/home/os/")),
+                        .map_or(Path::new("/home/os/").into(), |x| {
+                            x.workspace.uri.to_file_path().unwrap()
+                        }),
                 ) {
                     log::error!("opening terminal failed {e}");
                 }
@@ -126,9 +129,12 @@ impl Editor {
                         self.state = State::Command(x);
                     }
                     crate::menu::generic::CorA::Accept => {
-                        if let Err(e) =
-                            self.handle_command(z, window.clone(), kr)
-                        {
+                        if let Err(e) = self.handle_command(
+                            z,
+                            window.clone(),
+                            kr,
+                            lsp_mn,
+                        ) {
                             self.bar.last_action = format!("{e}");
                         }
                     }
@@ -227,7 +233,7 @@ impl Editor {
             }
             Do::SymbolsSelect(x) =>
                 if let Some(Ok(x)) = x.sel(Some(freq))
-                    && let Err(e) = self.go(x.at, window.clone())
+                    && let Err(e) = self.go(x.at, window.clone(), lsp_mn)
                 {
                     log::error!("alas! {e}")
                 },
@@ -487,7 +493,7 @@ impl Editor {
             }
             Do::Paste => self.paste(),
             Do::OpenFile(x) => {
-                _ = self.open(Path::new(&x), window.clone());
+                _ = self.open(Path::new(&x), window.clone(), lsp_mn);
             }
             Do::StartSearch(x) => {
                 let s = Regex::new(&x).unwrap();
@@ -548,7 +554,7 @@ impl Editor {
             }
             Do::Run(x) =>
                 if let Some((l, ws)) =
-                    lsp!(self).zip(self.workspace.as_deref())
+                    lsp!(self).zip(self.git_dir.as_deref())
                 {
                     l.runtime
                         .block_on(crate::runnables::run(x, ws))
@@ -568,7 +574,7 @@ impl Editor {
             }
             Do::GTLSelect(x) =>
                 if let Some(Ok((g, _))) = x.sel(None)
-                    && let Err(e) = self.go(g, window.clone())
+                    && let Err(e) = self.go(g, window.clone(), lsp_mn)
                 {
                     eprintln!("go-to-list select fail: {e}");
                 },
@@ -828,6 +834,9 @@ impl Editor {
 
     pub fn request_code_actions(&mut self) {
         lsp!(let lsp, f = self);
+        if lsp.caps().code_action_provider.is_none() {
+            return;
+        }
         let r = lsp
             .request::<lsp_request!("textDocument/codeAction")>(
                 &CodeActionParams {
