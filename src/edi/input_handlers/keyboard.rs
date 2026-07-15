@@ -83,15 +83,25 @@ impl Editor {
                     l.matching_brace(f, &mut self.text)
                 },
             Do::DeleteBracketPair => self.delete_bracket_pair(),
-            Do::Symbols =>
+            Do::Symbols
                 if let Some((lsp, o)) = lsp!(self + p)
-                    && let Ok(syms) = lsp.workspace_symbols("".into())
-                {
-                    let mut q = Rq::new(lsp.runtime.spawn(
-                        syms.map(Anonymize::anonymize).map(|x| {
-                            x.map(|x| x.map(SymbolsList::Workspace))
-                        }),
-                    ));
+                    && let Ok(syms) = lsp.workspace_symbols("".into()) =>
+            {
+                let mut q = Rq::new(
+                    lsp.runtime.spawn(syms.map(Anonymize::anonymize).map(
+                        |x| x.map(|x| x.map(SymbolsList::Workspace)),
+                    )),
+                );
+                q.result = Some(Symbols::new(
+                    self.tree.as_deref().unwrap(),
+                    self.text.bookmarks.clone(),
+                    o.into(),
+                ));
+                self.state = State::Symbols(q);
+            }
+            Do::Symbols =>
+                if let Some(o) = &self.origin {
+                    let mut q = Rq::default();
                     q.result = Some(Symbols::new(
                         self.tree.as_deref().unwrap(),
                         self.text.bookmarks.clone(),
@@ -536,14 +546,14 @@ impl Editor {
                     .cursor
                     .inner
                     .iter()
-                    .map(|cursor| {
+                    .filter_map(|cursor| {
                         let (x, y) = cursor.cursor(&self.text.rope);
                         let y = match dir {
-                            Direction::Above => y - 1,
+                            Direction::Above => y.checked_sub(1)?,
                             Direction::Below => y + 1,
                         };
                         let position = self.text.line_to_char(y) + x;
-                        position
+                        Some(position)
                     })
                     .filter(|&p| self.text.cursor.iter().all(|x| x != p))
                     .collect::<Vec<_>>()

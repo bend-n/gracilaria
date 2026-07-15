@@ -1,5 +1,5 @@
 #![feature(
-unsized_const_params,
+    unsized_const_params,
     exact_div,
     yeet_expr,
     const_array,

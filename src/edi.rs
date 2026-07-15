@@ -359,24 +359,24 @@ impl Editor {
         println!("set git dir {:?}", &me.git_dir);
         me.language = n;
         me.origin = o;
-        me.tree = ws.as_ref().map(|x| {
-            walkdir::WalkDir::new(x)
-                .into_iter()
-                .flatten()
-                .filter(|x| {
-                    let x = x.path();
-                    l.is_some_and(|l| {
-                        l.file_types.iter().any(|y| match y {
-                            FileType::Extension(e) =>
-                                x.extension().is_some_and(|x| x == &**e),
-                            FileType::Glob(glob) =>
-                                glob.compile_matcher().is_match(x),
-                        })
-                    })
-                })
-                .map(|x| x.path().to_owned())
-                .collect::<Vec<_>>()
-        });
+        // me.tree = ws.as_ref().map(|x| {
+        //     walkdir::WalkDir::new(x)
+        //         .into_iter()
+        //         .flatten()
+        //         .filter(|x| {
+        //             let x = x.path();
+        //             l.is_some_and(|l| {
+        //                 l.file_types.iter().any(|y| match y {
+        //                     FileType::Extension(e) =>
+        //                         x.extension().is_some_and(|x| x == &**e),
+        //                     FileType::Glob(glob) =>
+        //                         glob.compile_matcher().is_match(x),
+        //                 })
+        //             })
+        //         })
+        //         .map(|x| x.path().to_owned())
+        //         .collect::<Vec<_>>()
+        // });
 
         let g = me.git_dir.clone();
         if let Some(o) = me.origin.clone()
@@ -590,7 +590,6 @@ impl Editor {
         let r = self.text.r;
         // let ws = self.workspace.clone();
         let git_dir = self.git_dir.clone();
-        let tree = self.tree.clone();
         // let lsp = self.lsp.take();
         let mut me = take(self);
 
@@ -604,7 +603,6 @@ impl Editor {
         }
         self.open_or_restore(&x, git_dir, Some(w), lsp_mn)?;
         self.text.r = r;
-        self.tree = tree;
 
         Ok(())
     }

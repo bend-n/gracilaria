@@ -150,6 +150,7 @@ impl super::Client {
         &'me self,
         y: &X::Params,
     ) -> Result<X::Result, RequestError<X>> {
+        let _guard = self.runtime.enter();
         self.runtime
             .block_on(tokio::time::timeout(
                 tokio::time::Duration::from_secs(20),
