@@ -49,7 +49,7 @@ pub fn run(
         progress: Box::leak(Box::new(papaya::HashMap::new())),
         runtime: tokio::runtime::Builder::new_multi_thread()
             .enable_time()
-            .enable_io()
+            // .enable_io()
             .worker_threads(3)
             .thread_name("lsp runtime")
             .build()?,

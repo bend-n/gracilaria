@@ -12,7 +12,6 @@ use crate::edi::lsp;
 use crate::edi::st::*;
 use crate::hov::{Hoverable, Hovring};
 use crate::lsp::{RequestError, Rq};
-use crate::runnables::Runnables;
 use crate::sym::GoTo;
 use crate::{CompletionState, act, sig, sym};
 
@@ -172,9 +171,10 @@ impl crate::edi::Editor {
                     self.state = State::Default;
                 }
             }
+            #[cfg(target_family = "unix")]
             State::Runnables(x) => {
                 x.poll(|x, ((), old)| {
-                    Some(Runnables {
+                    Some(crate::runnables::Runnables {
                         data: x.ok()?,
                         ..old.unwrap_or_default()
                     })

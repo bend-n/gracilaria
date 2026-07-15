@@ -804,9 +804,9 @@ impl TextArea {
                 .take(c)
                 .zip(0..)
             {
-                if e.c() != '\n' {
+                if e.c() != '\n' && e.c() != '\r' {
                     cells.get((x + self.ho, y)).unwrap().letter =
-                        Some(e.c());
+                        Some(if e.c() == '\t' { ' ' } else { e.c() });
                     let s =
                         &mut cells.get((x + self.ho, y)).unwrap().style;
 

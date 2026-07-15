@@ -29,6 +29,10 @@ impl LSPM {
         vsc: Option<serde_json::Value>,
     ) -> Option<(Arc<Client>, Option<Sender<Arc<dyn Window + 'static>>>)>
     {
+        let ra_conn_used = self
+            .four
+            .values()
+            .any(|x| x.c.lsp_data.1.name == "rust-analyzer");
         let e = match self.four.entry((l, workspace.to_owned())) {
             std::collections::hash_map::Entry::Occupied(x) => {
                 let x = x.get();
@@ -36,7 +40,7 @@ impl LSPM {
             }
             std::collections::hash_map::Entry::Vacant(e) => e,
         };
-        let (l, w) = load(workspace, l, vsc)?;
+        let (l, w) = load(workspace, l, vsc, ra_conn_used)?;
         let v = e.insert(l);
         Some((v.c.clone(), Some(w)))
     }
@@ -46,11 +50,11 @@ pub fn load(
     workspace: &PathBuf,
     l: Language,
     vsc: Option<serde_json::Value>,
+    ra_conn_used: bool,
 ) -> Option<(LoadedLSP, Sender<Arc<dyn Window>>)> {
     let l = super::LOADER.language(l).config();
-    let (Connection { sender, receiver }, conf, iot) = if l.language_id
-        == "rust"
-    {
+    let use_builtin_ra = l.language_id == "rust" && !ra_conn_used;
+    let (Connection { sender, receiver }, conf, iot) = if use_builtin_ra {
         let (_jh, a) = super::ra::ra(workspace.clone());
         (
             a,

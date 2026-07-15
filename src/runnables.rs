@@ -191,3 +191,7 @@ pub fn run(
         }
     }
 }
+
+impl crate::menu::generic::ID for crate::runnables::Runb {
+    const ID: u8 = 2;
+}

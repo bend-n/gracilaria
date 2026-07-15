@@ -35,6 +35,11 @@ pub enum LR {
     Left,
     Right,
 }
+
+#[cfg(target_family = "unix")]
+type Run = crate::runnables::Runnables;
+#[cfg(not(target_family = "unix"))]
+type Run = ();
 rust_fsm::state_machine! {
 #[derive(Debug)]
 pub(crate) State => #[derive(Debug)] pub(crate) Action => #[derive(Debug)] pub(crate) Do
@@ -114,21 +119,32 @@ Command(mut t) => K(k) => Command({ if let Some(_) = handle2(&k, &mut t.tedit, N
 }; t }) [CmdTyped],
 Command(t) => C(_) => _,
 Command(t) => K(_) => _,
+#[cfg(target_family = "unix")]
 Runnables(_x) => {
+    #[cfg(target_family = "unix")]
     K(Key::Named(Escape)) => Default,
 },
-Runnables(RqS::<crate::runnables::Runnables, rust_analyzer::lsp::ext::Runnables> => Rq { result: Some(mut x), request }) => {
+#[cfg(target_family = "unix")]
+Runnables(RqS::<Run, rust_analyzer::lsp::ext::Runnables> => Rq { result: Some(mut x), request }) => {
+    #[cfg(target_family = "unix")]
     K(Key::Named(Tab) if shift()) => Runnables({ x.next(); Rq { result: Some(x), request }}),
+    #[cfg(target_family = "unix")]
     K(Key::Named(ArrowDown)) => Runnables({ x.next(); Rq { result: Some(x), request }}),
+    #[cfg(target_family = "unix")]
     K(Key::Named(ArrowUp | Tab)) => Runnables({ x.back(); Rq { result: Some(x), request }}),
+    #[cfg(target_family = "unix")]
     K(Key::Named(Enter) if let Some(Ok(x_)) = x.clone().sel(None)) => Default [Run(Runnable => x_.clone())],
+    #[cfg(target_family = "unix")]
     K(k) => Runnables({
  if let Some(_) = handle2(&k, &mut x.tedit, None) {
     x.selection = 0; x.vo = 0;
 }; Rq { result: Some(x), request } }),
 },
+#[cfg(target_family = "unix")]
 Runnables(_x) => {
+    #[cfg(target_family = "unix")]
     C(_) => _,
+    #[cfg(target_family = "unix")]
     M(_) => _,
 },
 

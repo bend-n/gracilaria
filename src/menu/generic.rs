@@ -62,9 +62,7 @@ impl ID for crate::commands::Cmds {
 impl ID for crate::gotolist::GTL {
     const ID: u8 = 1;
 }
-impl ID for crate::runnables::Runb {
-    const ID: u8 = 2;
-}
+// RunB = 2
 impl ID for crate::sym::Symb {
     const ID: u8 = 3;
 }

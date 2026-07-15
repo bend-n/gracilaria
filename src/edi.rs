@@ -9,7 +9,6 @@ use std::time::SystemTime;
 
 use Default::default;
 use ftools::Bind;
-use helix_core::syntax::config::FileType;
 use lsp_types::*;
 use regex::Regex;
 use rootcause::report;
@@ -34,7 +33,7 @@ use st::*;
 
 use crate::bar::Bar;
 use crate::commands::Cmds;
-use crate::edi::lsp_mn::{LSPM, LoadedLSP};
+use crate::edi::lsp_mn::LSPM;
 use crate::error::WDebug;
 use crate::gotolist::{At, GoTo};
 use crate::hov::{self, HOV_HEIGHT, Hovr, Hovring, Rendered};
@@ -50,7 +49,7 @@ use crate::text::hist::{ClickHistory, Hist};
 use crate::text::{LOADER, Mapping, RopeExt, SortTedits, TextArea};
 use crate::{
     BoolRequest, CDo, CompletionAction, CompletionState, Freq, KillRing,
-    alt, ctrl, filter, hash, shift, sym, trm,
+    alt, ctrl, filter, hash, shift, sym,
 };
 
 impl Debug for Editor {
@@ -223,7 +222,9 @@ impl Editor {
                     .pick_folder()
             });
         if let Some(x) = &o {
-            match std::fs::read_to_string(x) {
+            match std::fs::read_to_string(x)
+                .map(|x| x.replace("\r\n", "\n"))
+            {
                 Ok(_) => {}
                 Err(e)
                     if e.kind() == ErrorKind::IsADirectory
@@ -306,7 +307,9 @@ impl Editor {
     ) -> rootcause::Result<(Self, Freq, KillRing)> {
         let mut me = Self::default();
         if let Some(o) = o.as_deref()
-            && let o = std::fs::read_to_string(o).unwrap()
+            && let o = std::fs::read_to_string(o)
+                .map(|x| x.replace("\r\n", "\n"))
+                .unwrap()
         {
             me.text.insert(&o);
             me.text.cursor = default();
@@ -397,7 +400,8 @@ impl Editor {
             if let Some((c, origin)) = lsp!(me + p) {
                 c.open(
                     &origin,
-                    std::fs::read_to_string(&origin)?,
+                    std::fs::read_to_string(&origin)
+                        .map(|x| x.replace("\r\n", "\n"))?,
                     me.language.unwrap(),
                 )?;
                 c.rq_semantic_tokens(
@@ -408,7 +412,7 @@ impl Editor {
             }
             me.git_dir = g;
             me.mtime = Self::modify(me.origin.as_deref());
-
+            me.tree();
             // me.hist.last = me.text.clone();
             // me.lsp.as_ref().zip(me.origin.as_deref()).map(
             //     |((x, ..), origin)| {
@@ -628,6 +632,7 @@ impl Editor {
                         .as_ref()
                         .ok_or(report!("origin missing"))?,
                 )
+                .map(|x| x.replace("\r\n", "\n"))
                 .unwrap(),
             );
 
@@ -670,7 +675,8 @@ impl Editor {
             // self.workspace = ws;
             self.origin = Some(x.to_path_buf());
 
-            let new = std::fs::read_to_string(&x)?;
+            let new = std::fs::read_to_string(&x)
+                .map(|x| x.replace("\r\n", "\n"))?;
             take(&mut self.text);
             self.text.insert(&new);
             take(&mut self.text.changes);
@@ -691,6 +697,11 @@ impl Editor {
             }
         }
 
+        self.tree();
+        self.set_title(w);
+        Ok(())
+    }
+    pub fn tree(&mut self) {
         fn is_hidden(entry: &walkdir::DirEntry) -> bool {
             entry
                 .file_name()
@@ -698,7 +709,6 @@ impl Editor {
                 .map(|s| s.starts_with("."))
                 .unwrap_or(false)
         }
-
         self.tree = self.git_dir.as_ref().map(|x| {
             walkdir::WalkDir::new(x)
                 .into_iter()
@@ -708,8 +718,6 @@ impl Editor {
                 .map(|x| x.path().to_owned())
                 .collect::<Vec<_>>()
         });
-        self.set_title(w);
-        Ok(())
     }
     pub fn set_title(&self, w: Option<Arc<dyn Window>>) {
         if let Some(x) = w
@@ -807,6 +815,7 @@ fn cfgdir() -> PathBuf {
             std::env::var("HOME")
                 .map(PathBuf::from)
                 .map(|x| x.join(".config"))
+                .or(std::env::var("AppData").map(PathBuf::from))
         })
         .unwrap_or("/tmp/".into())
         .join("gracilaria")

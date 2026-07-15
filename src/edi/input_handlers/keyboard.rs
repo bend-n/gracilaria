@@ -67,8 +67,9 @@ impl Editor {
                 self.text.cursor.clear_selections();
                 change!(self, window.clone());
             }
+            #[cfg(target_family = "unix")]
             Do::SpawnTerminal => {
-                if let Err(e) = trm::toggle(
+                if let Err(e) = crate::trm::toggle(
                     &lsp!(self)
                         .as_deref()
                         .map_or(Path::new("/home/os/").into(), |x| {
@@ -77,6 +78,10 @@ impl Editor {
                 ) {
                     log::error!("opening terminal failed {e}");
                 }
+            }
+            #[cfg(not(target_family = "unix"))]
+            Do::SpawnTerminal => {
+                unimplemented!()
             }
             Do::MatchingBrace =>
                 if let Some((l, f)) = lsp!(self + p) {
@@ -562,6 +567,7 @@ impl Editor {
                         self.text.cursor.add(x, &self.text.rope);
                     });
             }
+            #[cfg(target_family = "unix")]
             Do::Run(x) =>
                 if let Some((l, ws)) =
                     lsp!(self).zip(self.git_dir.as_deref())
@@ -570,6 +576,8 @@ impl Editor {
                         .block_on(crate::runnables::run(x, ws))
                         .unwrap();
                 },
+            #[cfg(not(target_family = "unix"))]
+            Do::Run(_) => {}
             Do::GoToImplementations => {
                 let State::GoToL(x) = &mut self.state else {
                     unreachable!()
@@ -891,6 +899,7 @@ impl Editor {
         self.hist.push_if_changed(&mut self.text);
         self.text.rope = Rope::from_str(
             &std::fs::read_to_string(self.origin.as_ref().unwrap())
+                .map(|x| x.replace("\r\n", "\n"))
                 .unwrap(),
         );
 

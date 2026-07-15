@@ -856,6 +856,7 @@ pub fn render(
                 let c = x.cells(50, ws, Some(freq));
                 drawb(&c, 50);
             }
+            #[cfg(target_family = "unix")]
             State::Runnables(Rq { result: Some(x), .. }) => {
                 let ws = ed.git_dir.as_deref().unwrap();
                 let c = x.cells(50, ws, None);
@@ -1093,7 +1094,13 @@ pub fn simplify_path(x: &str) -> String {
     static RUST_SRC: LazyLock<Regex> = LazyLock::new(|| {
         Regex::new(r".rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library").unwrap()
     });
-    let x = x.replace(env!("HOME"), " ");
+    let x = x.replace(
+        #[cfg(target_family = "unix")]
+        env!("HOME"),
+        #[cfg(target_family = "windows")]
+        env!("HOMEPATH"),
+        " ",
+    );
     [(&*RUST_SRC, " "), (&*DEP, " /$name"), (&*DEP2, " /$name")]
         .into_iter()
         .fold(x, |acc, (r, repl)| r.replace(&acc, repl).into_owned())

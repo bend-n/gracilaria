@@ -48,8 +48,10 @@ mod gotolist;
 mod killring;
 mod meta;
 mod rnd;
+#[cfg(target_family = "unix")]
 mod runnables;
 mod sym;
+#[cfg(target_family = "unix")]
 mod trm;
 
 use std::fmt::{Debug, Display};
@@ -182,9 +184,11 @@ pub(crate) fn entry(event_loop: EventLoop) {
     let app = winit_app::WinitAppBuilder::with_init(
         move |elwt| {
             let window = winit_app::make_window(elwt, |x| {
+                #[cfg(target_family = "unix")]
+                let x = x.with_platform_attributes(
+                Box::new(winit::platform::wayland::WindowAttributesWayland::default().with_name("com.bendn.gracilaria", "com.bendn.gracilaria"))
+                    ).with_decorations(false);
                 x.with_title("gracilaria")
-                    .with_platform_attributes(Box::new(winit::platform::wayland::WindowAttributesWayland::default().with_name("com.bendn.gracilaria", "com.bendn.gracilaria")))
-                    .with_decorations(false)
                     // .with_name("com.bendn.gracilaria", "")
                     // .with_resize_increments(PhysicalSize::new(fw, fh))
                     .with_window_icon(Some(
@@ -196,6 +200,7 @@ pub(crate) fn entry(event_loop: EventLoop) {
                         .unwrap().into()
                     ))
             });
+
             if let Some(x) = w.take() {
                 x.send(window.clone()).unwrap();
             }

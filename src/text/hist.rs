@@ -211,14 +211,21 @@ impl Hist {
     }
     pub fn undo(&mut self, t: &mut TextArea) -> ropey::Result<Option<()>> {
         self.push_if_changed(t);
-        self.undo_()
+        let r = self
+            .undo_()
             .map(|x| {
                 let r = x.apply(t, false);
                 self.lc = t.cursor.clone();
                 self.last = t.changes.clone();
                 r
             })
-            .transpose()
+            .transpose();
+        let l = t.len_chars();
+        t.cursor
+            .inner
+            .iter_mut()
+            .for_each(|x| x.position = x.position.max(l));
+        r
     }
     pub fn redo(&mut self, t: &mut TextArea) -> ropey::Result<Option<()>> {
         self.redo_()

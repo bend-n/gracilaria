@@ -1,6 +1,5 @@
 use std::fmt::Debug;
 use std::iter::{empty, once, repeat_n};
-use std::os::fd::AsFd;
 use std::pin::pin;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -399,7 +398,13 @@ impl DiagnosticHovr {
             simplify_path(&dawg.replace('\n', "\r\n").replace("⸬", ":"))
                 .bytes()
         {
-            t.rx(b, std::fs::File::open("/dev/null").unwrap().as_fd());
+            t.rx(
+                b,
+                #[cfg(target_family = "unix")]
+                std::os::fd::AsFd::as_fd(
+                    &std::fs::File::open("/dev/null").unwrap(),
+                ),
+            );
         }
         let y_lim = t
             .cells
